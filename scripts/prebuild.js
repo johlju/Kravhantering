@@ -17,7 +17,7 @@
  * 4. Rebuild site data (blog posts, page dates)
  */
 
-// cSpell:ignore prebuild esbuild copyfile sitedata
+// cSpell:ignore prebuild esbuild copyfile
 
 const { execSync } = require('node:child_process')
 const fs = require('node:fs')

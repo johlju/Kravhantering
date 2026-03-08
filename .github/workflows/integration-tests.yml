@@ -31,9 +31,6 @@ jobs:
       - name: Generate Cloudflare types
         run: npm run cf-typegen
 
-      - name: Generate site data
-        run: npm run build:sitedata
-
       - name: Run formatting check
         run: npm run format:check
 
