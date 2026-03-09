@@ -63,7 +63,7 @@ interface RequirementDetail {
 
 interface RequirementDetailClientProps {
   inline?: boolean
-  onChange?: () => void
+  onChange?: () => void | Promise<void>
   onClose?: () => void
   requirementId: number
 }
@@ -404,12 +404,11 @@ export default function RequirementDetailClient({
     if (res.ok) {
       const data = (await res.json()) as { deleted?: string }
       if (data.deleted === 'requirement') {
-        onChange?.()
+        await onChange?.()
         if (onClose) onClose()
         else router.push('/kravkatalog')
       } else {
-        fetchRequirement()
-        onChange?.()
+        await Promise.all([fetchRequirement(), onChange?.()])
       }
     }
   }
@@ -420,8 +419,7 @@ export default function RequirementDetailClient({
     await fetch(`/api/requirements/${requirementId}/reactivate`, {
       method: 'POST',
     })
-    fetchRequirement()
-    onChange?.()
+    await Promise.all([fetchRequirement(), onChange?.()])
   }
 
   const handleTransition = async (
@@ -459,8 +457,7 @@ export default function RequirementDetailClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ statusId: targetStatusId }),
       })
-      fetchRequirement()
-      onChange?.()
+      await Promise.all([fetchRequirement(), onChange?.()])
     } finally {
       setIsTransitioning(false)
     }
@@ -484,8 +481,7 @@ export default function RequirementDetailClient({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ versionNumber }),
     })
-    fetchRequirement()
-    onChange?.()
+    await Promise.all([fetchRequirement(), onChange?.()])
   }
 
   const content = (
