@@ -87,6 +87,7 @@ export default function RequirementDetailClient({
   const [req, setReq] = useState<RequirementDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [transitions, setTransitions] = useState<TransitionTarget[]>([])
+  const [isTransitioning, setIsTransitioning] = useState(false)
   const [statuses, setStatuses] = useState<StatusInfo[]>([])
   const [selectedVersionNumber, setSelectedVersionNumber] = useState<
     number | null
@@ -447,13 +448,18 @@ export default function RequirementDetailClient({
       )
         return
     }
-    await fetch(`/api/requirements/${requirementId}/transition`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ statusId: targetStatusId }),
-    })
-    fetchRequirement()
-    onChange?.()
+    setIsTransitioning(true)
+    try {
+      await fetch(`/api/requirements/${requirementId}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statusId: targetStatusId }),
+      })
+      fetchRequirement()
+      onChange?.()
+    } finally {
+      setIsTransitioning(false)
+    }
   }
 
   const handleRestore = async (
@@ -673,6 +679,7 @@ export default function RequirementDetailClient({
                       .map(tr => (
                         <button
                           className="btn-secondary inline-flex items-center gap-1.5 w-full justify-center"
+                          disabled={isTransitioning}
                           key={tr.id}
                           onClick={e =>
                             handleTransition(tr.id, e.currentTarget)
