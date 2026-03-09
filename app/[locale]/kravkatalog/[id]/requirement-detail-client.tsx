@@ -470,7 +470,15 @@ export default function RequirementDetailClient({
     versionNumber: number,
     anchorEl?: HTMLElement,
   ) => {
-    if (!(await confirm({ message: t('restoreConfirm'), anchorEl }))) return
+    if (
+      !(await confirm({
+        message: t('restoreConfirm'),
+        icon: 'info',
+        defaultCancel: true,
+        anchorEl,
+      }))
+    )
+      return
     await fetch(`/api/requirements/${requirementId}/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
