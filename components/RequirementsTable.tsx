@@ -842,7 +842,7 @@ export default function RequirementsTable({
             <th className={`${thBase} text-center`}>{tc('version')}</th>
           </tr>
         </thead>
-        <tbody className={loading ? 'opacity-40 pointer-events-none' : ''}>
+        <tbody className={showSpinner ? 'opacity-40 pointer-events-none' : ''}>
           {rows.length === 0 ? (
             <tr>
               <td

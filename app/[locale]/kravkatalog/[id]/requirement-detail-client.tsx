@@ -436,6 +436,17 @@ export default function RequirementDetailClient({
       )
         return
     }
+    // Require confirmation when publishing from Review
+    if (targetStatusId === STATUS_PUBLISHED) {
+      if (
+        !(await confirm({
+          message: t('publishConfirm'),
+          icon: 'warning',
+          anchorEl,
+        }))
+      )
+        return
+    }
     await fetch(`/api/requirements/${requirementId}/transition`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

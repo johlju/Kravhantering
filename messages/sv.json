@@ -75,6 +75,7 @@
     },
     "archiveConfirm": "Är du säker på att du vill arkivera detta krav?",
     "deleteDraftConfirm": "Är du säker på att du vill ta bort detta utkast? Utkastet raderas permanent.",
+    "publishConfirm": "Är du säker på att du vill publicera detta krav? Bekräfta att det har genomgått korrekt granskningsprocess innan det görs tillgängligt.",
     "reactivateConfirm": "Är du säker på att du vill återaktivera detta krav?",
     "transitionToGranskning": "Granskning ↗",
     "transitionToPublicerad": "Publicera ↗",
