@@ -219,6 +219,7 @@ describe('createRequirementsService', () => {
         isArchived: false,
         maxVersion: 2,
         pendingVersionStatusColor: '#eab308',
+        pendingVersionStatusId: 2,
         requirementAreaId: 1,
         requirementCategoryId: 1,
         requirementTypeCategoryId: 9,

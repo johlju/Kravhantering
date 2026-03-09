@@ -161,6 +161,11 @@ export async function listRequirements(
         WHERE rv.requirement_id = ${requirements.id}
         ORDER BY rv.version_number DESC LIMIT 1
       )`.as('pending_version_status_color'),
+      pendingVersionStatusId: sql<number | null>`(
+        SELECT rv.requirement_status_id FROM requirement_versions rv
+        WHERE rv.requirement_id = ${requirements.id}
+        ORDER BY rv.version_number DESC LIMIT 1
+      )`.as('pending_version_status_id'),
     })
     .from(requirements)
     .innerJoin(

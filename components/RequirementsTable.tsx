@@ -27,6 +27,7 @@ interface RequirementRow {
   id: number
   isArchived: boolean
   pendingVersionStatusColor?: string | null
+  pendingVersionStatusId?: number | null
   uniqueId: string
   version: {
     description: string | null
@@ -924,9 +925,19 @@ export default function RequirementsTable({
                           '—'
                         )}
                         {row.hasPendingVersion && (
-                          <span title={t('hasPendingVersion')}>
+                          <span
+                            title={t(
+                              row.pendingVersionStatusId === 1
+                                ? 'hasPendingVersionDraft'
+                                : 'hasPendingVersionReview',
+                            )}
+                          >
                             <AlertCircle
-                              aria-label={t('hasPendingVersion')}
+                              aria-label={t(
+                                row.pendingVersionStatusId === 1
+                                  ? 'hasPendingVersionDraft'
+                                  : 'hasPendingVersionReview',
+                              )}
                               className="h-3.5 w-3.5"
                               style={{
                                 color:

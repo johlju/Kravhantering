@@ -185,6 +185,8 @@ function formatRequirementListItem(
       item.maxVersion > item.versionNumber
         ? item.pendingVersionStatusColor
         : null,
+    pendingVersionStatusId:
+      item.maxVersion > item.versionNumber ? item.pendingVersionStatusId : null,
     uniqueId: item.uniqueId,
     version: {
       acceptanceCriteria: item.acceptanceCriteria,

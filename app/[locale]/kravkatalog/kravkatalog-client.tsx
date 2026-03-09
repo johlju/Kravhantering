@@ -22,6 +22,7 @@ interface RequirementRow {
   id: number
   isArchived: boolean
   pendingVersionStatusColor?: string | null
+  pendingVersionStatusId?: number | null
   uniqueId: string
   version: {
     description: string | null

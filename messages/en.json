@@ -66,7 +66,8 @@
     "newRequirement": "New requirement",
     "editRequirement": "Edit requirement",
     "status": "Status",
-    "hasPendingVersion": "There is a pending version",
+    "hasPendingVersionDraft": "A new version is being worked on",
+    "hasPendingVersionReview": "There is a newer version under review",
     "statusLabel": {
       "Utkast": "Draft",
       "Granskning": "Review",

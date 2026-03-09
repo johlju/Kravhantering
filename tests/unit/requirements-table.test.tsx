@@ -14,7 +14,8 @@ vi.mock('next-intl', () => ({
       type: 'Kravtyp',
       status: 'Kravstatus',
       requiresTesting: 'Kräver testning',
-      hasPendingVersion: 'Det finns en väntande version',
+      hasPendingVersionDraft: 'Det finns en nyare version i utkast',
+      hasPendingVersionReview: 'Det finns en nyare version som granskas',
       noResults: 'Inga resultat hittades',
       loadingRequirements: 'Hämtar krav\u2026',
       version: 'Version',
@@ -90,6 +91,7 @@ describe('RequirementsTable', () => {
         isArchived: false,
         hasPendingVersion: true,
         pendingVersionStatusColor: '#3b82f6',
+        pendingVersionStatusId: 2,
         version: {
           description: 'Test',
           categoryNameSv: null,
@@ -109,7 +111,9 @@ describe('RequirementsTable', () => {
       },
     ]
     render(<RequirementsTable locale="sv" rows={rows} />)
-    expect(screen.getByLabelText('Det finns en väntande version')).toBeTruthy()
+    expect(
+      screen.getByLabelText('Det finns en nyare version som granskas'),
+    ).toBeTruthy()
   })
 
   it('applies opacity for archived rows', () => {
