@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import RequirementsTable from '@/components/RequirementsTable'
 
@@ -16,6 +16,7 @@ vi.mock('next-intl', () => ({
       requiresTesting: 'Kräver testning',
       hasPendingVersion: 'Det finns en väntande version',
       noResults: 'Inga resultat hittades',
+      loadingRequirements: 'Hämtar krav\u2026',
       version: 'Version',
     }
     return t[key] ?? key
@@ -36,6 +37,16 @@ describe('RequirementsTable', () => {
   it('renders empty state when no rows', () => {
     render(<RequirementsTable locale="sv" rows={[]} />)
     expect(screen.getByText('Inga resultat hittades')).toBeTruthy()
+  })
+
+  it('renders loading state when loading is true', () => {
+    vi.useFakeTimers()
+    render(<RequirementsTable loading locale="sv" rows={[]} />)
+    expect(screen.queryByText('Hämtar krav\u2026')).toBeNull()
+    act(() => vi.advanceTimersByTime(1000))
+    expect(screen.getByText('Hämtar krav\u2026')).toBeTruthy()
+    expect(screen.queryByText('Inga resultat hittades')).toBeTruthy()
+    vi.useRealTimers()
   })
 
   it('renders table rows with status badge', () => {

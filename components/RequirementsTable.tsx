@@ -70,6 +70,7 @@ interface RequirementsTableProps {
   filterValues?: FilterValues
   getName?: (opt: FilterOption) => string
   getStatusName?: (opt: StatusOption) => string
+  loading?: boolean
   locale: string
   onFilterChange?: (values: FilterValues) => void
   onRowClick?: (id: number) => void
@@ -524,6 +525,7 @@ export default function RequirementsTable({
   filterValues,
   getName = () => '',
   getStatusName = () => '',
+  loading = false,
   locale,
   onFilterChange,
   onRowClick,
@@ -574,19 +576,32 @@ export default function RequirementsTable({
     updateFilter({ requiresTesting: values.length > 0 ? values : undefined })
   }
 
-  if (rows.length === 0 && !hasFilters) {
-    return (
-      <p className="text-center py-12 text-secondary-600 dark:text-secondary-400">
-        {tc('noResults')}
-      </p>
-    )
-  }
+  const [showSpinner, setShowSpinner] = useState(false)
+  useEffect(() => {
+    if (!loading) {
+      setShowSpinner(false)
+      return
+    }
+    const timer = setTimeout(() => setShowSpinner(true), 1000)
+    return () => clearTimeout(timer)
+  }, [loading])
 
   const thBase =
     'py-2 px-2 font-medium text-secondary-700 dark:text-secondary-300 align-top'
 
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
+      {showSpinner && (
+        <output
+          aria-live="polite"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/60 dark:bg-secondary-900/60 backdrop-blur-[2px] rounded-2xl"
+        >
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600 dark:border-primary-700 dark:border-t-primary-400" />
+          <p className="text-secondary-600 dark:text-secondary-400">
+            {tc('loadingRequirements')}
+          </p>
+        </output>
+      )}
       <table className="w-full text-sm table-fixed">
         <colgroup>
           <col className="w-[8%]" />
@@ -827,7 +842,7 @@ export default function RequirementsTable({
             <th className={`${thBase} text-center`}>{tc('version')}</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className={loading ? 'opacity-40 pointer-events-none' : ''}>
           {rows.length === 0 ? (
             <tr>
               <td
