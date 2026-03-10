@@ -5,22 +5,7 @@ import RequirementsTable from '@/components/RequirementsTable'
 const mockPush = vi.fn()
 
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => {
-    const t: Record<string, string> = {
-      uniqueId: 'Krav-ID',
-      description: 'Beskrivning',
-      area: 'Kravområde',
-      category: 'Kravkategori',
-      type: 'Kravtyp',
-      status: 'Kravstatus',
-      requiresTesting: 'Kräver testning',
-      hasPendingVersion: 'Det finns en väntande version',
-      noResults: 'Inga resultat hittades',
-      loadingRequirements: 'Hämtar krav\u2026',
-      version: 'Version',
-    }
-    return t[key] ?? key
-  },
+  useTranslations: () => (key: string) => key,
 }))
 
 vi.mock('@/i18n/routing', () => ({
@@ -36,16 +21,16 @@ vi.mock('@/i18n/routing', () => ({
 describe('RequirementsTable', () => {
   it('renders empty state when no rows', () => {
     render(<RequirementsTable locale="sv" rows={[]} />)
-    expect(screen.getByText('Inga resultat hittades')).toBeTruthy()
+    expect(screen.getByText('noResults')).toBeTruthy()
   })
 
   it('renders loading state when loading is true', () => {
     vi.useFakeTimers()
     render(<RequirementsTable loading locale="sv" rows={[]} />)
-    expect(screen.queryByText('Hämtar krav\u2026')).toBeNull()
+    expect(screen.queryByText('loadingRequirements')).toBeNull()
     act(() => vi.advanceTimersByTime(1000))
-    expect(screen.getByText('Hämtar krav\u2026')).toBeTruthy()
-    expect(screen.queryByText('Inga resultat hittades')).toBeTruthy()
+    expect(screen.getByText('loadingRequirements')).toBeTruthy()
+    expect(screen.queryByText('noResults')).toBeTruthy()
     vi.useRealTimers()
   })
 
@@ -90,6 +75,7 @@ describe('RequirementsTable', () => {
         isArchived: false,
         hasPendingVersion: true,
         pendingVersionStatusColor: '#3b82f6',
+        pendingVersionStatusId: 2,
         version: {
           description: 'Test',
           categoryNameSv: null,
@@ -109,7 +95,85 @@ describe('RequirementsTable', () => {
       },
     ]
     render(<RequirementsTable locale="sv" rows={rows} />)
-    expect(screen.getByLabelText('Det finns en väntande version')).toBeTruthy()
+    expect(screen.getByLabelText('hasPendingVersionReview')).toBeTruthy()
+  })
+
+  it('shows a blue pending draft indicator for archived rows', () => {
+    const rows = [
+      {
+        id: 1,
+        uniqueId: 'INT0003',
+        isArchived: true,
+        hasPendingVersion: true,
+        pendingVersionStatusColor: '#3b82f6',
+        pendingVersionStatusId: 1,
+        version: {
+          description: 'Arkiverad',
+          categoryNameSv: null,
+          categoryNameEn: null,
+          typeNameSv: null,
+          typeNameEn: null,
+          typeCategoryNameSv: null,
+          typeCategoryNameEn: null,
+          requiresTesting: false,
+          versionNumber: 1,
+          status: 4,
+          statusNameSv: 'Arkiverad',
+          statusNameEn: 'Archived',
+          statusColor: '#6b7280',
+        },
+        area: null,
+      },
+    ]
+
+    render(<RequirementsTable locale="sv" rows={rows} />)
+
+    expect(screen.getAllByText('Arkiverad')).toHaveLength(2)
+    expect(
+      screen.getByLabelText('hasPendingVersionDraft').closest('tr')?.className,
+    ).not.toContain('opacity-50')
+    expect(screen.getByLabelText('hasPendingVersionDraft')).toHaveStyle({
+      color: '#3b82f6',
+    })
+  })
+
+  it('shows a yellow pending review indicator for archived rows', () => {
+    const rows = [
+      {
+        id: 1,
+        uniqueId: 'INT0004',
+        isArchived: true,
+        hasPendingVersion: true,
+        pendingVersionStatusColor: '#eab308',
+        pendingVersionStatusId: 2,
+        version: {
+          description: 'Arkiverad',
+          categoryNameSv: null,
+          categoryNameEn: null,
+          typeNameSv: null,
+          typeNameEn: null,
+          typeCategoryNameSv: null,
+          typeCategoryNameEn: null,
+          requiresTesting: false,
+          versionNumber: 1,
+          status: 4,
+          statusNameSv: 'Arkiverad',
+          statusNameEn: 'Archived',
+          statusColor: '#6b7280',
+        },
+        area: null,
+      },
+    ]
+
+    render(<RequirementsTable locale="sv" rows={rows} />)
+
+    expect(screen.getAllByText('Arkiverad')).toHaveLength(2)
+    expect(
+      screen.getByLabelText('hasPendingVersionReview').closest('tr')?.className,
+    ).not.toContain('opacity-50')
+    expect(screen.getByLabelText('hasPendingVersionReview')).toHaveStyle({
+      color: '#eab308',
+    })
   })
 
   it('applies opacity for archived rows', () => {
@@ -138,8 +202,10 @@ describe('RequirementsTable', () => {
     ]
     const { container } = render(<RequirementsTable locale="sv" rows={rows} />)
     const tr = container.querySelector('tbody tr')
+    const firstCell = tr?.querySelector('td')
 
-    expect(tr?.classList.contains('opacity-50')).toBe(true)
+    expect(tr?.classList.contains('opacity-50')).toBe(false)
+    expect(firstCell?.className).toContain('opacity-50')
   })
 
   it('applies zebra striping on alternating rows', () => {

@@ -63,7 +63,7 @@ interface RequirementDetail {
 
 interface RequirementDetailClientProps {
   inline?: boolean
-  onChange?: () => void
+  onChange?: () => void | Promise<void>
   onClose?: () => void
   requirementId: number
 }
@@ -87,6 +87,7 @@ export default function RequirementDetailClient({
   const [req, setReq] = useState<RequirementDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [transitions, setTransitions] = useState<TransitionTarget[]>([])
+  const [isTransitioning, setIsTransitioning] = useState(false)
   const [statuses, setStatuses] = useState<StatusInfo[]>([])
   const [selectedVersionNumber, setSelectedVersionNumber] = useState<
     number | null
@@ -330,6 +331,7 @@ export default function RequirementDetailClient({
 
   const latest = req.versions[0]
   const latestStatusForActions = latest?.status ?? 1
+  const isLatestVersionArchived = latestStatusForActions === STATUS_ARCHIVED
 
   // Display version priority: Published > Archived > latest (draft/review)
   const displayVersion =
@@ -342,6 +344,39 @@ export default function RequirementDetailClient({
     req.versions.find(v => v.versionNumber === selectedVersionNumber) ??
     displayVersion
 
+  const newerVersionsThanSelected =
+    selectedVersion == null
+      ? []
+      : req.versions.filter(
+          version => version.versionNumber > selectedVersion.versionNumber,
+        )
+
+  const archivedVersionPreferredVersion =
+    selectedVersion?.status === STATUS_ARCHIVED
+      ? (newerVersionsThanSelected.find(
+          version => version.status === STATUS_PUBLISHED,
+        ) ??
+        newerVersionsThanSelected.find(
+          version => version.status === STATUS_REVIEW,
+        ) ??
+        newerVersionsThanSelected.find(
+          version => version.status === STATUS_DRAFT,
+        ) ??
+        null)
+      : null
+
+  const archivedVersionBannerKey =
+    archivedVersionPreferredVersion?.status === STATUS_PUBLISHED
+      ? 'publishedVersionAvailableBanner'
+      : archivedVersionPreferredVersion?.status === STATUS_REVIEW
+        ? 'reviewVersionAvailableBanner'
+        : archivedVersionPreferredVersion?.status === STATUS_DRAFT
+          ? 'draftVersionAvailableBanner'
+          : null
+
+  const showsArchivedVersionAvailabilityBanner =
+    archivedVersionPreferredVersion != null && archivedVersionBannerKey != null
+
   const hasPendingVersion =
     latest &&
     displayVersion &&
@@ -350,6 +385,13 @@ export default function RequirementDetailClient({
   const pendingStatusLabel = hasPendingVersion
     ? ((locale === 'sv' ? latest?.statusNameSv : latest?.statusNameEn) ?? '')
     : ''
+
+  // Whether the user is viewing the latest (newest) version
+  const isViewingLatest =
+    selectedVersion?.versionNumber === latest?.versionNumber
+
+  const isViewingDisplayVersion =
+    selectedVersion?.versionNumber === displayVersion?.versionNumber
 
   // Determine if the user is viewing a historical (non-default, non-latest) version
   const isViewingHistory =
@@ -399,24 +441,13 @@ export default function RequirementDetailClient({
     if (res.ok) {
       const data = (await res.json()) as { deleted?: string }
       if (data.deleted === 'requirement') {
-        onChange?.()
+        await onChange?.()
         if (onClose) onClose()
         else router.push('/kravkatalog')
       } else {
-        fetchRequirement()
-        onChange?.()
+        await Promise.all([fetchRequirement(), onChange?.()])
       }
     }
-  }
-
-  const handleReactivate = async (e?: React.MouseEvent<HTMLButtonElement>) => {
-    const anchorEl = e?.currentTarget
-    if (!(await confirm({ message: t('reactivateConfirm'), anchorEl }))) return
-    await fetch(`/api/requirements/${requirementId}/reactivate`, {
-      method: 'POST',
-    })
-    fetchRequirement()
-    onChange?.()
   }
 
   const handleTransition = async (
@@ -436,27 +467,49 @@ export default function RequirementDetailClient({
       )
         return
     }
-    await fetch(`/api/requirements/${requirementId}/transition`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ statusId: targetStatusId }),
-    })
-    fetchRequirement()
-    onChange?.()
+    // Require confirmation when publishing from Review
+    if (targetStatusId === STATUS_PUBLISHED) {
+      if (
+        !(await confirm({
+          message: t('publishConfirm'),
+          icon: 'warning',
+          anchorEl,
+        }))
+      )
+        return
+    }
+    setIsTransitioning(true)
+    try {
+      await fetch(`/api/requirements/${requirementId}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statusId: targetStatusId }),
+      })
+      await Promise.all([fetchRequirement(), onChange?.()])
+    } finally {
+      setIsTransitioning(false)
+    }
   }
 
   const handleRestore = async (
     versionNumber: number,
     anchorEl?: HTMLElement,
   ) => {
-    if (!(await confirm({ message: t('restoreConfirm'), anchorEl }))) return
+    if (
+      !(await confirm({
+        message: t('restoreConfirm'),
+        icon: 'info',
+        defaultCancel: true,
+        anchorEl,
+      }))
+    )
+      return
     await fetch(`/api/requirements/${requirementId}/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ versionNumber }),
     })
-    fetchRequirement()
-    onChange?.()
+    await Promise.all([fetchRequirement(), onChange?.()])
   }
 
   const content = (
@@ -486,7 +539,27 @@ export default function RequirementDetailClient({
 
         {/* Lifecycle progress bar */}
         <div className={`mb-5 ${inline ? '' : ''}`}>
-          {isViewingHistory && (
+          {showsArchivedVersionAvailabilityBanner ? (
+            <div className="flex items-center gap-2 mb-2 px-1 text-xs text-secondary-500 dark:text-secondary-400">
+              <AlertCircle
+                className="h-3.5 w-3.5 shrink-0"
+                style={{
+                  color:
+                    archivedVersionPreferredVersion.statusColor ?? undefined,
+                }}
+              />
+              <span>
+                {t(archivedVersionBannerKey, {
+                  version: String(
+                    archivedVersionPreferredVersion.versionNumber,
+                  ),
+                })}
+                {' — '}
+                {t('displayedVersion')}{' '}
+                <span className="font-medium">v{currentVersionNumber}</span>
+              </span>
+            </div>
+          ) : isViewingHistory ? (
             <div className="flex items-center gap-2 mb-2 px-1 text-xs text-secondary-500 dark:text-secondary-400">
               <Clock
                 className="h-3.5 w-3.5 shrink-0"
@@ -498,24 +571,26 @@ export default function RequirementDetailClient({
                 })}
               </span>
             </div>
-          )}
-          {hasPendingVersion && !isViewingHistory && (
-            <div className="flex items-center gap-2 mb-2 px-1 text-xs text-secondary-500 dark:text-secondary-400">
-              <AlertCircle
-                className="h-3.5 w-3.5 shrink-0"
-                style={{ color: latest?.statusColor ?? undefined }}
-              />
-              <span>
-                {t('pendingVersionBanner', {
-                  version: String(pendingVersionNumber),
-                  status: pendingStatusLabel,
-                })}
-                {' — '}
-                {t('displayedVersion')}{' '}
-                <span className="font-medium">v{currentVersionNumber}</span>
-              </span>
-            </div>
-          )}
+          ) : null}
+          {hasPendingVersion &&
+            isViewingDisplayVersion &&
+            !showsArchivedVersionAvailabilityBanner && (
+              <div className="flex items-center gap-2 mb-2 px-1 text-xs text-secondary-500 dark:text-secondary-400">
+                <AlertCircle
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: latest?.statusColor ?? undefined }}
+                />
+                <span>
+                  {t('pendingVersionBanner', {
+                    version: String(pendingVersionNumber),
+                    status: pendingStatusLabel,
+                  })}
+                  {' — '}
+                  {t('displayedVersion')}{' '}
+                  <span className="font-medium">v{currentVersionNumber}</span>
+                </span>
+              </div>
+            )}
           <StatusStepper
             currentStatusId={currentStatusId}
             statuses={statuses}
@@ -655,24 +730,26 @@ export default function RequirementDetailClient({
                       {t('backToLatest')}
                     </button>
                   </>
-                ) : !req.isArchived ? (
+                ) : !isLatestVersionArchived ? (
                   <>
-                    {transitions
-                      .filter(tr => tr.id !== 4)
-                      .map(tr => (
-                        <button
-                          className="btn-secondary inline-flex items-center gap-1.5 w-full justify-center"
-                          key={tr.id}
-                          onClick={e =>
-                            handleTransition(tr.id, e.currentTarget)
-                          }
-                          title={t(`transitionTooltip${tr.nameSv}`)}
-                          type="button"
-                        >
-                          {t(`transitionTo${tr.nameSv}`)}
-                        </button>
-                      ))}
-                    {latestStatusForActions !== STATUS_REVIEW && (
+                    {isViewingLatest &&
+                      transitions
+                        .filter(tr => tr.id !== 4)
+                        .map(tr => (
+                          <button
+                            className="btn-secondary inline-flex items-center gap-1.5 w-full justify-center"
+                            disabled={isTransitioning}
+                            key={tr.id}
+                            onClick={e =>
+                              handleTransition(tr.id, e.currentTarget)
+                            }
+                            title={t(`transitionTooltip${tr.nameSv}`)}
+                            type="button"
+                          >
+                            {t(`transitionTo${tr.nameSv}`)}
+                          </button>
+                        ))}
+                    {currentStatusId !== STATUS_REVIEW && (
                       <Link
                         className="btn-primary inline-flex items-center gap-1.5 w-full justify-center"
                         href={`/kravkatalog/${req.id}/redigera`}
@@ -682,18 +759,19 @@ export default function RequirementDetailClient({
                         {tc('edit')}
                       </Link>
                     )}
-                    {latestStatusForActions === 3 && (
-                      <button
-                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-all duration-200 w-full justify-center"
-                        onClick={handleArchive}
-                        title={tc('archiveTooltip')}
-                        type="button"
-                      >
-                        <Archive aria-hidden="true" className="h-4 w-4" />
-                        {tc('archive')}
-                      </button>
-                    )}
-                    {latestStatusForActions === 1 && (
+                    {isViewingLatest &&
+                      latestStatusForActions === STATUS_PUBLISHED && (
+                        <button
+                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-all duration-200 w-full justify-center"
+                          onClick={handleArchive}
+                          title={tc('archiveTooltip')}
+                          type="button"
+                        >
+                          <Archive aria-hidden="true" className="h-4 w-4" />
+                          {tc('archive')}
+                        </button>
+                      )}
+                    {currentStatusId === STATUS_DRAFT && isViewingLatest && (
                       <button
                         className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-all duration-200 w-full justify-center"
                         onClick={handleDeleteDraft}
@@ -706,11 +784,17 @@ export default function RequirementDetailClient({
                   </>
                 ) : (
                   <button
-                    className="btn-secondary w-full justify-center"
-                    onClick={handleReactivate}
+                    className="btn-secondary inline-flex items-center gap-1.5 w-full justify-center"
+                    onClick={e =>
+                      handleRestore(
+                        selectedVersion?.versionNumber ?? 0,
+                        e.currentTarget as HTMLElement,
+                      )
+                    }
                     type="button"
                   >
-                    {tc('reactivate')}
+                    <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+                    {tc('restoreVersion')}
                   </button>
                 )}
               </div>

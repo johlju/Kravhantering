@@ -23,6 +23,7 @@ interface ConfirmOptions {
   anchorEl?: HTMLElement | null
   cancelText?: string
   confirmText?: string
+  defaultCancel?: boolean
   icon?: IconPreset | LucideIcon
   message: string
   showCancel?: boolean
@@ -192,11 +193,11 @@ function ConfirmModalInner({
     }
   }, [modal])
 
-  // Auto-focus: danger → cancel button; default → confirm button
+  // Auto-focus: danger or defaultCancel → cancel button; default → confirm button
   useEffect(() => {
     if (!modal) return
     requestAnimationFrame(() => {
-      if (variant === 'danger' && showCancel) {
+      if ((variant === 'danger' || modal.defaultCancel) && showCancel) {
         cancelBtnRef.current?.focus()
       } else {
         confirmBtnRef.current?.focus()

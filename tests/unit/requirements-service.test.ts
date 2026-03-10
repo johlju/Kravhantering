@@ -219,6 +219,7 @@ describe('createRequirementsService', () => {
         isArchived: false,
         maxVersion: 2,
         pendingVersionStatusColor: '#eab308',
+        pendingVersionStatusId: 2,
         requirementAreaId: 1,
         requirementCategoryId: 1,
         requirementTypeCategoryId: 9,
@@ -259,6 +260,60 @@ describe('createRequirementsService', () => {
     expect(result.items[0]).toMatchObject({
       hasPendingVersion: true,
       uniqueId: 'INT0001',
+    })
+  })
+
+  it('preserves archived rows with pending replacement versions in queryCatalog results', async () => {
+    mocks.listRequirements.mockResolvedValue([
+      {
+        acceptanceCriteria: 'Legacy acceptance criteria',
+        areaName: 'Integration',
+        categoryNameEn: null,
+        categoryNameSv: null,
+        createdAt: '2026-03-08T00:00:00.000Z',
+        description: 'Archived baseline',
+        id: 2,
+        isArchived: true,
+        maxVersion: 2,
+        pendingVersionStatusColor: '#3b82f6',
+        pendingVersionStatusId: 1,
+        requirementAreaId: 1,
+        requirementCategoryId: null,
+        requirementTypeCategoryId: null,
+        requirementTypeId: null,
+        requiresTesting: false,
+        status: 4,
+        statusColor: '#6b7280',
+        statusNameEn: 'Archived',
+        statusNameSv: 'Arkiverad',
+        typeCategoryNameEn: null,
+        typeCategoryNameSv: null,
+        typeNameEn: null,
+        typeNameSv: null,
+        uniqueId: 'INT0002',
+        versionCreatedAt: '2026-03-01T00:00:00.000Z',
+        versionId: 20,
+        versionNumber: 1,
+      },
+    ])
+    mocks.countRequirements.mockResolvedValue(1)
+
+    const service = createRequirementsService({} as never, { logger })
+    const result = await service.queryCatalog(makeContext(), {
+      catalog: 'requirements',
+    })
+
+    expect(result.items[0]).toMatchObject({
+      hasPendingVersion: true,
+      isArchived: true,
+      pendingVersionStatusId: 1,
+      uniqueId: 'INT0002',
+      version: {
+        description: 'Archived baseline',
+        status: 4,
+        statusNameEn: 'Archived',
+        versionNumber: 1,
+      },
     })
   })
 

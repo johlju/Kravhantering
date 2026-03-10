@@ -10,7 +10,14 @@ import {
   X,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  Fragment,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import type {
   FilterValues,
@@ -27,6 +34,7 @@ interface RequirementRow {
   id: number
   isArchived: boolean
   pendingVersionStatusColor?: string | null
+  pendingVersionStatusId?: number | null
   uniqueId: string
   version: {
     description: string | null
@@ -70,9 +78,12 @@ interface RequirementsTableProps {
   filterValues?: FilterValues
   getName?: (opt: FilterOption) => string
   getStatusName?: (opt: StatusOption) => string
+  hasMore?: boolean
   loading?: boolean
+  loadingMore?: boolean
   locale: string
   onFilterChange?: (values: FilterValues) => void
+  onLoadMore?: () => void
   onRowClick?: (id: number) => void
   pinnedIds?: Set<number>
   renderExpanded?: (id: number) => ReactNode
@@ -525,9 +536,12 @@ export default function RequirementsTable({
   filterValues,
   getName = () => '',
   getStatusName = () => '',
+  hasMore = false,
   loading = false,
+  loadingMore = false,
   locale,
   onFilterChange,
+  onLoadMore,
   onRowClick,
   pinnedIds,
   renderExpanded,
@@ -585,6 +599,26 @@ export default function RequirementsTable({
     const timer = setTimeout(() => setShowSpinner(true), 1000)
     return () => clearTimeout(timer)
   }, [loading])
+
+  // Infinite-scroll sentinel
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const stableLoadMore = useCallback(() => {
+    onLoadMore?.()
+  }, [onLoadMore])
+
+  useEffect(() => {
+    if (!hasMore || !onLoadMore) return
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) stableLoadMore()
+      },
+      { rootMargin: '200px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, onLoadMore, stableLoadMore])
 
   const thBase =
     'py-2 px-2 font-medium text-secondary-700 dark:text-secondary-300 align-top'
@@ -842,7 +876,9 @@ export default function RequirementsTable({
             <th className={`${thBase} text-center`}>{tc('version')}</th>
           </tr>
         </thead>
-        <tbody className={loading ? 'opacity-40 pointer-events-none' : ''}>
+        <tbody
+          className={`${showSpinner ? 'opacity-40' : ''} ${loading ? 'pointer-events-none' : ''}`}
+        >
           {rows.length === 0 ? (
             <tr>
               <td
@@ -856,19 +892,24 @@ export default function RequirementsTable({
             rows.map((row, idx) => {
               const isExpanded = row.id === expandedId
               const isPinned = pinnedIds?.has(row.id) ?? false
+              const archivedContentClass = row.isArchived ? 'opacity-50' : ''
               return (
                 <Fragment key={row.id}>
                   <tr
                     className={`border-b cursor-pointer transition-colors hover:bg-primary-50/40 dark:hover:bg-primary-950/20 ${
-                      row.isArchived ? 'opacity-50' : ''
-                    } ${isExpanded ? 'bg-primary-50/60 dark:bg-primary-950/30 border-l-2 border-l-primary-500' : ''} ${!isExpanded && isPinned ? 'opacity-60 border-l-2 border-l-dashed border-l-secondary-400 dark:border-l-secondary-500' : ''} ${!isExpanded && !isPinned && idx % 2 === 1 ? 'bg-secondary-50/40 dark:bg-secondary-800/20' : ''}`}
+                      isExpanded
+                        ? 'bg-primary-50/60 dark:bg-primary-950/30 border-l-2 border-l-primary-500'
+                        : ''
+                    } ${!isExpanded && isPinned ? 'opacity-60 border-l-2 border-l-dashed border-l-secondary-400 dark:border-l-secondary-500' : ''} ${!isExpanded && !isPinned && idx % 2 === 1 ? 'bg-secondary-50/40 dark:bg-secondary-800/20' : ''}`}
                     onClick={() =>
                       onRowClick
                         ? onRowClick(row.id)
                         : router.push(`/kravkatalog/${row.id}`)
                     }
                   >
-                    <td className="py-2 px-2 font-mono font-medium text-primary-700 dark:text-primary-300 whitespace-nowrap">
+                    <td
+                      className={`py-2 px-2 font-mono font-medium text-primary-700 dark:text-primary-300 whitespace-nowrap ${archivedContentClass}`}
+                    >
                       <span className="inline-flex items-center gap-1.5">
                         {renderExpanded ? (
                           isExpanded ? (
@@ -886,23 +927,33 @@ export default function RequirementsTable({
                         {row.uniqueId}
                       </span>
                     </td>
-                    <td className="py-2 px-2 truncate">
+                    <td
+                      className={`py-2 px-2 truncate ${archivedContentClass}`}
+                    >
                       {row.version?.description ?? '—'}
                     </td>
-                    <td className="py-2 px-2 truncate">
+                    <td
+                      className={`py-2 px-2 truncate ${archivedContentClass}`}
+                    >
                       {row.area?.name ?? '—'}
                     </td>
-                    <td className="py-2 px-2 truncate">
+                    <td
+                      className={`py-2 px-2 truncate ${archivedContentClass}`}
+                    >
                       {(locale === 'sv'
                         ? row.version?.categoryNameSv
                         : row.version?.categoryNameEn) ?? '—'}
                     </td>
-                    <td className="py-2 px-2 truncate">
+                    <td
+                      className={`py-2 px-2 truncate ${archivedContentClass}`}
+                    >
                       {(locale === 'sv'
                         ? row.version?.typeNameSv
                         : row.version?.typeNameEn) ?? '—'}
                     </td>
-                    <td className="py-2 px-2 truncate">
+                    <td
+                      className={`py-2 px-2 truncate ${archivedContentClass}`}
+                    >
                       {(locale === 'sv'
                         ? row.version?.typeCategoryNameSv
                         : row.version?.typeCategoryNameEn) ?? '—'}
@@ -910,21 +961,33 @@ export default function RequirementsTable({
                     <td className="py-2 px-2">
                       <span className="inline-flex items-center gap-1">
                         {row.version ? (
-                          <StatusBadge
-                            color={row.version.statusColor}
-                            label={
-                              (locale === 'sv'
-                                ? row.version.statusNameSv
-                                : row.version.statusNameEn) ?? '—'
-                            }
-                          />
+                          <span className={archivedContentClass}>
+                            <StatusBadge
+                              color={row.version.statusColor}
+                              label={
+                                (locale === 'sv'
+                                  ? row.version.statusNameSv
+                                  : row.version.statusNameEn) ?? '—'
+                              }
+                            />
+                          </span>
                         ) : (
                           '—'
                         )}
                         {row.hasPendingVersion && (
-                          <span title={t('hasPendingVersion')}>
+                          <span
+                            title={t(
+                              row.pendingVersionStatusId === 1
+                                ? 'hasPendingVersionDraft'
+                                : 'hasPendingVersionReview',
+                            )}
+                          >
                             <AlertCircle
-                              aria-label={t('hasPendingVersion')}
+                              aria-label={t(
+                                row.pendingVersionStatusId === 1
+                                  ? 'hasPendingVersionDraft'
+                                  : 'hasPendingVersionReview',
+                              )}
                               className="h-3.5 w-3.5"
                               style={{
                                 color:
@@ -935,7 +998,9 @@ export default function RequirementsTable({
                         )}
                       </span>
                     </td>
-                    <td className="py-2 px-2 text-center">
+                    <td
+                      className={`py-2 px-2 text-center ${archivedContentClass}`}
+                    >
                       {row.version?.requiresTesting && (
                         <TestTube2
                           aria-label={t('requiresTesting')}
@@ -943,7 +1008,9 @@ export default function RequirementsTable({
                         />
                       )}
                     </td>
-                    <td className="py-2 px-2 text-center text-secondary-600 dark:text-secondary-400">
+                    <td
+                      className={`py-2 px-2 text-center text-secondary-600 dark:text-secondary-400 ${archivedContentClass}`}
+                    >
                       v{row.version?.versionNumber ?? 1}
                     </td>
                   </tr>
@@ -963,6 +1030,17 @@ export default function RequirementsTable({
           )}
         </tbody>
       </table>
+      {hasMore && (
+        <div
+          aria-hidden="true"
+          className="h-10 flex items-center justify-center"
+          ref={sentinelRef}
+        >
+          {loadingMore && (
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600 dark:border-primary-700 dark:border-t-primary-400" />
+          )}
+        </div>
+      )}
     </div>
   )
 }

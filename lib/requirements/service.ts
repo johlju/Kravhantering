@@ -118,7 +118,7 @@ export interface TransitionRequirementInput extends RequirementRefInput {
 }
 
 const DEFAULT_PAGE_SIZE = 20
-const MAX_PAGE_SIZE = 50
+const MAX_PAGE_SIZE = 200
 const PUBLISHED_REQUIREMENT_STATUS_ID = 3
 
 function clampLimit(limit?: number) {
@@ -178,13 +178,17 @@ function formatRequirementListItem(
         }
       : null,
     createdAt: item.createdAt,
-    hasPendingVersion: item.maxVersion > item.versionNumber,
+    hasPendingVersion:
+      item.maxVersion > item.versionNumber &&
+      item.pendingVersionStatusId != null,
     id: item.id,
     isArchived: item.isArchived,
     pendingVersionStatusColor:
       item.maxVersion > item.versionNumber
         ? item.pendingVersionStatusColor
         : null,
+    pendingVersionStatusId:
+      item.maxVersion > item.versionNumber ? item.pendingVersionStatusId : null,
     uniqueId: item.uniqueId,
     version: {
       acceptanceCriteria: item.acceptanceCriteria,
@@ -969,7 +973,11 @@ export function createRequirementsService(
           }
 
           if (input.operation === 'reactivate') {
-            await reactivateRequirement(db, requirementId)
+            await reactivateRequirement(
+              db,
+              requirementId,
+              context.actor.id ?? undefined,
+            )
             const detail = formatRequirementDetail(
               (await getRequirementById(db, requirementId)) ??
                 (() => {

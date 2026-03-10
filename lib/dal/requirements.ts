@@ -37,6 +37,24 @@ type ListRequirementsOptions = {
   offset?: number
 }
 
+// Effective status uses priority: Published > Archived > Review > Draft.
+// requirements.isArchived stays true while a replacement Draft/Review is being
+// prepared for an archived requirement, so Archived continues to outrank Draft.
+const effectiveStatusSql = sql<number>`CASE
+  WHEN EXISTS (
+    SELECT 1 FROM requirement_versions rv
+    WHERE rv.requirement_id = ${requirements.id}
+    AND rv.requirement_status_id = ${STATUS_PUBLISHED}
+  ) THEN ${STATUS_PUBLISHED}
+  WHEN ${requirements.isArchived} = 1 THEN ${STATUS_ARCHIVED}
+  WHEN EXISTS (
+    SELECT 1 FROM requirement_versions rv
+    WHERE rv.requirement_id = ${requirements.id}
+    AND rv.requirement_status_id = ${STATUS_REVIEW}
+  ) THEN ${STATUS_REVIEW}
+  ELSE ${STATUS_DRAFT}
+END`
+
 function buildRequirementListConditions(opts: ListRequirementsOptions) {
   const conditions = []
 
@@ -60,7 +78,7 @@ function buildRequirementListConditions(opts: ListRequirementsOptions) {
     )
   }
   if (opts.statuses && opts.statuses.length > 0) {
-    conditions.push(inArray(requirementVersions.statusId, opts.statuses))
+    conditions.push(inArray(effectiveStatusSql, opts.statuses))
   }
   if (opts.categoryIds && opts.categoryIds.length > 0) {
     conditions.push(
@@ -103,6 +121,19 @@ function buildRequirementVersionSubqueries(db: Database) {
     .groupBy(requirementVersions.requirementId)
     .as('published')
 
+  const archivedVersions = db
+    .select({
+      requirementId: requirementVersions.requirementId,
+      maxArchivedVersion:
+        sql<number>`MAX(${requirementVersions.versionNumber})`.as(
+          'max_archived_version',
+        ),
+    })
+    .from(requirementVersions)
+    .where(eq(requirementVersions.statusId, STATUS_ARCHIVED))
+    .groupBy(requirementVersions.requirementId)
+    .as('archived')
+
   const latestVersions = db
     .select({
       requirementId: requirementVersions.requirementId,
@@ -114,7 +145,28 @@ function buildRequirementVersionSubqueries(db: Database) {
     .groupBy(requirementVersions.requirementId)
     .as('latest')
 
-  return { latestVersions, publishedVersions }
+  return { archivedVersions, latestVersions, publishedVersions }
+}
+
+function buildDisplayVersionNumberSql(subqueries: {
+  archivedVersions: {
+    maxArchivedVersion: unknown
+  }
+  latestVersions: {
+    maxVersion: unknown
+  }
+  publishedVersions: {
+    maxPublishedVersion: unknown
+  }
+}) {
+  return sql<number>`CASE
+    WHEN ${subqueries.publishedVersions.maxPublishedVersion} IS NOT NULL
+      THEN ${subqueries.publishedVersions.maxPublishedVersion}
+    WHEN ${requirements.isArchived} = 1
+      AND ${subqueries.archivedVersions.maxArchivedVersion} IS NOT NULL
+      THEN ${subqueries.archivedVersions.maxArchivedVersion}
+    ELSE ${subqueries.latestVersions.maxVersion}
+  END`
 }
 
 export async function listRequirements(
@@ -122,10 +174,16 @@ export async function listRequirements(
   opts: ListRequirementsOptions = {},
 ) {
   const conditions = buildRequirementListConditions(opts)
-  const { latestVersions, publishedVersions } =
+  const { archivedVersions, latestVersions, publishedVersions } =
     buildRequirementVersionSubqueries(db)
+  const displayVersionNumberSql = buildDisplayVersionNumberSql({
+    archivedVersions,
+    latestVersions,
+    publishedVersions,
+  })
 
-  // The display version is: published version if exists, otherwise absolute latest
+  // The display version is: published version if exists, otherwise archived
+  // version for archived requirements, otherwise absolute latest.
   // hasPendingVersion = absolute latest > display version
   let query = db
     .select({
@@ -141,10 +199,22 @@ export async function listRequirements(
       requirementCategoryId: requirementVersions.requirementCategoryId,
       requirementTypeId: requirementVersions.requirementTypeId,
       requirementTypeCategoryId: requirementVersions.requirementTypeCategoryId,
-      status: requirementVersions.statusId,
-      statusNameSv: requirementStatuses.nameSv,
-      statusNameEn: requirementStatuses.nameEn,
-      statusColor: requirementStatuses.color,
+      status: effectiveStatusSql.as('effective_status'),
+      statusNameSv: sql<
+        string | null
+      >`(SELECT rs.name_sv FROM requirement_statuses rs WHERE rs.id = ${effectiveStatusSql})`.as(
+        'effective_status_name_sv',
+      ),
+      statusNameEn: sql<
+        string | null
+      >`(SELECT rs.name_en FROM requirement_statuses rs WHERE rs.id = ${effectiveStatusSql})`.as(
+        'effective_status_name_en',
+      ),
+      statusColor: sql<
+        string | null
+      >`(SELECT rs.color FROM requirement_statuses rs WHERE rs.id = ${effectiveStatusSql})`.as(
+        'effective_status_color',
+      ),
       requiresTesting: requirementVersions.requiresTesting,
       versionCreatedAt: requirementVersions.createdAt,
       areaName: requirementAreas.name,
@@ -156,11 +226,20 @@ export async function listRequirements(
       typeCategoryNameEn: requirementTypeCategories.nameEn,
       maxVersion: latestVersions.maxVersion,
       pendingVersionStatusColor: sql<string | null>`(
-        SELECT rs.color FROM requirement_versions rv
+        SELECT CASE WHEN rv.requirement_status_id = ${STATUS_ARCHIVED} THEN NULL
+          ELSE rs.color END
+        FROM requirement_versions rv
         JOIN requirement_statuses rs ON rs.id = rv.requirement_status_id
         WHERE rv.requirement_id = ${requirements.id}
         ORDER BY rv.version_number DESC LIMIT 1
       )`.as('pending_version_status_color'),
+      pendingVersionStatusId: sql<number | null>`(
+        SELECT CASE WHEN rv.requirement_status_id = ${STATUS_ARCHIVED} THEN NULL
+          ELSE rv.requirement_status_id END
+        FROM requirement_versions rv
+        WHERE rv.requirement_id = ${requirements.id}
+        ORDER BY rv.version_number DESC LIMIT 1
+      )`.as('pending_version_status_id'),
     })
     .from(requirements)
     .innerJoin(
@@ -171,15 +250,15 @@ export async function listRequirements(
       publishedVersions,
       eq(requirements.id, publishedVersions.requirementId),
     )
+    .leftJoin(
+      archivedVersions,
+      eq(requirements.id, archivedVersions.requirementId),
+    )
     .innerJoin(
       requirementVersions,
       and(
         eq(requirementVersions.requirementId, requirements.id),
-        // Use published version if available, otherwise latest
-        eq(
-          requirementVersions.versionNumber,
-          sql`COALESCE(${publishedVersions.maxPublishedVersion}, ${latestVersions.maxVersion})`,
-        ),
+        eq(requirementVersions.versionNumber, displayVersionNumberSql),
       ),
     )
     .leftJoin(
@@ -200,10 +279,6 @@ export async function listRequirements(
         requirementVersions.requirementTypeCategoryId,
         requirementTypeCategories.id,
       ),
-    )
-    .leftJoin(
-      requirementStatuses,
-      eq(requirementVersions.statusId, requirementStatuses.id),
     )
     .$dynamic()
 
@@ -228,8 +303,13 @@ export async function countRequirements(
   opts: ListRequirementsOptions = {},
 ) {
   const conditions = buildRequirementListConditions(opts)
-  const { latestVersions, publishedVersions } =
+  const { archivedVersions, latestVersions, publishedVersions } =
     buildRequirementVersionSubqueries(db)
+  const displayVersionNumberSql = buildDisplayVersionNumberSql({
+    archivedVersions,
+    latestVersions,
+    publishedVersions,
+  })
 
   let query = db
     .select({
@@ -244,14 +324,15 @@ export async function countRequirements(
       publishedVersions,
       eq(requirements.id, publishedVersions.requirementId),
     )
+    .leftJoin(
+      archivedVersions,
+      eq(requirements.id, archivedVersions.requirementId),
+    )
     .innerJoin(
       requirementVersions,
       and(
         eq(requirementVersions.requirementId, requirements.id),
-        eq(
-          requirementVersions.versionNumber,
-          sql`COALESCE(${publishedVersions.maxPublishedVersion}, ${latestVersions.maxVersion})`,
-        ),
+        eq(requirementVersions.versionNumber, displayVersionNumberSql),
       ),
     )
     .$dynamic()
@@ -608,11 +689,33 @@ export async function deleteDraftVersion(db: Database, requirementId: number) {
 export async function reactivateRequirement(
   db: Database,
   requirementId: number,
+  createdBy?: string,
 ) {
-  await db
-    .update(requirements)
-    .set({ isArchived: false })
-    .where(eq(requirements.id, requirementId))
+  const latestRows = await db
+    .select({
+      maxVersion: sql<number>`MAX(${requirementVersions.versionNumber})`,
+    })
+    .from(requirementVersions)
+    .where(eq(requirementVersions.requirementId, requirementId))
+
+  const currentMax = latestRows[0]?.maxVersion ?? 0
+
+  const latestVersion = await db.query.requirementVersions.findFirst({
+    where: and(
+      eq(requirementVersions.requirementId, requirementId),
+      eq(requirementVersions.versionNumber, currentMax),
+    ),
+  })
+
+  if (!latestVersion) {
+    throw notFoundError('No version found for requirement')
+  }
+
+  if (latestVersion.statusId !== STATUS_ARCHIVED) {
+    throw conflictError('Only fully archived requirements can be reactivated')
+  }
+
+  return restoreVersion(db, requirementId, latestVersion.id, createdBy)
 }
 
 export async function transitionStatus(
@@ -648,6 +751,17 @@ export async function transitionStatus(
 
   if (!currentVersion) {
     throw notFoundError('No version found for requirement')
+  }
+
+  const currentRequirement = await db.query.requirements.findFirst({
+    where: eq(requirements.id, requirementId),
+    columns: {
+      isArchived: true,
+    },
+  })
+
+  if (!currentRequirement) {
+    throw notFoundError('Requirement not found')
   }
 
   // Check transition is allowed via DB
@@ -693,9 +807,16 @@ export async function transitionStatus(
     updateFields.archivedAt = now
   }
 
+  const nextIsArchived =
+    newStatusId === STATUS_ARCHIVED
+      ? true
+      : newStatusId === STATUS_PUBLISHED
+        ? false
+        : currentRequirement.isArchived
+
   await db
     .update(requirements)
-    .set({ isArchived: newStatusId === STATUS_ARCHIVED })
+    .set({ isArchived: nextIsArchived })
     .where(eq(requirements.id, requirementId))
 
   await db
@@ -763,11 +884,6 @@ export async function restoreVersion(
       editedAt: now,
     })
     .returning()
-
-  await db
-    .update(requirements)
-    .set({ isArchived: false })
-    .where(eq(requirements.id, requirementId))
 
   // Copy references
   if (oldVersion.references.length > 0) {
