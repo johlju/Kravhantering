@@ -52,6 +52,8 @@ export default function Navigation() {
                     ? 'bg-primary-50 dark:bg-primary-950/80 text-primary-700 dark:text-primary-300 shadow-sm'
                     : 'text-secondary-700 dark:text-secondary-300 hover:bg-secondary-100 dark:hover:bg-secondary-800'
                 }`}
+                data-developer-mode-name="nav link"
+                data-developer-mode-value={t(item.labelKey)}
                 href={item.href}
                 key={item.href}
               >
