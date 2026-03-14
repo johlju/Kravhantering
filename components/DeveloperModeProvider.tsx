@@ -6,7 +6,6 @@ import {
   startTransition,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -15,9 +14,9 @@ import { usePathname } from '@/i18n/routing'
 import {
   buildDeveloperModeCopyText,
   type DeveloperModeTarget,
+  findDeveloperModeTargetAt,
   isEditableTarget,
   matchesDeveloperModeShortcut,
-  scanVisibleDeveloperModeTargets,
 } from '@/lib/developer-mode'
 
 async function copyTextToClipboard(text: string) {
@@ -57,14 +56,15 @@ export default function DeveloperModeProvider({
   const t = useTranslations('developerMode')
   const [mounted, setMounted] = useState(false)
   const [enabled, setEnabled] = useState(false)
-  const [targets, setTargets] = useState<DeveloperModeTarget[]>([])
-  const [activeTargetId, setActiveTargetId] = useState<string | null>(null)
+  const [hoveredTarget, setHoveredTarget] =
+    useState<DeveloperModeTarget | null>(null)
   const [toast, setToast] = useState<{
     message: string
     tone: 'error' | 'success'
   } | null>(null)
   const enabledRef = useRef(false)
   const mountedRef = useRef(false)
+  const lastElementRef = useRef<HTMLElement | null>(null)
   const scanFrameRef = useRef<number | null>(null)
   const toastTimeoutRef = useRef<number | null>(null)
 
@@ -94,7 +94,7 @@ export default function DeveloperModeProvider({
     [clearToastTimer],
   )
 
-  const scheduleScan = useCallback(() => {
+  const resolveTarget = useCallback(() => {
     if (!mountedRef.current || !enabledRef.current) {
       return
     }
@@ -105,24 +105,20 @@ export default function DeveloperModeProvider({
 
     scanFrameRef.current = window.requestAnimationFrame(() => {
       scanFrameRef.current = null
-      const nextTargets = scanVisibleDeveloperModeTargets(
-        document.body as unknown as ParentNode,
-      )
+      const el = lastElementRef.current
 
-      startTransition(() => {
-        setTargets(nextTargets)
-        setActiveTargetId(current =>
-          current && nextTargets.some(target => target.id === current)
-            ? current
-            : null,
-        )
-      })
+      if (!el || !el.isConnected) {
+        startTransition(() => setHoveredTarget(null))
+        return
+      }
+
+      const target = findDeveloperModeTargetAt(el)
+      startTransition(() => setHoveredTarget(target))
     })
   }, [])
 
   const handleCopy = useCallback(
     async (target: DeveloperModeTarget) => {
-      setActiveTargetId(target.id)
       const payload = buildDeveloperModeCopyText(target)
       const copied = await copyTextToClipboard(payload)
 
@@ -175,7 +171,7 @@ export default function DeveloperModeProvider({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [mounted])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname triggers a re-scan on client navigation
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname clears stale hover on client navigation
   useEffect(() => {
     if (!mounted) {
       return
@@ -183,22 +179,39 @@ export default function DeveloperModeProvider({
 
     if (!enabled) {
       clearScanFrame()
-      setTargets([])
-      setActiveTargetId(null)
-      return
     }
 
-    scheduleScan()
-  }, [clearScanFrame, enabled, mounted, pathname, scheduleScan])
+    lastElementRef.current = null
+    setHoveredTarget(null)
+  }, [clearScanFrame, enabled, mounted, pathname])
 
   useEffect(() => {
     if (!mounted || !enabled) {
       return
     }
 
-    const handleViewportChange = () => scheduleScan()
-    const observer = new MutationObserver(() => scheduleScan())
+    const handlePointerMove = (event: PointerEvent) => {
+      const el = event.target as HTMLElement | null
+      if (el?.closest('[data-developer-mode-overlay-root="true"]')) {
+        return
+      }
 
+      lastElementRef.current = el
+      resolveTarget()
+    }
+
+    const handlePointerLeave = () => {
+      lastElementRef.current = null
+      startTransition(() => setHoveredTarget(null))
+    }
+
+    const handleViewportChange = () => resolveTarget()
+    const observer = new MutationObserver(() => resolveTarget())
+
+    document.addEventListener('pointermove', handlePointerMove)
+    document.addEventListener('pointerleave', handlePointerLeave)
+    window.addEventListener('resize', handleViewportChange)
+    window.addEventListener('scroll', handleViewportChange, true)
     observer.observe(document.body, {
       attributes: true,
       characterData: true,
@@ -206,20 +219,14 @@ export default function DeveloperModeProvider({
       subtree: true,
     })
 
-    window.addEventListener('resize', handleViewportChange)
-    window.addEventListener('scroll', handleViewportChange, true)
-
     return () => {
-      observer.disconnect()
+      document.removeEventListener('pointermove', handlePointerMove)
+      document.removeEventListener('pointerleave', handlePointerLeave)
       window.removeEventListener('resize', handleViewportChange)
       window.removeEventListener('scroll', handleViewportChange, true)
+      observer.disconnect()
     }
-  }, [enabled, mounted, scheduleScan])
-
-  const activeTarget = useMemo(
-    () => targets.find(target => target.id === activeTargetId) ?? null,
-    [activeTargetId, targets],
-  )
+  }, [enabled, mounted, resolveTarget])
 
   return (
     <>
@@ -231,15 +238,15 @@ export default function DeveloperModeProvider({
             className="pointer-events-none fixed inset-0 z-[100]"
             data-developer-mode-overlay-root="true"
           >
-            {activeTarget ? (
+            {hoveredTarget ? (
               <div
                 aria-hidden="true"
                 className="fixed rounded-lg border-2 border-primary-500/80 bg-primary-500/8 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]"
                 style={{
-                  height: activeTarget.bounds.height,
-                  left: activeTarget.bounds.left,
-                  top: activeTarget.bounds.top,
-                  width: activeTarget.bounds.width,
+                  height: hoveredTarget.bounds.height,
+                  left: hoveredTarget.bounds.left,
+                  top: hoveredTarget.bounds.top,
+                  width: hoveredTarget.bounds.width,
                 }}
               />
             ) : null}
@@ -253,34 +260,22 @@ export default function DeveloperModeProvider({
               </div>
             ) : null}
 
-            {enabled
-              ? targets.map(target => (
-                  <button
-                    aria-label={target.payload}
-                    className="pointer-events-auto fixed max-w-48 truncate rounded-full border border-primary-300/80 bg-white/96 px-2.5 py-1 text-[11px] font-medium text-primary-900 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.65)] backdrop-blur-sm transition hover:-translate-y-px hover:z-10 hover:border-primary-500 hover:bg-primary-50 focus-visible:outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-primary-700/70 dark:bg-secondary-900/96 dark:text-primary-200 dark:hover:bg-secondary-800"
-                    data-developer-mode-overlay-chip="true"
-                    data-developer-mode-overlay-label={target.label}
-                    key={target.id}
-                    onBlur={() =>
-                      setActiveTargetId(current =>
-                        current === target.id ? null : current,
-                      )
-                    }
-                    onClick={() => void handleCopy(target)}
-                    onFocus={() => setActiveTargetId(target.id)}
-                    onMouseEnter={() => setActiveTargetId(target.id)}
-                    onMouseLeave={() =>
-                      setActiveTargetId(current =>
-                        current === target.id ? null : current,
-                      )
-                    }
-                    style={{ left: target.anchorLeft, top: target.anchorTop }}
-                    type="button"
-                  >
-                    {target.label}
-                  </button>
-                ))
-              : null}
+            {enabled && hoveredTarget ? (
+              <button
+                aria-label={hoveredTarget.payload}
+                className="pointer-events-auto fixed max-w-64 truncate rounded-full border border-primary-300/80 bg-white/96 px-2.5 py-1 text-[11px] font-medium text-primary-900 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.65)] backdrop-blur-sm transition hover:-translate-y-px hover:z-10 hover:border-primary-500 hover:bg-primary-50 focus-visible:outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-primary-700/70 dark:bg-secondary-900/96 dark:text-primary-200 dark:hover:bg-secondary-800"
+                data-developer-mode-overlay-chip="true"
+                data-developer-mode-overlay-label={hoveredTarget.label}
+                onClick={() => void handleCopy(hoveredTarget)}
+                style={{
+                  left: hoveredTarget.anchorLeft,
+                  top: hoveredTarget.anchorTop,
+                }}
+                type="button"
+              >
+                {hoveredTarget.label}
+              </button>
+            ) : null}
 
             {toast ? (
               <div

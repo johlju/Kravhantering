@@ -15,7 +15,7 @@ for (const viewport of viewports) {
       })
     })
 
-    test('labels key requirements catalog surfaces and copies a contextual reference', async ({
+    test('shows chip on hover and copies a contextual reference', async ({
       page,
     }) => {
       await page.goto('/sv/kravkatalog')
@@ -28,32 +28,18 @@ for (const viewport of viewports) {
       await page.getByRole('button', { exact: true, name: 'INT0001' }).click()
       await page.keyboard.press('Control+Alt+Shift+H')
 
-      await expect(
-        page.locator(
-          '[data-developer-mode-overlay-label="floating pill: columns"]',
-        ),
-      ).toBeVisible()
-      await expect(
-        page.locator(
-          '[data-developer-mode-overlay-label="column header: requirement id"]',
-        ),
-      ).toBeVisible()
-      await expect(
-        page.locator(
-          '[data-developer-mode-overlay-label="header chip: INT0001"]',
-        ),
-      ).toBeVisible()
+      await expect(page.getByTestId('developer-mode-badge')).toBeVisible()
 
-      const detailChip = page.locator(
-        '[data-developer-mode-overlay-label="inline detail pane: INT0001"]',
+      // Hover over the detail section and verify chip appears.
+      const detailSection = page.locator(
+        '[data-developer-mode-name="detail section"][data-developer-mode-value="requirement text"]',
       )
-      await expect(detailChip).toBeVisible()
+      await detailSection.hover()
+      const chip = page.locator('[data-developer-mode-overlay-chip="true"]')
+      await expect(chip).toBeVisible()
+      await expect(chip).toContainText('detail section: requirement text')
 
-      const detailSectionChip = page.locator(
-        '[data-developer-mode-overlay-label="detail section: requirement text"]',
-      )
-      await expect(detailSectionChip).toBeVisible()
-      await detailSectionChip.click()
+      await chip.click()
 
       await expect(
         page.locator('[data-developer-mode-toast="true"]'),
@@ -77,18 +63,14 @@ for (const viewport of viewports) {
         .evaluate(el => (el as HTMLElement).click())
       await expect(page).toHaveURL('/sv/admin')
 
+      // Badge survives navigation.
+      await expect(page.getByTestId('developer-mode-badge')).toBeVisible()
+
+      // Hover over an admin tab to verify chip appears on the new page.
+      const tab = page.locator('[data-developer-mode-name="edge tab"]').first()
+      await tab.hover()
       await expect(
-        page.locator(
-          '[data-developer-mode-overlay-label="edge tab: terminology"]',
-        ),
-      ).toBeVisible()
-      await expect(
-        page.locator('[data-developer-mode-overlay-label="edge tab: columns"]'),
-      ).toBeVisible()
-      await expect(
-        page.locator(
-          '[data-developer-mode-overlay-label="tab panel: terminology"]',
-        ),
+        page.locator('[data-developer-mode-overlay-chip="true"]'),
       ).toBeVisible()
     })
   })

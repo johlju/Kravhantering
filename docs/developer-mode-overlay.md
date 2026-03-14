@@ -11,8 +11,9 @@ UI elements so AI prompts can refer to them consistently.
   - Windows: `Ctrl+Alt+Shift+H`
   - Linux: `Ctrl+Alt+Shift+H`
 - `Mod` means `Command` on macOS and `Control` on Windows/Linux.
-- On macOS, Developer Mode listens to the physical `H` key even if `Option` changes
-  the typed character reported by the browser.
+- On macOS, Developer Mode listens to the physical `H` key
+  even if `Option` changes the typed character reported by
+  the browser.
 - The shortcut is ignored while focus is inside `input`, `textarea`, `select`,
   or `[contenteditable]`.
 - State is in-memory only. It survives client-side navigation but resets on a
@@ -38,7 +39,8 @@ Use these attributes on curated targets:
 - `data-developer-mode-name`: canonical English element name
 - `data-developer-mode-context`: optional English context string
 - `data-developer-mode-value`: optional English or runtime value
-- `data-developer-mode-priority`: optional numeric priority; higher values win collisions
+- `data-developer-mode-priority`: optional numeric priority;
+  higher values win collisions
 
 ## Seed Glossary
 

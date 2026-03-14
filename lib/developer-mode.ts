@@ -668,6 +668,36 @@ function shouldSkipCandidate(
   })
 }
 
+export function findDeveloperModeTargetAt(
+  element: HTMLElement,
+): DeveloperModeTarget | null {
+  const viewportHeight = Math.max(
+    window.innerHeight,
+    document.documentElement.clientHeight,
+  )
+  const viewportWidth = Math.max(
+    window.innerWidth,
+    document.documentElement.clientWidth,
+  )
+
+  for (
+    let current: HTMLElement | null = element;
+    current;
+    current = current.parentElement
+  ) {
+    if (current.closest('[data-developer-mode-overlay-root="true"]')) {
+      return null
+    }
+
+    const target = buildTarget(current, viewportHeight, viewportWidth)
+    if (target) {
+      return target
+    }
+  }
+
+  return null
+}
+
 export function scanVisibleDeveloperModeTargets(
   root: ParentNode = document.body as unknown as ParentNode,
 ) {

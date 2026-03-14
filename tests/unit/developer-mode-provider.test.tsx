@@ -49,6 +49,7 @@ function Fixture({ showExtra = false }: { showExtra?: boolean }) {
     <div>
       <div
         data-developer-mode-name="requirements table"
+        data-testid="dm-table"
         ref={createRectRef(40, 80)}
       />
       <input data-testid="editor" ref={createRectRef(40, 24, 220)} />
@@ -57,6 +58,7 @@ function Fixture({ showExtra = false }: { showExtra?: boolean }) {
           data-developer-mode-context="requirements table"
           data-developer-mode-name="floating pill"
           data-developer-mode-value="new requirement"
+          data-testid="dm-pill"
           ref={createRectRef(260, 80)}
         />
       ) : null}
@@ -68,6 +70,14 @@ async function flushDeveloperMode() {
   await act(async () => {
     vi.runOnlyPendingTimers()
     await Promise.resolve()
+  })
+}
+
+function hoverElement(element: HTMLElement) {
+  fireEvent.pointerMove(element, {
+    bubbles: true,
+    clientX: 50,
+    clientY: 90,
   })
 }
 
@@ -105,7 +115,7 @@ describe('DeveloperModeProvider', () => {
     vi.unstubAllGlobals()
   })
 
-  it('toggles with Mod+Alt+Shift+H, including the macOS Option-modified key case, and ignores editable fields', async () => {
+  it('toggles with Mod+Alt+Shift+H, shows chip on hover, and ignores editable fields', async () => {
     render(
       <DeveloperModeProvider>
         <Fixture />
@@ -114,6 +124,7 @@ describe('DeveloperModeProvider', () => {
 
     await flushDeveloperMode()
 
+    // Shortcut on an editable field is ignored.
     fireEvent.keyDown(screen.getByTestId('editor'), {
       altKey: true,
       code: 'KeyH',
@@ -123,8 +134,9 @@ describe('DeveloperModeProvider', () => {
     })
     await flushDeveloperMode()
 
-    expect(screen.queryByText('requirements table')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('developer-mode-badge')).not.toBeInTheDocument()
 
+    // Shortcut on document toggles developer mode on.
     fireEvent.keyDown(document, {
       altKey: true,
       code: 'KeyH',
@@ -132,10 +144,20 @@ describe('DeveloperModeProvider', () => {
       metaKey: true,
       shiftKey: true,
     })
+    await flushDeveloperMode()
+
+    expect(screen.getByTestId('developer-mode-badge')).toBeInTheDocument()
+
+    // No chip visible until hover.
+    expect(screen.queryByText('requirements table')).not.toBeInTheDocument()
+
+    // Hover over the target element to see its chip.
+    hoverElement(screen.getByTestId('dm-table'))
     await flushDeveloperMode()
 
     expect(screen.getByText('requirements table')).toBeInTheDocument()
 
+    // Toggle off clears chip and badge.
     fireEvent.keyDown(document, {
       altKey: true,
       code: 'KeyH',
@@ -146,9 +168,10 @@ describe('DeveloperModeProvider', () => {
     await flushDeveloperMode()
 
     expect(screen.queryByText('requirements table')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('developer-mode-badge')).not.toBeInTheDocument()
   })
 
-  it('rescans on DOM updates and copies contextual references', async () => {
+  it('shows chip on hover of new elements and copies contextual references', async () => {
     const { rerender } = render(
       <DeveloperModeProvider>
         <Fixture />
@@ -165,7 +188,7 @@ describe('DeveloperModeProvider', () => {
     })
     await flushDeveloperMode()
 
-    expect(screen.getByText('requirements table')).toBeInTheDocument()
+    expect(screen.getByTestId('developer-mode-badge')).toBeInTheDocument()
 
     await act(async () => {
       rerender(
@@ -177,10 +200,15 @@ describe('DeveloperModeProvider', () => {
     })
     await flushDeveloperMode()
 
-    const extraChip = screen.getByText('floating pill: new requirement')
+    // Hover over the new element.
+    hoverElement(screen.getByTestId('dm-pill'))
+    await flushDeveloperMode()
+
+    const chip = screen.getByText('floating pill: new requirement')
+    expect(chip).toBeInTheDocument()
 
     await act(async () => {
-      fireEvent.click(extraChip)
+      fireEvent.click(chip)
       vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
