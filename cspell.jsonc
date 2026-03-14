@@ -193,7 +193,10 @@
     "pointercancel",
     "Kravtexter",
     "Kravtexterna",
-    "viewports"
+    "viewports",
+    "contenteditable",
+    "labelledby",
+    "rescans"
   ],
   "flagWords": [],
   "ignorePaths": [

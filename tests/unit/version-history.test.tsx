@@ -304,12 +304,16 @@ describe('VersionHistory', () => {
       />,
     )
 
-    expect(container.querySelector('[data-developer-mode-name="version history"]')).toHaveAttribute(
+    expect(
+      container.querySelector('[data-developer-mode-name="version history"]'),
+    ).toHaveAttribute(
       'data-developer-mode-context',
       'requirements table > inline detail pane: REQ-123',
     )
     expect(
-      container.querySelector('[data-developer-mode-name="version pill"][data-developer-mode-value="v10"]'),
+      container.querySelector(
+        '[data-developer-mode-name="version pill"][data-developer-mode-value="v10"]',
+      ),
     ).toBeInTheDocument()
     expect(
       container.querySelector(

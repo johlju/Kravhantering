@@ -20,8 +20,8 @@ interface Version {
 }
 
 interface VersionHistoryProps {
-  developerModeContext?: string
   archivedStatusId?: number
+  developerModeContext?: string
   onVersionSelect: (versionNumber: number) => void
   selectedVersionNumber: number
   versions: Version[]
@@ -273,7 +273,9 @@ const VersionHistory = forwardRef<HTMLDivElement, VersionHistoryProps>(
                 data-developer-mode-context={developerModeContext}
                 data-developer-mode-name="version pill"
                 data-developer-mode-priority="350"
-                data-developer-mode-value={getVersionPillDeveloperModeValue(v.versionNumber)}
+                data-developer-mode-value={getVersionPillDeveloperModeValue(
+                  v.versionNumber,
+                )}
                 data-version-number={v.versionNumber}
                 key={v.id}
                 onClick={() => onVersionSelect(v.versionNumber)}

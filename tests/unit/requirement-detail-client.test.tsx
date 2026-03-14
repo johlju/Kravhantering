@@ -94,7 +94,10 @@ vi.mock('@/components/StatusStepper', () => ({
     currentStatusId: number
     statuses: { id: number }[]
   }) => (
-    <div data-developer-mode-context={developerModeContext} data-testid="status-stepper">
+    <div
+      data-developer-mode-context={developerModeContext}
+      data-testid="status-stepper"
+    >
       {`status:${currentStatusId};count:${statuses.length}`}
     </div>
   ),
@@ -117,7 +120,11 @@ vi.mock('@/components/VersionHistory', () => {
       ref: ForwardedRef<HTMLDivElement>,
     ) {
       return (
-        <div data-developer-mode-context={developerModeContext} data-testid="version-history" ref={ref}>
+        <div
+          data-developer-mode-context={developerModeContext}
+          data-testid="version-history"
+          ref={ref}
+        >
           {versions.map(version => (
             <button
               data-version-number={version.versionNumber}
@@ -436,7 +443,9 @@ describe('RequirementDetailClient', () => {
         .closest('[data-developer-mode-name="detail section"]'),
     ).toHaveAttribute('data-developer-mode-value', 'acceptance criteria')
     expect(
-      screen.getByText('API spec').closest('[data-developer-mode-name="reference item"]'),
+      screen
+        .getByText('API spec')
+        .closest('[data-developer-mode-name="reference item"]'),
     ).toHaveAttribute(
       'data-developer-mode-context',
       `${detailContext} > detail section: references`,

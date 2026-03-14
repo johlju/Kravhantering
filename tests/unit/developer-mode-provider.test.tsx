@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { type RefCallback } from 'react'
+import type { RefCallback } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DeveloperModeProvider from '@/components/DeveloperModeProvider'
 
@@ -47,7 +47,10 @@ function createRectRef(
 function Fixture({ showExtra = false }: { showExtra?: boolean }) {
   return (
     <div>
-      <div data-developer-mode-name="requirements table" ref={createRectRef(40, 80)} />
+      <div
+        data-developer-mode-name="requirements table"
+        ref={createRectRef(40, 80)}
+      />
       <input data-testid="editor" ref={createRectRef(40, 24, 220)} />
       {showExtra ? (
         <div
@@ -186,7 +189,9 @@ describe('DeveloperModeProvider', () => {
       'requirements table > floating pill: new requirement',
     )
     expect(
-      screen.getByText('Copied: requirements table > floating pill: new requirement'),
+      screen.getByText(
+        'Copied: requirements table > floating pill: new requirement',
+      ),
     ).toBeInTheDocument()
 
     await flushDeveloperMode()

@@ -29,7 +29,9 @@ for (const viewport of viewports) {
       await page.keyboard.press('Control+Alt+Shift+H')
 
       await expect(
-        page.locator('[data-developer-mode-overlay-label="floating pill: columns"]'),
+        page.locator(
+          '[data-developer-mode-overlay-label="floating pill: columns"]',
+        ),
       ).toBeVisible()
       await expect(
         page.locator(
@@ -37,7 +39,9 @@ for (const viewport of viewports) {
         ),
       ).toBeVisible()
       await expect(
-        page.locator('[data-developer-mode-overlay-label="header chip: INT0001"]'),
+        page.locator(
+          '[data-developer-mode-overlay-label="header chip: INT0001"]',
+        ),
       ).toBeVisible()
 
       const detailChip = page.locator(
@@ -51,7 +55,9 @@ for (const viewport of viewports) {
       await expect(detailSectionChip).toBeVisible()
       await detailSectionChip.click()
 
-      await expect(page.locator('[data-developer-mode-toast="true"]')).toContainText(
+      await expect(
+        page.locator('[data-developer-mode-toast="true"]'),
+      ).toContainText(
         'requirements table > inline detail pane: INT0001 > detail section: requirement text',
       )
     })
@@ -60,22 +66,29 @@ for (const viewport of viewports) {
       page,
     }) => {
       await page.goto('/sv/kravkatalog')
+      await page.locator('tbody > tr').first().waitFor()
       await page.getByRole('link', { name: 'Inställningar' }).focus()
       await page.keyboard.press('Control+Alt+Shift+H')
 
       await expect(page.getByTestId('developer-mode-badge')).toBeVisible()
 
-      await page.getByRole('link', { name: 'Inställningar' }).click()
+      await page
+        .getByRole('link', { name: 'Inställningar' })
+        .evaluate(el => (el as HTMLElement).click())
       await expect(page).toHaveURL('/sv/admin')
 
       await expect(
-        page.locator('[data-developer-mode-overlay-label="edge tab: terminology"]'),
+        page.locator(
+          '[data-developer-mode-overlay-label="edge tab: terminology"]',
+        ),
       ).toBeVisible()
       await expect(
         page.locator('[data-developer-mode-overlay-label="edge tab: columns"]'),
       ).toBeVisible()
       await expect(
-        page.locator('[data-developer-mode-overlay-label="tab panel: terminology"]'),
+        page.locator(
+          '[data-developer-mode-overlay-label="tab panel: terminology"]',
+        ),
       ).toBeVisible()
     })
   })

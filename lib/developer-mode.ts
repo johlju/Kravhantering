@@ -82,7 +82,9 @@ function toNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-export function normalizeDeveloperModeText(value: string | null | undefined): string | undefined {
+export function normalizeDeveloperModeText(
+  value: string | null | undefined,
+): string | undefined {
   if (!value) {
     return undefined
   }
@@ -138,10 +140,10 @@ export function matchesDeveloperModeShortcut(
   )
 }
 
-export function getRequirementColumnDeveloperModeLabel(columnId: string): string {
-  return (
-    REQUIREMENT_COLUMN_LABELS[columnId] ?? humanizeIdentifier(columnId)
-  )
+export function getRequirementColumnDeveloperModeLabel(
+  columnId: string,
+): string {
+  return REQUIREMENT_COLUMN_LABELS[columnId] ?? humanizeIdentifier(columnId)
 }
 
 export function isEditableTarget(target: EventTarget | null) {
@@ -166,9 +168,7 @@ function humanizeIdentifier(value: string) {
 }
 
 function readNodeText(element: HTMLElement) {
-  return normalizeDeveloperModeText(
-    element.innerText ?? element.textContent,
-  )
+  return normalizeDeveloperModeText(element.innerText ?? element.textContent)
 }
 
 function readTitleOrLabel(element: HTMLElement) {
@@ -180,14 +180,18 @@ function readTitleOrLabel(element: HTMLElement) {
 }
 
 function getLabelledByText(element: HTMLElement) {
-  const labelIds = normalizeDeveloperModeText(element.getAttribute('aria-labelledby'))
+  const labelIds = normalizeDeveloperModeText(
+    element.getAttribute('aria-labelledby'),
+  )
   if (!labelIds) {
     return undefined
   }
 
   const labels = labelIds
     .split(' ')
-    .map(id => normalizeDeveloperModeText(document.getElementById(id)?.textContent))
+    .map(id =>
+      normalizeDeveloperModeText(document.getElementById(id)?.textContent),
+    )
     .filter((label): label is string => Boolean(label))
 
   return labels.length > 0 ? labels.join(' ') : undefined
@@ -214,7 +218,9 @@ function getTabContext(element: HTMLElement) {
 }
 
 function getTabPanelContext(element: HTMLElement) {
-  const labelledBy = normalizeDeveloperModeText(element.getAttribute('aria-labelledby'))
+  const labelledBy = normalizeDeveloperModeText(
+    element.getAttribute('aria-labelledby'),
+  )
   if (!labelledBy) {
     return undefined
   }
@@ -240,7 +246,9 @@ function getFallbackContextFromAncestors(element: HTMLElement) {
         continue
       }
 
-      const ancestorContext = normalizeDeveloperModeText(current.dataset.developerModeContext)
+      const ancestorContext = normalizeDeveloperModeText(
+        current.dataset.developerModeContext,
+      )
       const label = buildDeveloperModeChipLabel({
         name,
         value: normalizeDeveloperModeText(current.dataset.developerModeValue),
@@ -259,7 +267,8 @@ function getFallbackContextFromAncestors(element: HTMLElement) {
 
     if (current.tagName === 'NAV') {
       return (
-        normalizeDeveloperModeText(current.getAttribute('aria-label')) ?? 'navigation'
+        normalizeDeveloperModeText(current.getAttribute('aria-label')) ??
+        'navigation'
       )
     }
   }
@@ -267,7 +276,9 @@ function getFallbackContextFromAncestors(element: HTMLElement) {
   return undefined
 }
 
-function buildExplicitDescriptor(element: HTMLElement): DeveloperModeDescriptor | null {
+function buildExplicitDescriptor(
+  element: HTMLElement,
+): DeveloperModeDescriptor | null {
   const name = normalizeDeveloperModeText(element.dataset.developerModeName)
   if (!name) {
     return null
@@ -278,7 +289,10 @@ function buildExplicitDescriptor(element: HTMLElement): DeveloperModeDescriptor 
       normalizeDeveloperModeText(element.dataset.developerModeContext) ??
       getFallbackContextFromAncestors(element),
     name,
-    priority: toNumber(element.dataset.developerModePriority, EXPLICIT_PRIORITY),
+    priority: toNumber(
+      element.dataset.developerModePriority,
+      EXPLICIT_PRIORITY,
+    ),
     value: normalizeDeveloperModeText(element.dataset.developerModeValue),
   }
 }
@@ -331,7 +345,9 @@ function buildKnownHookDescriptor(
       context: 'requirements table',
       name: 'column header',
       priority: KNOWN_HOOK_PRIORITY,
-      value: columnId ? getRequirementColumnDeveloperModeLabel(columnId) : undefined,
+      value: columnId
+        ? getRequirementColumnDeveloperModeLabel(columnId)
+        : undefined,
     }
   }
 
@@ -346,7 +362,9 @@ function buildKnownHookDescriptor(
   return null
 }
 
-function buildRoleDescriptor(element: HTMLElement): DeveloperModeDescriptor | null {
+function buildRoleDescriptor(
+  element: HTMLElement,
+): DeveloperModeDescriptor | null {
   const role = normalizeDeveloperModeText(element.getAttribute('role'))
   switch (role) {
     case 'alertdialog':
@@ -382,8 +400,12 @@ function buildRoleDescriptor(element: HTMLElement): DeveloperModeDescriptor | nu
   }
 }
 
-function buildLabelDescriptor(element: HTMLElement): DeveloperModeDescriptor | null {
-  const ariaLabel = normalizeDeveloperModeText(element.getAttribute('aria-label'))
+function buildLabelDescriptor(
+  element: HTMLElement,
+): DeveloperModeDescriptor | null {
+  const ariaLabel = normalizeDeveloperModeText(
+    element.getAttribute('aria-label'),
+  )
   if (!ariaLabel) {
     return null
   }
@@ -414,7 +436,9 @@ function buildLabelDescriptor(element: HTMLElement): DeveloperModeDescriptor | n
   }
 }
 
-function buildGenericDescriptor(element: HTMLElement): DeveloperModeDescriptor | null {
+function buildGenericDescriptor(
+  element: HTMLElement,
+): DeveloperModeDescriptor | null {
   const text = readNodeText(element)
   const tagName = element.tagName
 
@@ -486,7 +510,9 @@ function buildGenericDescriptor(element: HTMLElement): DeveloperModeDescriptor |
   return null
 }
 
-function buildTestIdDescriptor(element: HTMLElement): DeveloperModeDescriptor | null {
+function buildTestIdDescriptor(
+  element: HTMLElement,
+): DeveloperModeDescriptor | null {
   const testId = normalizeDeveloperModeText(element.dataset.testid)
   if (!testId) {
     return null
@@ -618,7 +644,10 @@ function buildTarget(
   }
 }
 
-function shouldSkipCandidate(candidate: DeveloperModeTarget, accepted: DeveloperModeTarget[]) {
+function shouldSkipCandidate(
+  candidate: DeveloperModeTarget,
+  accepted: DeveloperModeTarget[],
+) {
   return accepted.some(existing => {
     const samePayload = existing.payload === candidate.payload
     const nearSameBounds =
@@ -639,7 +668,9 @@ function shouldSkipCandidate(candidate: DeveloperModeTarget, accepted: Developer
   })
 }
 
-export function scanVisibleDeveloperModeTargets(root: ParentNode = document.body as unknown as ParentNode) {
+export function scanVisibleDeveloperModeTargets(
+  root: ParentNode = document.body as unknown as ParentNode,
+) {
   const viewportHeight = Math.max(
     window.innerHeight,
     document.documentElement.clientHeight,

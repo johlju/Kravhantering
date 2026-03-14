@@ -1920,17 +1920,28 @@ describe('RequirementsTable', () => {
     const header = container
       .querySelector('[data-requirement-header-label="uniqueId"]')
       ?.closest('th')
-    const chip = container.querySelector('[data-developer-mode-name="header chip"]')
+    const chip = container.querySelector(
+      '[data-developer-mode-name="header chip"]',
+    )
     const row = container.querySelector('tbody tr')
     const detailPane = container.querySelector(
       '[data-expanded-detail-cell="true"]',
     )
 
-    expect(scrollContainer).toHaveAttribute('data-developer-mode-name', 'table space')
-    expect(columnsPill).toHaveAttribute('data-developer-mode-name', 'floating pill')
+    expect(scrollContainer).toHaveAttribute(
+      'data-developer-mode-name',
+      'table space',
+    )
+    expect(columnsPill).toHaveAttribute(
+      'data-developer-mode-name',
+      'floating pill',
+    )
     expect(columnsPill).toHaveAttribute('data-developer-mode-value', 'columns')
     expect(header).toHaveAttribute('data-developer-mode-name', 'column header')
-    expect(header).toHaveAttribute('data-developer-mode-value', 'requirement id')
+    expect(header).toHaveAttribute(
+      'data-developer-mode-value',
+      'requirement id',
+    )
     expect(chip).toHaveAttribute(
       'data-developer-mode-context',
       'requirements table > column header: requirement id',
@@ -1938,7 +1949,10 @@ describe('RequirementsTable', () => {
     expect(chip).toHaveAttribute('data-developer-mode-name', 'header chip')
     expect(row).toHaveAttribute('data-developer-mode-name', 'table row')
     expect(row).toHaveAttribute('data-developer-mode-value', 'INT0001')
-    expect(detailPane).toHaveAttribute('data-developer-mode-name', 'inline detail pane')
+    expect(detailPane).toHaveAttribute(
+      'data-developer-mode-name',
+      'inline detail pane',
+    )
     expect(detailPane).toHaveAttribute('data-developer-mode-value', 'INT0001')
   })
 

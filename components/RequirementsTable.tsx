@@ -93,9 +93,9 @@ export interface FloatingActionMenuItem {
 }
 
 export interface FloatingActionItem {
+  ariaLabel: string
   developerModeContext?: string
   developerModeValue?: string
-  ariaLabel: string
   href?: string
   icon: ReactNode
   id: string
@@ -953,12 +953,12 @@ function ColumnsPopover({
     <button
       aria-label={tc('columns')}
       className={getFloatingPillClassName()}
+      data-column-picker-shell="true"
+      data-column-picker-trigger="true"
       data-developer-mode-context="requirements table"
       data-developer-mode-name="floating pill"
       data-developer-mode-priority="360"
       data-developer-mode-value="columns"
-      data-column-picker-shell="true"
-      data-column-picker-trigger="true"
       data-floating-action-id="columns"
       data-floating-action-item="true"
       data-floating-action-variant="default"
@@ -1041,11 +1041,11 @@ function ColumnsPopover({
         createPortal(
           <div
             className="fixed z-50 min-w-56 overflow-y-auto rounded-xl border bg-white p-2 shadow-lg dark:bg-secondary-800"
+            data-column-picker-popover="true"
             data-developer-mode-context="requirements table"
             data-developer-mode-name="column picker"
             data-developer-mode-priority="350"
             data-developer-mode-value="columns"
-            data-column-picker-popover="true"
             ref={dropRef}
             style={{
               left: Math.max(pos.left, 8),

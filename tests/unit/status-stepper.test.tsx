@@ -61,24 +61,29 @@ describe('StatusStepper', () => {
     expect(screen.getByText('Utkast')).toBeInTheDocument()
   })
 
-
   it('exposes developer-mode metadata for the stepper and each status step', () => {
     const { container } = render(
       <StatusStepper
-        developerModeContext="requirements table > inline detail pane: REQ-123"
         currentStatusId={3}
+        developerModeContext="requirements table > inline detail pane: REQ-123"
       />,
     )
 
-    expect(container.querySelector('[data-developer-mode-name="status stepper"]')).toHaveAttribute(
+    expect(
+      container.querySelector('[data-developer-mode-name="status stepper"]'),
+    ).toHaveAttribute(
       'data-developer-mode-context',
       'requirements table > inline detail pane: REQ-123',
     )
     expect(
-      container.querySelector('[data-developer-mode-name="status step"][data-developer-mode-value="draft"]'),
+      container.querySelector(
+        '[data-developer-mode-name="status step"][data-developer-mode-value="draft"]',
+      ),
     ).toBeInTheDocument()
     expect(
-      container.querySelector('[data-developer-mode-name="status step"][data-developer-mode-value="published"]'),
+      container.querySelector(
+        '[data-developer-mode-name="status step"][data-developer-mode-value="published"]',
+      ),
     ).toBeInTheDocument()
   })
 })

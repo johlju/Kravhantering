@@ -45,8 +45,8 @@ function sliderClipPath(isFirst: boolean) {
 }
 
 interface StatusStepperProps {
-  developerModeContext?: string
   currentStatusId: number
+  developerModeContext?: string
   statuses?: StatusStep[]
 }
 

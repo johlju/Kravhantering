@@ -340,7 +340,9 @@ export default function AdminClient({
                   data-developer-mode-context="admin center"
                   data-developer-mode-name="edge tab"
                   data-developer-mode-priority="360"
-                  data-developer-mode-value={ADMIN_TAB_DEVELOPER_MODE_VALUES[tab.id]}
+                  data-developer-mode-value={
+                    ADMIN_TAB_DEVELOPER_MODE_VALUES[tab.id]
+                  }
                   id={`${tab.id}-tab`}
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}

@@ -1,20 +1,20 @@
 'use client'
 
-import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import {
-  startTransition,
   type ReactNode,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { usePathname } from '@/i18n/routing'
 import {
-  type DeveloperModeTarget,
   buildDeveloperModeCopyText,
+  type DeveloperModeTarget,
   isEditableTarget,
   matchesDeveloperModeShortcut,
   scanVisibleDeveloperModeTargets,
@@ -105,7 +105,9 @@ export default function DeveloperModeProvider({
 
     scanFrameRef.current = window.requestAnimationFrame(() => {
       scanFrameRef.current = null
-      const nextTargets = scanVisibleDeveloperModeTargets(document.body as unknown as ParentNode)
+      const nextTargets = scanVisibleDeveloperModeTargets(
+        document.body as unknown as ParentNode,
+      )
 
       startTransition(() => {
         setTargets(nextTargets)
@@ -173,6 +175,7 @@ export default function DeveloperModeProvider({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [mounted])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname triggers a re-scan on client navigation
   useEffect(() => {
     if (!mounted) {
       return
@@ -254,7 +257,7 @@ export default function DeveloperModeProvider({
               ? targets.map(target => (
                   <button
                     aria-label={target.payload}
-                    className="pointer-events-auto fixed min-h-11 min-w-11 max-w-48 truncate rounded-full border border-primary-300/80 bg-white/96 px-2.5 py-1 text-[11px] font-medium text-primary-900 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.65)] backdrop-blur-sm transition hover:-translate-y-px hover:z-10 hover:border-primary-500 hover:bg-primary-50 focus-visible:outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-primary-700/70 dark:bg-secondary-900/96 dark:text-primary-200 dark:hover:bg-secondary-800"
+                    className="pointer-events-auto fixed max-w-48 truncate rounded-full border border-primary-300/80 bg-white/96 px-2.5 py-1 text-[11px] font-medium text-primary-900 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.65)] backdrop-blur-sm transition hover:-translate-y-px hover:z-10 hover:border-primary-500 hover:bg-primary-50 focus-visible:outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-primary-700/70 dark:bg-secondary-900/96 dark:text-primary-200 dark:hover:bg-secondary-800"
                     data-developer-mode-overlay-chip="true"
                     data-developer-mode-overlay-label={target.label}
                     key={target.id}

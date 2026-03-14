@@ -418,7 +418,9 @@ export default function RequirementDetailClient({
       ? `${detailContext} > detail section: ${sectionName}`
       : undefined
 
-  const getTransitionActionDeveloperModeValue = (transition: TransitionTarget) => {
+  const getTransitionActionDeveloperModeValue = (
+    transition: TransitionTarget,
+  ) => {
     switch (transition.id) {
       case STATUS_DRAFT:
         return 'move to draft'
@@ -618,8 +620,8 @@ export default function RequirementDetailClient({
               </div>
             )}
           <StatusStepper
-            developerModeContext={detailContext}
             currentStatusId={currentStatusId}
+            developerModeContext={detailContext}
             statuses={statuses}
           />
         </div>
@@ -677,7 +679,9 @@ export default function RequirementDetailClient({
                         {selectedVersion.references.map(ref => (
                           <li
                             className="text-sm"
-                            data-developer-mode-context={buildDetailSectionContext('references')}
+                            data-developer-mode-context={buildDetailSectionContext(
+                              'references',
+                            )}
                             data-developer-mode-name="reference item"
                             data-developer-mode-priority="360"
                             data-developer-mode-value={ref.name}
@@ -716,7 +720,9 @@ export default function RequirementDetailClient({
                         {selectedVersion.versionScenarios.map(vs => (
                           <li
                             className="text-xs bg-secondary-100 dark:bg-secondary-800 px-2.5 py-1 rounded-full font-medium"
-                            data-developer-mode-context={buildDetailSectionContext('scenarios')}
+                            data-developer-mode-context={buildDetailSectionContext(
+                              'scenarios',
+                            )}
                             data-developer-mode-name="scenario chip"
                             data-developer-mode-priority="360"
                             data-developer-mode-value={vs.scenario.nameEn}
@@ -807,7 +813,9 @@ export default function RequirementDetailClient({
                             data-developer-mode-context={detailContext}
                             data-developer-mode-name="detail action"
                             data-developer-mode-priority="360"
-                            data-developer-mode-value={getTransitionActionDeveloperModeValue(tr)}
+                            data-developer-mode-value={getTransitionActionDeveloperModeValue(
+                              tr,
+                            )}
                             disabled={isTransitioning}
                             key={tr.id}
                             onClick={e =>

@@ -135,7 +135,9 @@ describe('developer mode utilities', () => {
       width: 120,
     })
 
-    const targets = scanVisibleDeveloperModeTargets(document.body as unknown as ParentNode)
+    const targets = scanVisibleDeveloperModeTargets(
+      document.body as unknown as ParentNode,
+    )
     const payloads = targets.map(target => target.payload)
 
     expect(payloads).toContain('requirements table')
