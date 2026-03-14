@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { NextIntlClientProvider } from 'next-intl'
 import { getMessages, getTranslations } from 'next-intl/server'
+import DeveloperModeProvider from '@/components/DeveloperModeProvider'
 import { ConfirmModalProvider } from '@/components/ConfirmModal'
 import Footer from '@/components/Footer'
 import Navigation from '@/components/Navigation'
@@ -54,13 +55,15 @@ export default async function LocaleLayout({
 
   return (
     <NextIntlClientProvider messages={messages}>
-      <ConfirmModalProvider>
-        <div className="flex flex-col min-h-screen">
-          <Navigation />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </div>
-      </ConfirmModalProvider>
+      <DeveloperModeProvider>
+        <ConfirmModalProvider>
+          <div className="flex flex-col min-h-screen">
+            <Navigation />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </div>
+        </ConfirmModalProvider>
+      </DeveloperModeProvider>
     </NextIntlClientProvider>
   )
 }

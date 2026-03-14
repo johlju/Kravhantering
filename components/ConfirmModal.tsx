@@ -249,6 +249,9 @@ function ConfirmModalInner({
             className="fixed z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl bg-white dark:bg-secondary-900 shadow-2xl"
             exit={{ opacity: 0, scale: 0.95 }}
             initial={{ opacity: 0, scale: 0.95 }}
+            data-developer-mode-name="dialog"
+            data-developer-mode-priority="420"
+            data-developer-mode-value={modal.title ?? undefined}
             onKeyDown={e => {
               if (e.key === 'Escape') {
                 e.stopPropagation()

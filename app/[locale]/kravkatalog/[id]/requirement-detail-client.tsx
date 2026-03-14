@@ -406,6 +406,32 @@ export default function RequirementDetailClient({
       ? selectedVersion?.statusNameSv
       : selectedVersion?.statusNameEn) ?? ''
   const currentStatusColor = selectedVersion?.statusColor ?? null
+  const detailContext =
+    req == null
+      ? undefined
+      : inline
+        ? `requirements table > inline detail pane: ${req.uniqueId}`
+        : `requirement detail: ${req.uniqueId}`
+
+  const buildDetailSectionContext = (sectionName: string) =>
+    detailContext
+      ? `${detailContext} > detail section: ${sectionName}`
+      : undefined
+
+  const getTransitionActionDeveloperModeValue = (transition: TransitionTarget) => {
+    switch (transition.id) {
+      case STATUS_DRAFT:
+        return 'move to draft'
+      case STATUS_REVIEW:
+        return 'move to review'
+      case STATUS_PUBLISHED:
+        return 'publish'
+      case STATUS_ARCHIVED:
+        return 'archive'
+      default:
+        return `move to ${transition.nameEn.toLowerCase()}`
+    }
+  }
 
   const handleArchive = async (e?: React.MouseEvent<HTMLButtonElement>) => {
     const anchorEl = e?.currentTarget
@@ -592,6 +618,7 @@ export default function RequirementDetailClient({
               </div>
             )}
           <StatusStepper
+            developerModeContext={detailContext}
             currentStatusId={currentStatusId}
             statuses={statuses}
           />
@@ -607,7 +634,12 @@ export default function RequirementDetailClient({
                 className="relative flex-1 min-w-0 bg-white/80 dark:bg-secondary-900/60 backdrop-blur-sm rounded-2xl border shadow-sm p-6 space-y-5"
                 ref={cardRef}
               >
-                <div>
+                <div
+                  data-developer-mode-context={detailContext}
+                  data-developer-mode-name="detail section"
+                  data-developer-mode-priority="350"
+                  data-developer-mode-value="requirement text"
+                >
                   <h3 className="text-sm font-medium text-secondary-600 dark:text-secondary-400 mb-1">
                     {t('description')}
                   </h3>
@@ -616,7 +648,12 @@ export default function RequirementDetailClient({
                   </p>
                 </div>
 
-                <div>
+                <div
+                  data-developer-mode-context={detailContext}
+                  data-developer-mode-name="detail section"
+                  data-developer-mode-priority="350"
+                  data-developer-mode-value="acceptance criteria"
+                >
                   <h3 className="text-sm font-medium text-secondary-600 dark:text-secondary-400 mb-1">
                     {t('acceptanceCriteria')}
                   </h3>
@@ -627,13 +664,25 @@ export default function RequirementDetailClient({
 
                 {selectedVersion?.references &&
                   selectedVersion.references.length > 0 && (
-                    <div>
+                    <div
+                      data-developer-mode-context={detailContext}
+                      data-developer-mode-name="detail section"
+                      data-developer-mode-priority="350"
+                      data-developer-mode-value="references"
+                    >
                       <h3 className="text-sm font-medium text-secondary-600 dark:text-secondary-400 mb-1">
                         {t('reference')}
                       </h3>
                       <ul className="space-y-1">
                         {selectedVersion.references.map(ref => (
-                          <li className="text-sm" key={ref.id}>
+                          <li
+                            className="text-sm"
+                            data-developer-mode-context={buildDetailSectionContext('references')}
+                            data-developer-mode-name="reference item"
+                            data-developer-mode-priority="360"
+                            data-developer-mode-value={ref.name}
+                            key={ref.id}
+                          >
                             {ref.uri ? (
                               <a
                                 className="text-primary-700 dark:text-primary-300 hover:underline"
@@ -654,7 +703,12 @@ export default function RequirementDetailClient({
 
                 {selectedVersion?.versionScenarios &&
                   selectedVersion.versionScenarios.length > 0 && (
-                    <div>
+                    <div
+                      data-developer-mode-context={detailContext}
+                      data-developer-mode-name="detail section"
+                      data-developer-mode-priority="350"
+                      data-developer-mode-value="scenarios"
+                    >
                       <h3 className="text-sm font-medium text-secondary-600 dark:text-secondary-400 mb-1">
                         {t('scenario')}
                       </h3>
@@ -662,6 +716,10 @@ export default function RequirementDetailClient({
                         {selectedVersion.versionScenarios.map(vs => (
                           <li
                             className="text-xs bg-secondary-100 dark:bg-secondary-800 px-2.5 py-1 rounded-full font-medium"
+                            data-developer-mode-context={buildDetailSectionContext('scenarios')}
+                            data-developer-mode-name="scenario chip"
+                            data-developer-mode-priority="360"
+                            data-developer-mode-value={vs.scenario.nameEn}
                             key={vs.scenario.id}
                           >
                             {localName(vs.scenario)}
@@ -707,6 +765,10 @@ export default function RequirementDetailClient({
                   <>
                     <button
                       className="btn-secondary inline-flex items-center gap-1.5 w-full justify-center"
+                      data-developer-mode-context={detailContext}
+                      data-developer-mode-name="detail action"
+                      data-developer-mode-priority="360"
+                      data-developer-mode-value="restore version"
                       onClick={e =>
                         handleRestore(
                           selectedVersion?.versionNumber ?? 0,
@@ -720,6 +782,10 @@ export default function RequirementDetailClient({
                     </button>
                     <button
                       className="btn-primary inline-flex items-center gap-1.5 w-full justify-center"
+                      data-developer-mode-context={detailContext}
+                      data-developer-mode-name="detail action"
+                      data-developer-mode-priority="360"
+                      data-developer-mode-value="back to latest"
                       onClick={() =>
                         setSelectedVersionNumber(
                           displayVersion?.versionNumber ?? 1,
@@ -738,6 +804,10 @@ export default function RequirementDetailClient({
                         .map(tr => (
                           <button
                             className="btn-secondary inline-flex items-center gap-1.5 w-full justify-center"
+                            data-developer-mode-context={detailContext}
+                            data-developer-mode-name="detail action"
+                            data-developer-mode-priority="360"
+                            data-developer-mode-value={getTransitionActionDeveloperModeValue(tr)}
                             disabled={isTransitioning}
                             key={tr.id}
                             onClick={e =>
@@ -752,6 +822,10 @@ export default function RequirementDetailClient({
                     {currentStatusId !== STATUS_REVIEW && (
                       <Link
                         className="btn-primary inline-flex items-center gap-1.5 w-full justify-center"
+                        data-developer-mode-context={detailContext}
+                        data-developer-mode-name="detail action"
+                        data-developer-mode-priority="360"
+                        data-developer-mode-value="edit"
                         href={`/kravkatalog/${req.id}/redigera`}
                         title={tc('editTooltip')}
                       >
@@ -763,6 +837,10 @@ export default function RequirementDetailClient({
                       latestStatusForActions === STATUS_PUBLISHED && (
                         <button
                           className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-all duration-200 w-full justify-center"
+                          data-developer-mode-context={detailContext}
+                          data-developer-mode-name="detail action"
+                          data-developer-mode-priority="360"
+                          data-developer-mode-value="archive"
                           onClick={handleArchive}
                           title={tc('archiveTooltip')}
                           type="button"
@@ -774,6 +852,10 @@ export default function RequirementDetailClient({
                     {currentStatusId === STATUS_DRAFT && isViewingLatest && (
                       <button
                         className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-all duration-200 w-full justify-center"
+                        data-developer-mode-context={detailContext}
+                        data-developer-mode-name="detail action"
+                        data-developer-mode-priority="360"
+                        data-developer-mode-value="delete draft"
                         onClick={handleDeleteDraft}
                         type="button"
                       >
@@ -785,6 +867,10 @@ export default function RequirementDetailClient({
                 ) : (
                   <button
                     className="btn-secondary inline-flex items-center gap-1.5 w-full justify-center"
+                    data-developer-mode-context={detailContext}
+                    data-developer-mode-name="detail action"
+                    data-developer-mode-priority="360"
+                    data-developer-mode-value="restore version"
                     onClick={e =>
                       handleRestore(
                         selectedVersion?.versionNumber ?? 0,
@@ -802,6 +888,7 @@ export default function RequirementDetailClient({
 
             {/* Version history */}
             <VersionHistory
+              developerModeContext={detailContext}
               onVersionSelect={setSelectedVersionNumber}
               ref={vhRef}
               selectedVersionNumber={

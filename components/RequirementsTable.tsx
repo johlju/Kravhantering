@@ -29,6 +29,7 @@ import {
 import { createPortal } from 'react-dom'
 import StatusBadge from '@/components/StatusBadge'
 import { Link, useRouter } from '@/i18n/routing'
+import { getRequirementColumnDeveloperModeLabel } from '@/lib/developer-mode'
 import {
   type AreaOption,
   clampRequirementColumnWidth,
@@ -92,6 +93,8 @@ export interface FloatingActionMenuItem {
 }
 
 export interface FloatingActionItem {
+  developerModeContext?: string
+  developerModeValue?: string
   ariaLabel: string
   href?: string
   icon: ReactNode
@@ -122,6 +125,8 @@ function getFloatingPillClassName(
 function FloatingActionPill({ action }: { action: FloatingActionItem }) {
   const variant = action.variant ?? 'default'
   const hasMenu = (action.menuItems?.length ?? 0) > 0
+  const developerModeContext = action.developerModeContext
+  const developerModeValue = action.developerModeValue
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -234,6 +239,10 @@ function FloatingActionPill({ action }: { action: FloatingActionItem }) {
           aria-expanded={open}
           aria-label={action.ariaLabel}
           className={getFloatingPillClassName(variant)}
+          data-developer-mode-context={developerModeContext}
+          data-developer-mode-name="floating pill"
+          data-developer-mode-priority="360"
+          data-developer-mode-value={developerModeValue}
           data-floating-action-id={action.id}
           data-floating-action-item="true"
           data-floating-action-menu-trigger={action.id}
@@ -260,6 +269,14 @@ function FloatingActionPill({ action }: { action: FloatingActionItem }) {
               >
                 <div
                   className="w-full overflow-y-auto rounded-2xl border border-secondary-200/80 bg-white/95 p-2 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.5)] backdrop-blur-md dark:border-secondary-700/70 dark:bg-secondary-900/95"
+                  data-developer-mode-context={
+                    developerModeValue
+                      ? `requirements table > floating pill: ${developerModeValue}`
+                      : developerModeContext
+                  }
+                  data-developer-mode-name="floating pill menu"
+                  data-developer-mode-priority="350"
+                  data-developer-mode-value={developerModeValue}
                   data-floating-action-menu={action.id}
                   id={`floating-action-menu-${action.id}`}
                   ref={menuRef}
@@ -299,6 +316,10 @@ function FloatingActionPill({ action }: { action: FloatingActionItem }) {
       <Link
         aria-label={action.ariaLabel}
         className={getFloatingPillClassName(variant)}
+        data-developer-mode-context={developerModeContext}
+        data-developer-mode-name="floating pill"
+        data-developer-mode-priority="360"
+        data-developer-mode-value={developerModeValue}
         data-floating-action-id={action.id}
         data-floating-action-item="true"
         data-floating-action-variant={variant}
@@ -318,6 +339,10 @@ function FloatingActionPill({ action }: { action: FloatingActionItem }) {
     <button
       aria-label={action.ariaLabel}
       className={getFloatingPillClassName(variant)}
+      data-developer-mode-context={developerModeContext}
+      data-developer-mode-name="floating pill"
+      data-developer-mode-priority="360"
+      data-developer-mode-value={developerModeValue}
       data-floating-action-id={action.id}
       data-floating-action-item="true"
       data-floating-action-variant={variant}
@@ -478,6 +503,7 @@ function SearchFilterPopover({
       <button
         aria-label={tc('filterBy', { label })}
         className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 transition-colors ${isActive ? 'text-primary-500' : 'text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-300'}`}
+        data-developer-mode-name="filter button"
         onClick={e => {
           e.stopPropagation()
           if (!open && btnRef.current) {
@@ -618,6 +644,7 @@ function MultiSelectFilterPopover({
       <button
         aria-label={tc('filterBy', { label })}
         className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 transition-colors ${activeCount > 0 ? 'text-primary-500' : 'text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-300'}`}
+        data-developer-mode-name="filter button"
         onClick={openDropdown}
         ref={btnRef}
         title={tc('filterBy', { label })}
@@ -750,6 +777,7 @@ function GroupedMultiSelectFilterPopover({
       <button
         aria-label={tc('filterBy', { label })}
         className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 transition-colors ${activeCount > 0 ? 'text-primary-500' : 'text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-300'}`}
+        data-developer-mode-name="filter button"
         onClick={openDropdown}
         ref={btnRef}
         title={tc('filterBy', { label })}
@@ -922,6 +950,10 @@ function ColumnsPopover({
     <button
       aria-label={tc('columns')}
       className={getFloatingPillClassName()}
+      data-developer-mode-context="requirements table"
+      data-developer-mode-name="floating pill"
+      data-developer-mode-priority="360"
+      data-developer-mode-value="columns"
       data-column-picker-shell="true"
       data-column-picker-trigger="true"
       data-floating-action-id="columns"
@@ -979,6 +1011,9 @@ function ColumnsPopover({
             >
               <div
                 className="pointer-events-auto flex flex-col gap-3"
+                data-developer-mode-context="requirements table"
+                data-developer-mode-name="floating action rail"
+                data-developer-mode-priority="340"
                 data-floating-action-rail="true"
               >
                 {actionsBeforeColumns.map(action => (
@@ -1003,6 +1038,10 @@ function ColumnsPopover({
         createPortal(
           <div
             className="fixed z-50 min-w-56 overflow-y-auto rounded-xl border bg-white p-2 shadow-lg dark:bg-secondary-800"
+            data-developer-mode-context="requirements table"
+            data-developer-mode-name="column picker"
+            data-developer-mode-priority="350"
+            data-developer-mode-value="columns"
             data-column-picker-popover="true"
             ref={dropRef}
             style={{
@@ -1051,16 +1090,24 @@ function ColumnsPopover({
 /* ── Small chip for showing active search text under column ── */
 
 function SearchChip({
+  developerModeContext,
   label,
   onRemove,
 }: {
+  developerModeContext: string
   label: string
   onRemove: () => void
 }) {
   const tt = useTranslations('requirementsTable')
 
   return (
-    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 max-w-full">
+    <span
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 max-w-full"
+      data-developer-mode-context={developerModeContext}
+      data-developer-mode-name="header chip"
+      data-developer-mode-priority="370"
+      data-developer-mode-value={label}
+    >
       <span className="truncate">{label}</span>
       <button
         aria-label={tt('removeItem', { label })}
@@ -1080,10 +1127,12 @@ function SearchChip({
 /* ── Small chip for multi-select values under column ── */
 
 function FilterChips({
+  developerModeContext,
   getLabel,
   onRemove,
   values,
 }: {
+  developerModeContext: string
   getLabel: (id: number) => string
   onRemove: (id: number) => void
   values: number[]
@@ -1096,6 +1145,10 @@ function FilterChips({
       {values.map(id => (
         <span
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] leading-tight rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 max-w-full"
+          data-developer-mode-context={developerModeContext}
+          data-developer-mode-name="header chip"
+          data-developer-mode-priority="370"
+          data-developer-mode-value={getLabel(id)}
           key={id}
         >
           <span className="truncate">{getLabel(id)}</span>
@@ -1357,6 +1410,9 @@ export default function RequirementsTable({
       ? tc(column.labelKey)
       : t(column.labelKey)
   }
+
+  const getColumnDeveloperModeContext = (columnId: RequirementColumnId) =>
+    `requirements table > column header: ${getRequirementColumnDeveloperModeLabel(columnId)}`
 
   const getSortIcon = (columnId: RequirementSortField) => {
     if (sortState.by !== columnId) {
@@ -2172,10 +2228,13 @@ export default function RequirementsTable({
   }
 
   const renderFilterChips = (columnId: RequirementColumnId) => {
+    const developerModeContext = getColumnDeveloperModeContext(columnId)
+
     switch (columnId) {
       case 'uniqueId':
         return fv.uniqueIdSearch ? (
           <SearchChip
+            developerModeContext={developerModeContext}
             label={fv.uniqueIdSearch}
             onRemove={() => updateFilter({ uniqueIdSearch: undefined })}
           />
@@ -2183,6 +2242,7 @@ export default function RequirementsTable({
       case 'description':
         return fv.descriptionSearch ? (
           <SearchChip
+            developerModeContext={developerModeContext}
             label={fv.descriptionSearch}
             onRemove={() => updateFilter({ descriptionSearch: undefined })}
           />
@@ -2190,6 +2250,7 @@ export default function RequirementsTable({
       case 'area':
         return (
           <FilterChips
+            developerModeContext={developerModeContext}
             getLabel={areaLabel}
             onRemove={id =>
               updateFilter({
@@ -2202,6 +2263,7 @@ export default function RequirementsTable({
       case 'category':
         return (
           <FilterChips
+            developerModeContext={developerModeContext}
             getLabel={catLabel}
             onRemove={id =>
               updateFilter({
@@ -2216,6 +2278,7 @@ export default function RequirementsTable({
       case 'type':
         return (
           <FilterChips
+            developerModeContext={developerModeContext}
             getLabel={typeLabel}
             onRemove={id =>
               updateFilter({
@@ -2228,6 +2291,7 @@ export default function RequirementsTable({
       case 'typeCategory':
         return (
           <FilterChips
+            developerModeContext={developerModeContext}
             getLabel={typeCatLabel}
             onRemove={id =>
               updateFilter({
@@ -2242,6 +2306,7 @@ export default function RequirementsTable({
       case 'status':
         return (
           <FilterChips
+            developerModeContext={developerModeContext}
             getLabel={statusLabel}
             onRemove={id =>
               updateFilter({
@@ -2254,6 +2319,7 @@ export default function RequirementsTable({
       case 'requiresTesting':
         return (
           <FilterChips
+            developerModeContext={developerModeContext}
             getLabel={id =>
               requiresTestingOptions.find(option => option.id === id)?.label ??
               ''
@@ -2504,6 +2570,7 @@ export default function RequirementsTable({
       'aria-label': tc('resizeColumn', { label }),
       className: interactiveResizeHandleClassName,
       'data-column-resize-handle': columnId,
+      'data-developer-mode-name': 'resize handle',
       onBlur: () => setResizeHoverCursor(false),
       onDoubleClick: (event: ReactMouseEvent<HTMLButtonElement>) => {
         event.preventDefault()
@@ -2619,6 +2686,9 @@ export default function RequirementsTable({
       {columnsPopover}
       <div
         className="relative overflow-x-auto"
+        data-developer-mode-context="requirements table"
+        data-developer-mode-name="table space"
+        data-developer-mode-priority="330"
         data-requirements-scroll-container="true"
         ref={scrollContainerRef}
       >
@@ -2648,7 +2718,12 @@ export default function RequirementsTable({
                 return renderResizeHandle(columnId, left, label)
               })
             : null}
-          <table className="w-full table-fixed text-sm" ref={tableRef}>
+          <table
+            className="w-full table-fixed text-sm"
+            data-developer-mode-name="requirements table"
+            data-developer-mode-priority="320"
+            ref={tableRef}
+          >
             <colgroup>
               {columnDefinitions.map(column => (
                 <col
@@ -2691,6 +2766,12 @@ export default function RequirementsTable({
                           : undefined
                       }
                       className={`${thBase} ${headerAlignClass} ${dividerClass}`}
+                      data-developer-mode-context="requirements table"
+                      data-developer-mode-name="column header"
+                      data-developer-mode-priority="350"
+                      data-developer-mode-value={getRequirementColumnDeveloperModeLabel(
+                        column.id,
+                      )}
                       key={column.id}
                       ref={node => {
                         headerCellRefs.current[column.id] = node
@@ -2704,6 +2785,7 @@ export default function RequirementsTable({
                           {isSortable ? (
                             <button
                               className="group inline-flex min-h-[44px] min-w-[44px] max-w-full flex-1 items-center gap-1 text-left"
+                              data-developer-mode-name="sort button"
                               onClick={() =>
                                 handleSortToggle(
                                   column.id as RequirementSortField,
@@ -2770,6 +2852,10 @@ export default function RequirementsTable({
                             ? 'bg-secondary-50/40 dark:bg-secondary-800/20'
                             : ''
                         }`}
+                        data-developer-mode-context="requirements table"
+                        data-developer-mode-name="table row"
+                        data-developer-mode-priority="300"
+                        data-developer-mode-value={row.uniqueId}
                         onClick={event => handleBodyRowClick(event, row.id)}
                       >
                         {columnDefinitions.map((column, columnIndex) => (
@@ -2787,6 +2873,10 @@ export default function RequirementsTable({
                           <td
                             className="border-b border-l-2 border-l-primary-500 border-secondary-200/35 bg-secondary-50/60 p-0 dark:border-secondary-700/35 dark:bg-secondary-800/30"
                             colSpan={columnDefinitions.length}
+                            data-developer-mode-context="requirements table"
+                            data-developer-mode-name="inline detail pane"
+                            data-developer-mode-priority="360"
+                            data-developer-mode-value={row.uniqueId}
                             data-expanded-detail-cell="true"
                             id={`requirement-row-detail-${row.id}`}
                             ref={expandedDetailCellRef}

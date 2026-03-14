@@ -26,6 +26,9 @@ export default function Navigation() {
     <nav
       aria-label="Huvudnavigation"
       className="sticky top-0 z-50 bg-white/60 dark:bg-secondary-950/60 backdrop-blur-custom border-b border-secondary-200/60 dark:border-secondary-700/40"
+      data-developer-mode-name="navigation"
+      data-developer-mode-priority="320"
+      data-developer-mode-value="main navigation"
     >
       <div className="container-custom flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
         <Link
@@ -70,6 +73,8 @@ export default function Navigation() {
                 ? 'bg-primary-50 text-primary-700 shadow-sm dark:bg-primary-950/80 dark:text-primary-300'
                 : 'hover:bg-secondary-100 dark:hover:bg-secondary-800'
             }`}
+            data-developer-mode-name="link"
+            data-developer-mode-value={ta('settings')}
             href="/admin"
             title={ta('settings')}
           >
