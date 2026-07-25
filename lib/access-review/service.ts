@@ -13,7 +13,9 @@ import type { SqlServerDatabase } from '@/lib/db'
 import {
   conflictError,
   forbiddenError,
+  isRequirementsServiceError,
   notFoundError,
+  serviceUnavailableError,
   validationError,
 } from '@/lib/requirements/errors'
 
@@ -67,6 +69,37 @@ export interface DecideAccessReviewItemInput {
   decision: Exclude<AccessReviewDecision, 'pending'>
 }
 
+export interface AccessReviewMutationResult {
+  applied: boolean
+  detail: AccessReviewRunDetail
+}
+
+export interface DecideAccessReviewAuditDetail {
+  decision: Exclude<AccessReviewDecision, 'pending'>
+  itemId: number
+  runId: number
+}
+
+export interface TerminalAccessReviewAuditDetail {
+  itemCount: number
+  runId: number
+  status: Extract<AccessReviewRunStatus, 'cancelled' | 'completed'>
+}
+
+export interface DecideAccessReviewItemOptions {
+  audit?: (
+    executor: QueryExecutor,
+    detail: DecideAccessReviewAuditDetail,
+  ) => Promise<void>
+}
+
+export interface TerminalAccessReviewRunOptions {
+  audit?: (
+    executor: QueryExecutor,
+    detail: TerminalAccessReviewAuditDetail,
+  ) => Promise<void>
+}
+
 interface ResolvedAccessReviewRunDates {
   dueAt: Date
   generatedAt: Date
@@ -78,6 +111,7 @@ const ADMIN_ROLE = 'Admin'
 const PRIVACY_OFFICER_ROLE = 'PrivacyOfficer'
 const ACCESS_REVIEW_ITEM_INSERT_BATCH_SIZE = 150
 const ACCESS_REVIEW_ITEM_INSERT_PARAMETER_COUNT = 10
+const TRANSIENT_SQL_SERVER_TRANSACTION_ERROR_NUMBERS = new Set([1205, 1222])
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -167,6 +201,35 @@ function numberValue(value: unknown): number {
 
 function dateParam(date: Date): string {
   return date.toISOString()
+}
+
+function sqlServerErrorNumber(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null
+
+  const errorMetadata = error as {
+    driverError?: unknown
+    number?: unknown
+  }
+  if (typeof errorMetadata.number === 'number') {
+    return errorMetadata.number
+  }
+  if (
+    typeof errorMetadata.number === 'string' &&
+    /^\d+$/.test(errorMetadata.number)
+  ) {
+    return Number(errorMetadata.number)
+  }
+  return errorMetadata.driverError === error
+    ? null
+    : sqlServerErrorNumber(errorMetadata.driverError)
+}
+
+function isTransientSqlServerTransactionError(error: unknown): boolean {
+  const errorNumber = sqlServerErrorNumber(error)
+  return (
+    errorNumber !== null &&
+    TRANSIENT_SQL_SERVER_TRANSACTION_ERROR_NUMBERS.has(errorNumber)
+  )
 }
 
 function assertValidAccessReviewDate(value: Date, field: string): void {
@@ -678,117 +741,262 @@ export async function getAccessReviewRun(
   }
 }
 
+async function lockAccessReviewRun(
+  db: QueryExecutor,
+  runId: number,
+): Promise<AccessReviewRunStatus> {
+  const rows = (await db.query(
+    `SELECT
+        id,
+        status
+      FROM access_review_runs WITH (UPDLOCK, HOLDLOCK)
+      WHERE id = @0`,
+    [runId],
+  )) as Row[]
+  if (rows.length < 1) {
+    throw notFoundError('Access review run was not found', {
+      id: runId,
+      reason: 'access_review_not_found',
+    })
+  }
+  return stringValue(rows[0]?.status) as AccessReviewRunStatus
+}
+
+function assertSingleUpdatedRow(rows: Row[], mutation: string): void {
+  if (rows.length === 1) return
+  throw new Error(
+    `Access review ${mutation} expected to update one row but updated ${rows.length}`,
+  )
+}
+
+function withSerializableAccessReviewTx<T>(
+  db: SqlServerDatabase,
+  callback: (tx: QueryExecutor) => Promise<T>,
+): Promise<T> {
+  return db.transaction('SERIALIZABLE', manager =>
+    callback({
+      query: (sql, params) => manager.query(sql, params),
+    }),
+  )
+}
+
 export async function decideAccessReviewItem(
   db: SqlServerDatabase,
   runId: number,
   itemId: number,
   input: DecideAccessReviewItemInput,
   actor: AccessReviewAuthContext,
-): Promise<AccessReviewRunDetail> {
-  const detail = await getAccessReviewRun(db, runId, actor)
+  options: DecideAccessReviewItemOptions = {},
+): Promise<AccessReviewMutationResult> {
   const decidedBy = assertCanDecideRun(actor)
-  if (detail.run.status === 'completed' || detail.run.status === 'cancelled') {
-    throw conflictError('Access review run is no longer editable', {
-      reason: 'access_review_closed',
-      status: detail.run.status,
-    })
-  }
-  if (!detail.items.some(item => item.id === itemId)) {
-    throw notFoundError('Access review item was not found', {
-      itemId,
-      reason: 'access_review_item_not_found',
-      runId,
-    })
-  }
+  const normalizedComment = input.comment?.trim() || null
 
-  const decidedAt = new Date()
-  await db.transaction(async manager => {
-    const tx: QueryExecutor = {
-      query: (sql, params) => manager.query(sql, params),
+  return withSerializableAccessReviewTx(db, async tx => {
+    const status = await lockAccessReviewRun(tx, runId)
+    if (status === 'completed' || status === 'cancelled') {
+      throw conflictError('Access review run is no longer editable', {
+        reason: 'access_review_closed',
+        status,
+      })
     }
-    await tx.query(
+
+    const itemRows = (await tx.query(
+      `SELECT
+          decision,
+          comment
+        FROM access_review_items WITH (UPDLOCK, HOLDLOCK)
+        WHERE id = @0 AND run_id = @1`,
+      [itemId, runId],
+    )) as Row[]
+    if (itemRows.length < 1) {
+      throw notFoundError('Access review item was not found', {
+        itemId,
+        reason: 'access_review_item_not_found',
+        runId,
+      })
+    }
+    const currentDecision = stringValue(itemRows[0]?.decision)
+    const currentComment = nullableStringValue(itemRows[0]?.comment)
+    if (
+      currentDecision === input.decision &&
+      currentComment === normalizedComment
+    ) {
+      return {
+        applied: false,
+        detail: await getAccessReviewRun(tx, runId, actor),
+      }
+    }
+
+    const decidedAt = new Date()
+    const updatedItems = (await tx.query(
       `UPDATE access_review_items
         SET decision = @0,
             decided_at = @1,
             decided_by_hsa_id = @2,
             decided_by_display_name = @3,
             comment = @4
-        WHERE id = @5 AND run_id = @6`,
+        OUTPUT INSERTED.id AS id
+        WHERE id = @5
+          AND run_id = @6
+          AND EXISTS (
+            SELECT 1
+            FROM access_review_runs
+            WHERE id = @6 AND status IN (N'draft', N'in_review')
+          )`,
       [
         input.decision,
         dateParam(decidedAt),
         decidedBy.hsaId,
         decidedBy.displayName,
-        input.comment?.trim() || null,
+        normalizedComment,
         itemId,
         runId,
       ],
-    )
-    await tx.query(
-      'UPDATE access_review_runs SET updated_at = @0 WHERE id = @1',
+    )) as Row[]
+    assertSingleUpdatedRow(updatedItems, 'item decision')
+
+    const updatedRuns = (await tx.query(
+      `UPDATE access_review_runs
+        SET updated_at = @0
+        OUTPUT INSERTED.id AS id
+        WHERE id = @1 AND status IN (N'draft', N'in_review')`,
       [dateParam(decidedAt), runId],
-    )
+    )) as Row[]
+    assertSingleUpdatedRow(updatedRuns, 'decision run timestamp')
+
+    const detail = await getAccessReviewRun(tx, runId, actor)
+    await options.audit?.(tx, {
+      decision: input.decision,
+      itemId,
+      runId,
+    })
+    return { applied: true, detail }
   })
-  return getAccessReviewRun(db, runId, actor)
 }
 
 export async function completeAccessReviewRun(
   db: SqlServerDatabase,
   runId: number,
   actor: AccessReviewAuthContext,
-): Promise<AccessReviewRunDetail> {
+  options: TerminalAccessReviewRunOptions = {},
+): Promise<AccessReviewMutationResult> {
   const completedBy = requireAccessReviewRole(actor)
-  const detail = await getAccessReviewRun(db, runId, actor)
-  if (detail.run.status === 'completed') return detail
-  if (detail.run.status === 'cancelled') {
-    throw conflictError('Cancelled access review cannot be completed', {
-      reason: 'access_review_cancelled',
-    })
-  }
-  if (detail.run.summary.pendingCount > 0) {
-    throw conflictError('Access review still has pending items', {
-      pendingCount: detail.run.summary.pendingCount,
-      reason: 'access_review_pending_items',
-    })
-  }
 
-  const completedAt = new Date()
-  await db.query(
-    `UPDATE access_review_runs
-      SET status = N'completed',
-          completed_at = @0,
-          completed_by_hsa_id = @1,
-          completed_by_display_name = @2,
-          updated_at = @0
-      WHERE id = @3`,
-    [dateParam(completedAt), completedBy.hsaId, completedBy.displayName, runId],
-  )
-  return getAccessReviewRun(db, runId, actor)
+  return withSerializableAccessReviewTx(db, async tx => {
+    const status = await lockAccessReviewRun(tx, runId)
+    if (status === 'completed') {
+      return {
+        applied: false,
+        detail: await getAccessReviewRun(tx, runId, actor),
+      }
+    }
+    if (status === 'cancelled') {
+      throw conflictError('Cancelled access review cannot be completed', {
+        reason: 'access_review_cancelled',
+      })
+    }
+
+    const pendingRows = (await tx.query(
+      `SELECT COUNT(*) AS pendingCount
+        FROM access_review_items WITH (UPDLOCK, HOLDLOCK)
+        WHERE run_id = @0 AND decision = N'pending'`,
+      [runId],
+    )) as Row[]
+    const pendingCount = numberValue(pendingRows[0]?.pendingCount)
+    if (pendingCount > 0) {
+      throw conflictError('Access review still has pending items', {
+        pendingCount,
+        reason: 'access_review_pending_items',
+      })
+    }
+
+    const completedAt = new Date()
+    const updatedRuns = (await tx.query(
+      `UPDATE access_review_runs
+        SET status = N'completed',
+            completed_at = @0,
+            completed_by_hsa_id = @1,
+            completed_by_display_name = @2,
+            updated_at = @0
+        OUTPUT INSERTED.id AS id
+        WHERE id = @3
+          AND status IN (N'draft', N'in_review')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM access_review_items
+            WHERE run_id = @3 AND decision = N'pending'
+          )`,
+      [
+        dateParam(completedAt),
+        completedBy.hsaId,
+        completedBy.displayName,
+        runId,
+      ],
+    )) as Row[]
+    assertSingleUpdatedRow(updatedRuns, 'completion')
+
+    const detail = await getAccessReviewRun(tx, runId, actor)
+    await options.audit?.(tx, {
+      itemCount: detail.run.summary.itemCount,
+      runId,
+      status: 'completed',
+    })
+    return { applied: true, detail }
+  }).catch(error => {
+    if (
+      isRequirementsServiceError(error) ||
+      !isTransientSqlServerTransactionError(error)
+    ) {
+      throw error
+    }
+    throw serviceUnavailableError(
+      'Access review completion was interrupted by a database conflict. Try again.',
+      { reason: 'access_review_completion_retry' },
+    )
+  })
 }
 
 export async function cancelAccessReviewRun(
   db: SqlServerDatabase,
   runId: number,
   actor: AccessReviewAuthContext,
-): Promise<AccessReviewRunDetail> {
+  options: TerminalAccessReviewRunOptions = {},
+): Promise<AccessReviewMutationResult> {
   requireAccessReviewRole(actor)
-  const detail = await getAccessReviewRun(db, runId, actor)
-  if (detail.run.status === 'cancelled') return detail
-  if (detail.run.status === 'completed') {
-    throw conflictError('Completed access review cannot be cancelled', {
-      reason: 'access_review_completed',
-    })
-  }
 
-  const cancelledAt = new Date()
-  await db.query(
-    `UPDATE access_review_runs
-      SET status = N'cancelled',
-          updated_at = @0
-      WHERE id = @1`,
-    [dateParam(cancelledAt), runId],
-  )
-  return getAccessReviewRun(db, runId, actor)
+  return withSerializableAccessReviewTx(db, async tx => {
+    const status = await lockAccessReviewRun(tx, runId)
+    if (status === 'cancelled') {
+      return {
+        applied: false,
+        detail: await getAccessReviewRun(tx, runId, actor),
+      }
+    }
+    if (status === 'completed') {
+      throw conflictError('Completed access review cannot be cancelled', {
+        reason: 'access_review_completed',
+      })
+    }
+
+    const cancelledAt = new Date()
+    const updatedRuns = (await tx.query(
+      `UPDATE access_review_runs
+        SET status = N'cancelled',
+            updated_at = @0
+        OUTPUT INSERTED.id AS id
+        WHERE id = @1 AND status IN (N'draft', N'in_review')`,
+      [dateParam(cancelledAt), runId],
+    )) as Row[]
+    assertSingleUpdatedRow(updatedRuns, 'cancellation')
+
+    const detail = await getAccessReviewRun(tx, runId, actor)
+    await options.audit?.(tx, {
+      itemCount: detail.run.summary.itemCount,
+      runId,
+      status: 'cancelled',
+    })
+    return { applied: true, detail }
+  })
 }
 
 export async function buildAccessReviewExport(
