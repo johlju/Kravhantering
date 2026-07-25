@@ -5,6 +5,10 @@ import {
   validationError,
 } from '@/lib/requirements/errors'
 
+export interface SqlExecutor {
+  query<T = unknown[]>(sql: string, parameters?: unknown[]): Promise<T>
+}
+
 export interface ImprovementSuggestionRow {
   content: string
   createdAt: string
@@ -30,6 +34,73 @@ export interface ImprovementSuggestionCounts {
   pending: number
   resolved: number
   total: number
+}
+
+export interface ImprovementSuggestionMutationTarget {
+  id: number
+  requirementId: number
+  requirementVersionId: number | null
+}
+
+interface ImprovementSuggestionState {
+  isReviewRequested: number
+  resolution: number | null
+}
+
+const DRAFT_SUGGESTION_PREDICATES = [
+  'is_review_requested = 0',
+  'review_requested_at IS NULL',
+  'resolution IS NULL',
+  'resolution_motivation IS NULL',
+  'resolved_by IS NULL',
+  'resolved_by_hsa_id IS NULL',
+  'resolved_at IS NULL',
+] as const
+
+const REVIEWED_SUGGESTION_PREDICATES = [
+  'is_review_requested = 1',
+  'review_requested_at IS NOT NULL',
+  'resolution IS NULL',
+  'resolution_motivation IS NULL',
+  'resolved_by IS NULL',
+  'resolved_by_hsa_id IS NULL',
+  'resolved_at IS NULL',
+] as const
+
+interface GuardedSuggestionMutationSqlOptions {
+  outputAlias: 'DELETED' | 'INSERTED'
+  predicates: readonly string[]
+  statement: string
+}
+
+function buildGuardedSuggestionMutationSql({
+  outputAlias,
+  predicates,
+  statement,
+}: GuardedSuggestionMutationSqlOptions): string {
+  const predicateSql = predicates
+    .map(predicate => `        AND ${predicate}`)
+    .join('\n')
+
+  return `
+      DECLARE @mutationTarget TABLE (
+        id int NOT NULL,
+        requirementId int NOT NULL,
+        requirementVersionId int NULL
+      );
+
+      ${statement}
+      OUTPUT
+        ${outputAlias}.id,
+        ${outputAlias}.requirement_id,
+        ${outputAlias}.requirement_version_id
+      INTO @mutationTarget (id, requirementId, requirementVersionId)
+      WHERE id = @0
+${predicateSql};
+
+      SELECT id, requirementId, requirementVersionId
+      FROM @mutationTarget
+    `
 }
 
 function toIsoString(value: unknown): string | null {
@@ -96,20 +167,16 @@ function mapSqlServerSuggestionRow(
 }
 
 async function findSqlServerSuggestionState(
-  db: SqlServerDatabase,
+  db: SqlExecutor,
   suggestionId: number,
-): Promise<{
-  id: number
-  isReviewRequested: number
-  resolution: number | null
-} | null> {
+): Promise<ImprovementSuggestionState | null> {
   const rows = (await db.query(
     `
       SELECT TOP (1)
-        suggestion.id AS id,
         suggestion.resolution AS resolution,
         CAST(suggestion.is_review_requested AS int) AS isReviewRequested
       FROM improvement_suggestions suggestion
+      WITH (UPDLOCK, HOLDLOCK)
       WHERE suggestion.id = @0
     `,
     [suggestionId],
@@ -120,10 +187,32 @@ async function findSqlServerSuggestionState(
   }
 
   return {
-    id: Number(rows[0].id),
     isReviewRequested: toNumericFlag(rows[0].isReviewRequested),
     resolution: toOptionalNumber(rows[0].resolution),
   }
+}
+
+function mapMutationTarget(
+  row: ImprovementSuggestionMutationTarget,
+): ImprovementSuggestionMutationTarget {
+  return {
+    id: Number(row.id),
+    requirementId: Number(row.requirementId),
+    requirementVersionId: toOptionalNumber(row.requirementVersionId),
+  }
+}
+
+async function requireSuggestionState(
+  db: SqlExecutor,
+  suggestionId: number,
+): Promise<ImprovementSuggestionState> {
+  const existing = await findSqlServerSuggestionState(db, suggestionId)
+  if (!existing) {
+    throw notFoundError(`Improvement suggestion ${suggestionId} not found`, {
+      suggestionId,
+    })
+  }
+  return existing
 }
 
 function buildInClause(startIndex: number, values: number[]): string {
@@ -285,61 +374,35 @@ export async function createSuggestion(
 }
 
 export async function updateSuggestion(
-  db: SqlServerDatabase,
+  db: SqlExecutor,
   suggestionId: number,
   data: { content?: string },
-): Promise<void> {
-  const existing = await findSqlServerSuggestionState(db, suggestionId)
-
-  if (!existing) {
-    throw notFoundError(`Improvement suggestion ${suggestionId} not found`)
-  }
-
-  if (existing.resolution !== null) {
-    throw conflictError(
-      'Cannot edit an improvement suggestion after a resolution has been recorded',
-    )
-  }
-
-  if (existing.isReviewRequested === 1) {
-    throw conflictError(
-      'Cannot edit an improvement suggestion that has been submitted for review',
-    )
-  }
-
+): Promise<ImprovementSuggestionMutationTarget> {
   if (data.content !== undefined && !data.content.trim()) {
     throw validationError('Content is required')
   }
 
-  const now = new Date()
-  if (data.content !== undefined) {
-    await db.query(
-      `
-        UPDATE improvement_suggestions
-        SET
-          content = @0,
-          updated_at = @1
-        WHERE id = @2
-      `,
-      [data.content.trim(), now, suggestionId],
-    )
-    return
-  }
+  const rows = (await db.query(
+    buildGuardedSuggestionMutationSql({
+      outputAlias: 'INSERTED',
+      predicates: DRAFT_SUGGESTION_PREDICATES,
+      statement: `UPDATE improvement_suggestions
+      SET content = CASE WHEN @1 IS NULL THEN content ELSE @1 END,
+          updated_at = SYSUTCDATETIME()`,
+    }),
+    [suggestionId, data.content?.trim() ?? null],
+  )) as ImprovementSuggestionMutationTarget[]
+  if (rows[0]) return mapMutationTarget(rows[0])
 
-  await db.query(
-    `
-      UPDATE improvement_suggestions
-      SET
-        updated_at = @0
-      WHERE id = @1
-    `,
-    [now, suggestionId],
-  )
-  return
+  await requireSuggestionState(db, suggestionId)
+  throw conflictError('Only a draft improvement suggestion can be edited', {
+    reason: 'improvement_suggestion_not_draft',
+    suggestionId,
+  })
 }
 
 export async function recordResolution(
-  db: SqlServerDatabase,
+  db: SqlExecutor,
   suggestionId: number,
   data: {
     resolution: number
@@ -347,7 +410,7 @@ export async function recordResolution(
     resolvedBy: string
     resolvedByHsaId: string
   },
-): Promise<void> {
+): Promise<ImprovementSuggestionMutationTarget> {
   if (
     data.resolution !== SUGGESTION_RESOLVED &&
     data.resolution !== SUGGESTION_DISMISSED
@@ -368,75 +431,66 @@ export async function recordResolution(
     throw validationError('Resolved by HSA-id is required')
   }
 
-  const existing = await findSqlServerSuggestionState(db, suggestionId)
-
-  if (!existing) {
-    throw notFoundError(`Improvement suggestion ${suggestionId} not found`)
-  }
-
-  if (existing.resolution !== null) {
-    throw conflictError(
-      'A resolution has already been recorded for this improvement suggestion',
-    )
-  }
-
-  if (existing.isReviewRequested !== 1) {
-    throw conflictError(
-      'Can only resolve or dismiss suggestions that have been submitted for review',
-    )
-  }
-
-  const now = new Date()
-  await db.query(
-    `
-      UPDATE improvement_suggestions
-      SET
-        resolution = @0,
-        resolution_motivation = @1,
-        resolved_by = @2,
-        resolved_by_hsa_id = @3,
-        resolved_at = @4,
-        updated_at = @4
-      WHERE id = @5
-    `,
+  const rows = (await db.query(
+    buildGuardedSuggestionMutationSql({
+      outputAlias: 'INSERTED',
+      predicates: REVIEWED_SUGGESTION_PREDICATES,
+      statement: `UPDATE improvement_suggestions
+      SET resolution = @1,
+          resolution_motivation = @2,
+          resolved_by = @3,
+          resolved_by_hsa_id = @4,
+          resolved_at = SYSUTCDATETIME(),
+          updated_at = SYSUTCDATETIME()`,
+    }),
     [
+      suggestionId,
       data.resolution,
       data.resolutionMotivation.trim(),
       data.resolvedBy.trim(),
       resolvedByHsaId,
-      now,
-      suggestionId,
     ],
+  )) as ImprovementSuggestionMutationTarget[]
+  if (rows[0]) return mapMutationTarget(rows[0])
+
+  const existing = await requireSuggestionState(db, suggestionId)
+  if (existing.resolution !== null) {
+    throw conflictError(
+      'A resolution has already been recorded for this improvement suggestion',
+      {
+        reason: 'improvement_suggestion_already_resolved',
+        suggestionId,
+      },
+    )
+  }
+  throw conflictError(
+    'Can only resolve or dismiss suggestions that have been submitted for review',
+    {
+      reason: 'improvement_suggestion_review_required',
+      suggestionId,
+    },
   )
-  return
 }
 
 export async function deleteSuggestion(
-  db: SqlServerDatabase,
+  db: SqlExecutor,
   suggestionId: number,
-): Promise<void> {
-  const existing = await findSqlServerSuggestionState(db, suggestionId)
+): Promise<ImprovementSuggestionMutationTarget> {
+  const rows = (await db.query(
+    buildGuardedSuggestionMutationSql({
+      outputAlias: 'DELETED',
+      predicates: DRAFT_SUGGESTION_PREDICATES,
+      statement: 'DELETE FROM improvement_suggestions',
+    }),
+    [suggestionId],
+  )) as ImprovementSuggestionMutationTarget[]
+  if (rows[0]) return mapMutationTarget(rows[0])
 
-  if (!existing) {
-    throw notFoundError(`Improvement suggestion ${suggestionId} not found`)
-  }
-
-  if (existing.resolution !== null) {
-    throw conflictError(
-      'Cannot delete an improvement suggestion after a resolution has been recorded',
-    )
-  }
-
-  if (existing.isReviewRequested === 1) {
-    throw conflictError(
-      'Cannot delete an improvement suggestion that has been submitted for review',
-    )
-  }
-
-  await db.query(`DELETE FROM improvement_suggestions WHERE id = @0`, [
+  await requireSuggestionState(db, suggestionId)
+  throw conflictError('Only a draft improvement suggestion can be deleted', {
+    reason: 'improvement_suggestion_not_draft',
     suggestionId,
-  ])
-  return
+  })
 }
 
 export async function countSuggestionsByRequirement(
@@ -498,74 +552,72 @@ export async function countSuggestionsForRequirements(
 }
 
 export async function requestReview(
-  db: SqlServerDatabase,
+  db: SqlExecutor,
   suggestionId: number,
-): Promise<void> {
-  const existing = await findSqlServerSuggestionState(db, suggestionId)
+): Promise<ImprovementSuggestionMutationTarget> {
+  const rows = (await db.query(
+    buildGuardedSuggestionMutationSql({
+      outputAlias: 'INSERTED',
+      predicates: DRAFT_SUGGESTION_PREDICATES,
+      statement: `UPDATE improvement_suggestions
+      SET is_review_requested = 1,
+          review_requested_at = SYSUTCDATETIME(),
+          updated_at = SYSUTCDATETIME()`,
+    }),
+    [suggestionId],
+  )) as ImprovementSuggestionMutationTarget[]
+  if (rows[0]) return mapMutationTarget(rows[0])
 
-  if (!existing) {
-    throw notFoundError(`Improvement suggestion ${suggestionId} not found`)
-  }
-
+  const existing = await requireSuggestionState(db, suggestionId)
   if (existing.resolution !== null) {
     throw conflictError(
       'Cannot request review for an improvement suggestion that already has a resolution',
+      {
+        reason: 'improvement_suggestion_already_resolved',
+        suggestionId,
+      },
     )
   }
-
-  if (existing.isReviewRequested === 1) {
-    throw conflictError(
-      'Review has already been requested for this improvement suggestion',
-    )
-  }
-
-  const now = new Date()
-  await db.query(
-    `
-      UPDATE improvement_suggestions
-      SET
-        is_review_requested = 1,
-        review_requested_at = @0,
-        updated_at = @0
-      WHERE id = @1
-    `,
-    [now, suggestionId],
+  throw conflictError(
+    'Review has already been requested for this improvement suggestion',
+    {
+      reason: 'improvement_suggestion_review_already_requested',
+      suggestionId,
+    },
   )
-  return
 }
 
 export async function revertToDraft(
-  db: SqlServerDatabase,
+  db: SqlExecutor,
   suggestionId: number,
-): Promise<void> {
-  const existing = await findSqlServerSuggestionState(db, suggestionId)
+): Promise<ImprovementSuggestionMutationTarget> {
+  const rows = (await db.query(
+    buildGuardedSuggestionMutationSql({
+      outputAlias: 'INSERTED',
+      predicates: REVIEWED_SUGGESTION_PREDICATES,
+      statement: `UPDATE improvement_suggestions
+      SET is_review_requested = 0,
+          review_requested_at = NULL,
+          updated_at = SYSUTCDATETIME()`,
+    }),
+    [suggestionId],
+  )) as ImprovementSuggestionMutationTarget[]
+  if (rows[0]) return mapMutationTarget(rows[0])
 
-  if (!existing) {
-    throw notFoundError(`Improvement suggestion ${suggestionId} not found`)
-  }
-
+  const existing = await requireSuggestionState(db, suggestionId)
   if (existing.resolution !== null) {
     throw conflictError(
       'Cannot revert an improvement suggestion that already has a resolution',
+      {
+        reason: 'improvement_suggestion_already_resolved',
+        suggestionId,
+      },
     )
   }
-
-  if (existing.isReviewRequested === 0) {
-    throw conflictError('Improvement suggestion is already in draft state')
-  }
-
-  await db.query(
-    `
-      UPDATE improvement_suggestions
-      SET
-        is_review_requested = 0,
-        review_requested_at = NULL,
-        updated_at = @0
-      WHERE id = @1
-    `,
-    [new Date(), suggestionId],
-  )
-  return
+  throw conflictError('Improvement suggestion is already in draft state', {
+    reason: 'improvement_suggestion_already_draft',
+    suggestionId,
+  })
 }
 
 export const SUGGESTION_RESOLVED = 1

@@ -25,31 +25,51 @@ interface SeedInsertRow {
   table: string
 }
 
-function collectSeedInsertRows() {
+function collectSeedInsertRows(
+  failedLifecycleTransition:
+    | 'draft-to-review'
+    | 'review-to-resolution'
+    | null = null,
+) {
   const rows: SeedInsertRow[] = []
   const executor = {
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('UPDATE [rfi_question_suggestions]')) {
+      const lifecycleTable = sql.includes('UPDATE [rfi_question_suggestions]')
+        ? 'rfi_question_suggestions'
+        : sql.includes('UPDATE [improvement_suggestions]')
+          ? 'improvement_suggestions'
+          : null
+      if (lifecycleTable) {
         const seeded = rows.find(
           seedRow =>
-            seedRow.table === 'rfi_question_suggestions' &&
-            seedRow.row.id === params[0],
+            seedRow.table === lifecycleTable && seedRow.row.id === params[0],
         )?.row
         if (!seeded) return
-        if (sql.includes('[is_review_requested] = 1')) {
+        const transition = sql.includes('SET [resolution] = @1')
+          ? 'review-to-resolution'
+          : 'draft-to-review'
+        const affectedRows = transition === failedLifecycleTransition ? 0 : 1
+        if (
+          affectedRows === 1 &&
+          sql.includes('SET [is_review_requested] = 1')
+        ) {
           seeded.is_review_requested = 1
           seeded.review_requested_at = params[1]
           seeded.updated_at = params[2]
         }
-        if (sql.includes('[resolution] = @1')) {
+        if (affectedRows === 1 && sql.includes('SET [resolution] = @1')) {
           seeded.resolution = params[1]
           seeded.resolution_motivation = params[2]
           seeded.resolved_by_hsa_id = params[3]
-          seeded.resolved_by_display_name = params[4]
+          seeded[
+            lifecycleTable === 'improvement_suggestions'
+              ? 'resolved_by'
+              : 'resolved_by_display_name'
+          ] = params[4]
           seeded.resolved_at = params[5]
           seeded.updated_at = params[6]
         }
-        return
+        return [{ affectedRows }]
       }
       const match = sql.match(/INSERT INTO \[([^\]]+)\] \(([^)]+)\) VALUES/)
       if (!match) return
@@ -118,6 +138,17 @@ describe('seed profiles', () => {
     expect(message).not.toContain('row=')
     expect(message).not.toContain('SFS 2018:218')
   })
+
+  it.each(['draft-to-review', 'review-to-resolution'] as const)(
+    'fails loudly when the %s demo seed transition affects zero rows',
+    async transition => {
+      const { executor } = collectSeedInsertRows(transition)
+
+      await expect(seedDemoDatabase(executor)).rejects.toThrow(
+        `Guarded demo seed transition '${transition}' for table='improvement_suggestions' id=1 expected 1 affected row but received 0`,
+      )
+    },
+  )
 
   it('seedPositionDetail formats table/rowIndex/pk correctly', () => {
     expect(
@@ -522,6 +553,61 @@ describe('seed profiles', () => {
       rfi_question_id: null,
       specification_id: 1,
     })
+  })
+
+  it('seeds every Improvement suggestion through legal ordered lifecycle transitions', async () => {
+    const { executor, rows } = collectSeedInsertRows()
+
+    await seedDemoDatabase(executor)
+
+    const suggestions = seedRowsFor(rows, 'improvement_suggestions')
+    expect(suggestions.length).toBeGreaterThan(0)
+    for (const suggestion of suggestions) {
+      const isDraft =
+        suggestion.is_review_requested === 0 &&
+        suggestion.review_requested_at == null &&
+        suggestion.resolution == null &&
+        suggestion.resolution_motivation == null &&
+        suggestion.resolved_by == null &&
+        suggestion.resolved_by_hsa_id == null &&
+        suggestion.resolved_at == null
+      const isReviewed =
+        suggestion.is_review_requested === 1 &&
+        suggestion.review_requested_at != null &&
+        suggestion.resolution == null &&
+        suggestion.resolution_motivation == null &&
+        suggestion.resolved_by == null &&
+        suggestion.resolved_by_hsa_id == null &&
+        suggestion.resolved_at == null
+      const isHandled =
+        suggestion.is_review_requested === 1 &&
+        suggestion.review_requested_at != null &&
+        (suggestion.resolution === 1 || suggestion.resolution === 2) &&
+        typeof suggestion.resolution_motivation === 'string' &&
+        suggestion.resolution_motivation.trim().length > 0 &&
+        suggestion.resolved_at != null
+
+      expect(
+        isDraft || isReviewed || isHandled,
+        `invalid Improvement suggestion lifecycle for seed id ${suggestion.id}`,
+      ).toBe(true)
+    }
+
+    const calls = vi.mocked(executor.query).mock.calls
+    const reviewCallIndex = calls.findIndex(
+      ([sql, params]) =>
+        sql.includes('UPDATE [improvement_suggestions]') &&
+        sql.includes('[is_review_requested] = 1') &&
+        params?.[0] === 1,
+    )
+    const resolutionCallIndex = calls.findIndex(
+      ([sql, params]) =>
+        sql.includes('UPDATE [improvement_suggestions]') &&
+        sql.includes('[resolution] = @1') &&
+        params?.[0] === 1,
+    )
+    expect(reviewCallIndex).toBeGreaterThan(-1)
+    expect(resolutionCallIndex).toBeGreaterThan(reviewCallIndex)
   })
 
   it('seeds local responsibility people from live assignments and HSA mock details', async () => {
