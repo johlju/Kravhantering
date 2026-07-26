@@ -91,6 +91,7 @@ import {
   type SpecificationListItem,
   type SpecificationMeta,
   type SpecificationNeedsReference,
+  type SpecificationRequirementPackageCatalogPageData,
   type SpecificationTaxonomyItem,
 } from '@/lib/specifications/preload-types'
 import { SPECIFICATION_ITEM_SELECTION_ACTION_LIMIT } from '@/lib/specifications/selection-action-limit'
@@ -130,8 +131,10 @@ const REQUIREMENT_SPECIFICATION_DETAIL_HELP: HelpContent = {
 const AVAILABLE_REQUIREMENTS_PAGE_SIZE = 200
 const BULK_DEVIATION_CONCURRENCY = 4
 const SPECIFICATION_ITEM_RESOLUTION_CHUNK_SIZE = 50
+const SPECIFICATION_ITEM_MATCH_PROBE_CHUNK_SIZE = 100
 const SPECIFICATION_ITEMS_PAGE_SIZE = 50
 const SPECIFICATION_NEEDS_REFERENCE_USAGE_PAGE_SIZE = 100
+const SPECIFICATION_REQUIREMENT_PACKAGES_PAGE_SIZE = 50
 
 const useClientLayoutEffect =
   typeof window === 'undefined' ? useEffect : useLayoutEffect
@@ -159,6 +162,19 @@ const DEFAULT_RIGHT_COLS: RequirementColumnId[] = [
   'area',
 ]
 type SpecificationDetailLeftTab = 'items' | 'needs-references' | 'rfi'
+
+type SpecificationSelectionNotice =
+  | {
+      evaluatedQueryKey: string
+      hiddenByFilters: boolean
+      kind: 'requirementsAdded'
+      requirementIds: number[]
+      requirementUniqueIds: string[]
+    }
+  | {
+      kind: 'message'
+      text: string
+    }
 
 function groupedFloatingActionMenuItems(
   groups: Array<{ id: string; items: FloatingActionMenuItem[] }>,
@@ -495,6 +511,14 @@ function buildNormReferenceOptionsPath(statuses: number[] | undefined) {
   return `/api/norm-references?${params}`
 }
 
+function hasSpecificationListFilters(filters: FilterValues): boolean {
+  return Object.values(filters).some(value =>
+    Array.isArray(value)
+      ? value.length > 0
+      : typeof value === 'string' && value.trim().length > 0,
+  )
+}
+
 export default function KravunderlagDetailClient({
   initialData,
   specificationId,
@@ -550,6 +574,34 @@ export default function KravunderlagDetailClient({
   const [requirementPackages] = useState<RequirementPackageOption[]>(
     initialData.requirementPackages,
   )
+  const [leftRequirementPackages, setLeftRequirementPackages] = useState<
+    RequirementPackageOption[]
+  >(initialData.leftRequirementPackageCatalog.requirementPackages)
+  const [
+    leftRequirementPackageCatalogStatus,
+    setLeftRequirementPackageCatalogStatus,
+  ] = useState<'failed' | 'loaded' | 'loading'>(() =>
+    initialData.errors.some(
+      error =>
+        error.key ===
+        SPECIFICATION_PRELOAD_ERROR_KEYS.specificationRequirementPackages,
+    )
+      ? 'failed'
+      : initialData.leftRequirementPackageCatalog.pagination.hasMore
+        ? 'loading'
+        : 'loaded',
+  )
+  const [
+    leftRequirementPackageCatalogError,
+    setLeftRequirementPackageCatalogError,
+  ] = useState<string | null>(null)
+  const rightRequirementPackageCatalogStatus: 'failed' | 'loaded' | 'loading' =
+    initialData.errors.some(
+      error =>
+        error.key === SPECIFICATION_PRELOAD_ERROR_KEYS.requirementPackages,
+    )
+      ? 'failed'
+      : 'loaded'
   const [specificationGovernanceObjectTypes] = useState<
     SpecificationTaxonomyItem[]
   >(initialData.specificationGovernanceObjectTypes)
@@ -611,6 +663,10 @@ export default function KravunderlagDetailClient({
   const [leftFilters, setLeftFilters] = useState<FilterValues>(
     preFilterAreaId ? { areaIds: [preFilterAreaId] } : {},
   )
+  const leftFiltersRef = useRef(leftFilters)
+  useEffect(() => {
+    leftFiltersRef.current = leftFilters
+  }, [leftFilters])
   const [leftSort, setLeftSort] = useState<RequirementSortState>(
     DEFAULT_REQUIREMENT_SORT,
   )
@@ -703,7 +759,8 @@ export default function KravunderlagDetailClient({
   >([])
   const [bulkActionSaving, setBulkActionSaving] = useState(false)
   const [bulkActionResolving, setBulkActionResolving] = useState(false)
-  const [selectionNotice, setSelectionNotice] = useState<string | null>(null)
+  const [selectionNotice, setSelectionNotice] =
+    useState<SpecificationSelectionNotice | null>(null)
   const [bulkNeedsReferenceError, setBulkNeedsReferenceError] = useState<
     string | null
   >(null)
@@ -724,6 +781,15 @@ export default function KravunderlagDetailClient({
   const specificationItemsQueryKeyRef = useRef<string | null>(null)
   const specificationItemsRetryRef = useRef<HTMLButtonElement>(null)
   const needsReferenceUsageRequestIdRef = useRef(0)
+  const leftRequirementPackageCatalogRequestIdRef = useRef(0)
+  const leftRequirementPackageCatalogAbortRef = useRef<AbortController | null>(
+    null,
+  )
+  const initialLeftRequirementPackageCatalogRef =
+    useRef<SpecificationRequirementPackageCatalogPageData>(
+      initialData.leftRequirementPackageCatalog,
+    )
+  const initialLeftRequirementPackageCatalogTraversalStartedRef = useRef(false)
 
   const availableRequirementsParams = useMemo(() => {
     const params = buildRequirementListParams({
@@ -748,6 +814,147 @@ export default function KravunderlagDetailClient({
         sort: leftSort,
       }).toString(),
     [leftFilters, leftSort, locale],
+  )
+
+  const loadCompleteLeftRequirementPackageCatalog = useCallback(
+    async (
+      seedPage?: SpecificationRequirementPackageCatalogPageData,
+    ): Promise<boolean> => {
+      const requestId = ++leftRequirementPackageCatalogRequestIdRef.current
+      leftRequirementPackageCatalogAbortRef.current?.abort()
+      const controller = new AbortController()
+      leftRequirementPackageCatalogAbortRef.current = controller
+      const selectedIds = [
+        ...(leftFiltersRef.current.requirementPackageIds ?? []),
+      ]
+      const requirementPackages = [...(seedPage?.requirementPackages ?? [])]
+      let selectedRequirementPackages = [
+        ...(seedPage?.selectedRequirementPackages ?? []),
+      ]
+      let hasMore = seedPage?.pagination.hasMore ?? true
+      let cursor = seedPage?.pagination.nextCursor ?? null
+      const seenCursors = new Set<string>()
+
+      setLeftRequirementPackageCatalogStatus('loading')
+      setLeftRequirementPackageCatalogError(null)
+
+      try {
+        while (hasMore) {
+          if (seedPage && !cursor) {
+            throw new Error('Package catalog continuation is missing')
+          }
+          const params = new URLSearchParams({
+            limit: String(SPECIFICATION_REQUIREMENT_PACKAGES_PAGE_SIZE),
+          })
+          if (cursor) params.set('cursor', cursor)
+          for (const id of selectedIds) {
+            params.append('includeIds', String(id))
+          }
+          const response = await apiFetch(
+            `/api/requirements-specifications/${specificationId}/requirement-packages?${params}`,
+            { signal: controller.signal },
+          )
+          const page =
+            await readJsonOrThrow<SpecificationRequirementPackageCatalogPageData>(
+              response,
+              t('loadRequirementPackagesFailed'),
+            )
+          if (
+            controller.signal.aborted ||
+            requestId !== leftRequirementPackageCatalogRequestIdRef.current
+          ) {
+            return false
+          }
+          requirementPackages.push(...page.requirementPackages)
+          selectedRequirementPackages = page.selectedRequirementPackages
+          hasMore = page.pagination.hasMore
+          const nextCursor = page.pagination.nextCursor
+          if (hasMore) {
+            if (!nextCursor || seenCursors.has(nextCursor)) {
+              throw new Error('Package catalog continuation did not progress')
+            }
+            seenCursors.add(nextCursor)
+          }
+          cursor = nextCursor
+        }
+
+        const packagesById = new Map<number, RequirementPackageOption>()
+        for (const requirementPackage of requirementPackages) {
+          packagesById.set(requirementPackage.id, requirementPackage)
+        }
+        setLeftRequirementPackages([...packagesById.values()])
+        setLeftRequirementPackageCatalogStatus('loaded')
+        setLeftRequirementPackageCatalogError(null)
+
+        if (selectedIds.length > 0) {
+          const snapshottedSelectedIds = new Set(selectedIds)
+          const resolvedSelectedIds = new Set(
+            selectedRequirementPackages.map(
+              requirementPackage => requirementPackage.id,
+            ),
+          )
+          setLeftFilters(current => {
+            const currentPackageIds = current.requirementPackageIds ?? []
+            const nextPackageIds = currentPackageIds.filter(
+              id =>
+                !snapshottedSelectedIds.has(id) || resolvedSelectedIds.has(id),
+            )
+            if (nextPackageIds.length === currentPackageIds.length) {
+              return current
+            }
+            return {
+              ...current,
+              requirementPackageIds:
+                nextPackageIds.length > 0 ? nextPackageIds : undefined,
+            }
+          })
+        }
+        return true
+      } catch {
+        if (
+          controller.signal.aborted ||
+          requestId !== leftRequirementPackageCatalogRequestIdRef.current
+        ) {
+          return false
+        }
+        setLeftRequirementPackages([])
+        setLeftRequirementPackageCatalogStatus('failed')
+        setLeftRequirementPackageCatalogError(
+          t('loadRequirementPackagesFailed'),
+        )
+        return false
+      } finally {
+        if (
+          requestId === leftRequirementPackageCatalogRequestIdRef.current &&
+          leftRequirementPackageCatalogAbortRef.current === controller
+        ) {
+          leftRequirementPackageCatalogAbortRef.current = null
+        }
+      }
+    },
+    [specificationId, t],
+  )
+
+  useEffect(() => {
+    if (initialLeftRequirementPackageCatalogTraversalStartedRef.current) return
+    initialLeftRequirementPackageCatalogTraversalStartedRef.current = true
+    const initialCatalog = initialLeftRequirementPackageCatalogRef.current
+    const preloadFailed = initialData.errors.some(
+      error =>
+        error.key ===
+        SPECIFICATION_PRELOAD_ERROR_KEYS.specificationRequirementPackages,
+    )
+    if (!preloadFailed && initialCatalog.pagination.hasMore) {
+      void loadCompleteLeftRequirementPackageCatalog(initialCatalog)
+    }
+  }, [initialData.errors, loadCompleteLeftRequirementPackageCatalog])
+
+  useEffect(
+    () => () => {
+      leftRequirementPackageCatalogRequestIdRef.current += 1
+      leftRequirementPackageCatalogAbortRef.current?.abort()
+    },
+    [],
   )
 
   const specResource = useAsyncResource<SpecificationMeta | null>({
@@ -867,6 +1074,7 @@ export default function KravunderlagDetailClient({
     needsReferencesResource.refreshError ??
     leftNormReferenceResource.refreshError ??
     rightNormReferenceResource.refreshError ??
+    leftRequirementPackageCatalogError ??
     (initialData.errors.length > 0 ? t('partialDataLoadWarning') : null)
 
   const leftNormReferenceOptions = leftNormReferenceResource.data ?? []
@@ -1390,7 +1598,10 @@ export default function KravunderlagDetailClient({
     }: {
       throwOnError?: boolean
     } = {}): Promise<boolean> => {
-      const refreshed = await loadFirstSpecificationItemsPage()
+      const [refreshed] = await Promise.all([
+        loadFirstSpecificationItemsPage(),
+        loadCompleteLeftRequirementPackageCatalog(),
+      ])
       if (!refreshed) {
         if (throwOnError) {
           throw new Error(t('loadSpecificationItemsFailed'))
@@ -1399,8 +1610,119 @@ export default function KravunderlagDetailClient({
       }
       return true
     },
-    [loadFirstSpecificationItemsPage, t],
+    [
+      loadCompleteLeftRequirementPackageCatalog,
+      loadFirstSpecificationItemsPage,
+      t,
+    ],
   )
+
+  const fetchMatchingSpecificationRequirementIds = useCallback(
+    async (requirementIds: number[]): Promise<Set<number>> => {
+      const matchingIds = new Set<number>()
+      for (
+        let offset = 0;
+        offset < requirementIds.length;
+        offset += SPECIFICATION_ITEM_MATCH_PROBE_CHUNK_SIZE
+      ) {
+        const chunk = requirementIds.slice(
+          offset,
+          offset + SPECIFICATION_ITEM_MATCH_PROBE_CHUNK_SIZE,
+        )
+        const params = new URLSearchParams(specificationItemsParams)
+        params.delete('cursor')
+        params.set('limit', String(chunk.length))
+        params.delete('probeRequirementIds')
+        for (const requirementId of chunk) {
+          params.append('probeRequirementIds', String(requirementId))
+        }
+        const response = await apiFetch(
+          `/api/requirements-specifications/${specificationId}/items?${params}`,
+        )
+        const page = await readJsonOrThrow<SpecificationItemsPageData>(
+          response,
+          t('loadSpecificationItemsFailed'),
+        )
+        const chunkIds = new Set(chunk)
+        for (const item of page.items ?? []) {
+          if (chunkIds.has(item.id)) {
+            matchingIds.add(item.id)
+          }
+        }
+      }
+      return matchingIds
+    },
+    [specificationId, specificationItemsParams, t],
+  )
+
+  useEffect(() => {
+    if (
+      selectionNotice?.kind !== 'requirementsAdded' ||
+      selectionNotice.evaluatedQueryKey === specificationItemsParams
+    ) {
+      return
+    }
+
+    if (!hasSpecificationListFilters(leftFilters)) {
+      setSelectionNotice(current =>
+        current !== selectionNotice
+          ? current
+          : {
+              ...current,
+              evaluatedQueryKey: specificationItemsParams,
+              hiddenByFilters: false,
+            },
+      )
+      return
+    }
+
+    let cancelled = false
+    void fetchMatchingSpecificationRequirementIds(
+      selectionNotice.requirementIds,
+    )
+      .then(matchingRequirementIds => {
+        if (cancelled) return
+        setSelectionNotice(current =>
+          current !== selectionNotice
+            ? current
+            : {
+                ...current,
+                evaluatedQueryKey: specificationItemsParams,
+                hiddenByFilters: current.requirementIds.some(
+                  id => !matchingRequirementIds.has(id),
+                ),
+              },
+        )
+      })
+      .catch(() => {
+        // The list request presents its own error. Keep this notice neutral
+        // until the added requirements can be checked against the new filters.
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    fetchMatchingSpecificationRequirementIds,
+    leftFilters,
+    selectionNotice,
+    specificationItemsParams,
+  ])
+
+  const selectionNoticeText =
+    selectionNotice?.kind === 'message'
+      ? selectionNotice.text
+      : selectionNotice
+        ? t(
+            selectionNotice.evaluatedQueryKey === specificationItemsParams &&
+              selectionNotice.hiddenByFilters
+              ? 'requirementsAddedHiddenByFilters'
+              : 'requirementsAdded',
+            {
+              ids: selectionNotice.requirementUniqueIds.join(', '),
+            },
+          )
+        : null
 
   const fetchNeedsReferences = useCallback(
     async ({ throwOnError = false }: { throwOnError?: boolean } = {}) => {
@@ -1590,19 +1912,28 @@ export default function KravunderlagDetailClient({
         setAddModalError(data.error ?? tc('error'))
         return
       }
-      await Promise.all([
+      const hasActiveLeftFilters = hasSpecificationListFilters(leftFilters)
+      const [, , , matchingAddedRequirementIds] = await Promise.all([
         fetchSpecificationItems({ throwOnError: true }),
         fetchAvailableRequirements({ throwOnError: true }),
         needsReferencesResource.reload(),
+        hasActiveLeftFilters
+          ? fetchMatchingSpecificationRequirementIds(pendingAddIds)
+          : Promise.resolve(new Set(pendingAddIds)),
       ])
       setAddModalError(null)
       setRightSelectedIds(new Set())
       setShowAddModal(false)
-      setSelectionNotice(
-        t('requirementsAdded', {
-          ids: pendingAddRequirementUniqueIds.join(', '),
-        }),
-      )
+      const addedRequirementsHidden =
+        hasActiveLeftFilters &&
+        pendingAddIds.some(id => !matchingAddedRequirementIds.has(id))
+      setSelectionNotice({
+        evaluatedQueryKey: specificationItemsParams,
+        hiddenByFilters: addedRequirementsHidden,
+        kind: 'requirementsAdded',
+        requirementIds: [...pendingAddIds],
+        requirementUniqueIds: [...pendingAddRequirementUniqueIds],
+      })
     } catch {
       setAddModalError(tc('error'))
     } finally {
@@ -1614,12 +1945,14 @@ export default function KravunderlagDetailClient({
     addNeedsRefMode,
     addNeedsRefText,
     fetchAvailableRequirements,
+    fetchMatchingSpecificationRequirementIds,
     fetchSpecificationItems,
+    leftFilters,
     needsReferencesResource,
     specificationId,
     pendingAddIds,
     pendingAddRequirementUniqueIds,
-    t,
+    specificationItemsParams,
     tc,
   ])
 
@@ -1863,13 +2196,14 @@ export default function KravunderlagDetailClient({
           for (const itemRef of disappeared) next.delete(itemRef)
           return next
         })
-        setSelectionNotice(
-          t('selectionDisappeared', {
+        setSelectionNotice({
+          kind: 'message',
+          text: t('selectionDisappeared', {
             ids: disappeared
               .map(itemRef => knownByRef.get(itemRef)?.uniqueId ?? itemRef)
               .join(', '),
           }),
-        )
+        })
       }
 
       return [...itemRefs]
@@ -2367,8 +2701,6 @@ export default function KravunderlagDetailClient({
     [leftFilters, leftSort, locale],
   )
   const hasTraceabilityReportActions = filteredSpecificationItems.length > 0
-
-  const specificationRequirementPackages = requirementPackages
 
   const specificationReportProfile = useMemo(
     () =>
@@ -3600,6 +3932,8 @@ export default function KravunderlagDetailClient({
                   />
                 </div>
               ) : specificationItems.length === 0 &&
+                !hasSpecificationListFilters(leftFilters) &&
+                !selectionNoticeText &&
                 !specificationItemsLoading &&
                 !specificationItemsError ? (
                 <div
@@ -3788,7 +4122,11 @@ export default function KravunderlagDetailClient({
                         </div>
                       )
                     }}
-                    requirementPackages={specificationRequirementPackages}
+                    requirementPackageCatalogStatus={
+                      leftRequirementPackageCatalogStatus
+                    }
+                    requirementPackageFilterPresentation="compact-band"
+                    requirementPackages={leftRequirementPackages}
                     rows={filteredSpecificationItems}
                     selectable={canEditContent}
                     selectedIds={leftSelectedIds}
@@ -3827,9 +4165,9 @@ export default function KravunderlagDetailClient({
                                     total: leftSelectedItemRefs.size,
                                   })} ${t('selectionActionsAffectAll')}`}
                               </span>
-                              {selectionNotice ? (
+                              {selectionNoticeText ? (
                                 <p className="mt-1 font-medium">
-                                  {selectionNotice}
+                                  {selectionNoticeText}
                                 </p>
                               ) : null}
                               {bulkNeedsReferenceError &&
@@ -3855,12 +4193,12 @@ export default function KravunderlagDetailClient({
                             </button>
                           ) : null}
                         </div>
-                      ) : selectionNotice || bulkNeedsReferenceError ? (
+                      ) : selectionNoticeText || bulkNeedsReferenceError ? (
                         <div
                           className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
                           role="status"
                         >
-                          {selectionNotice ?? bulkNeedsReferenceError}
+                          {selectionNoticeText ?? bulkNeedsReferenceError}
                         </div>
                       ) : null
                     }
@@ -4109,6 +4447,10 @@ export default function KravunderlagDetailClient({
                       renderExpanded={id => (
                         <RequirementDetailClient inline requirementId={id} />
                       )}
+                      requirementPackageCatalogStatus={
+                        rightRequirementPackageCatalogStatus
+                      }
+                      requirementPackageFilterPresentation="compact-band"
                       requirementPackages={requirementPackages}
                       rows={rightRows}
                       selectable
