@@ -930,6 +930,10 @@ function runNginx(config, options = {}) {
       '--volume',
       `${path.resolve(cwd, 'containers/nginx/conf.d')}:/etc/nginx/conf.d:ro`,
       '--volume',
+      `${path.resolve(cwd, 'containers/production/nginx/templates/api-docs-security-headers.conf')}:/etc/nginx/snippets/api-docs-security-headers.conf:ro`,
+      '--volume',
+      `${path.resolve(cwd, 'public/api-docs')}:/usr/share/nginx/html/api-docs:ro`,
+      '--volume',
       `${path.resolve(cwd, config.tlsDir, 'kravhantering.test.crt')}:/etc/nginx/tls/kravhantering.test.crt:ro`,
       '--volume',
       `${path.resolve(cwd, config.tlsDir, 'kravhantering.test.key')}:/etc/nginx/tls/kravhantering.test.key:ro`,
@@ -1094,6 +1098,11 @@ async function up(config, options = {}) {
       '--output-dir',
       runtimeConfig.tlsDir,
     ],
+    options,
+  )
+  runCommand(
+    'npm',
+    ['run', 'openapi:hsa-person-lookup:generate:public'],
     options,
   )
   if (!runtimeConfig.releaseImagesFromLock && !runtimeConfig.skipBuild) {
