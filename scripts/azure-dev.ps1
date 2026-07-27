@@ -270,6 +270,113 @@ function Test-AzureDevVmSshPublicKeyDrift {
   )
 }
 
+function Wait-AzureDevTrustedLaunchGuestReadiness {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [pscustomobject]$Context,
+
+    [Parameter(Mandatory = $true)]
+    [pscustomobject]$Plan,
+
+    [int]$TimeoutSeconds = 300,
+
+    [switch]$NonBlocking
+  )
+
+  $commands = @(
+    'set -eu',
+    (
+      'if find "/lib/modules/$(uname -r)/updates/dkms" -type f ' +
+      '-print -quit 2>/dev/null | grep -q .; then echo ' +
+      '"DKMS kernel modules require manual Secure Boot validation"; exit 44; fi'
+    )
+  )
+  if ($Plan.Action -eq 'UpgradeGen1') {
+    $commands += @(
+      'sudo -n true',
+      'boot_source="$(df --output=source /boot | tail -n 1 | xargs)"',
+      'boot_parent="$(lsblk -no PKNAME "$boot_source" | head -n 1 | xargs)"',
+      (
+        'if [ -z "$boot_parent" ]; then echo "Could not identify the boot ' +
+        'disk"; exit 41; fi'
+      ),
+      'boot_device="/dev/$boot_parent"',
+      'partition_table="$(sudo blkid "$boot_device" -o value -s PTTYPE)"',
+      (
+        'if [ "$partition_table" != "gpt" ]; then echo "Boot disk is not ' +
+        'GPT"; exit 42; fi'
+      ),
+      (
+        'if ! sudo fdisk -l "$boot_device" | grep -qi "EFI System"; then ' +
+        'echo "EFI system partition is missing"; exit 43; fi'
+      ),
+      (
+        'if ! grep -qsE "^[^#]+[[:space:]]+/boot/efi[[:space:]]+" ' +
+        '/etc/fstab; then echo "/boot/efi is missing from /etc/fstab"; ' +
+        'exit 45; fi'
+      )
+    )
+  }
+  $commands += 'echo AZURE_DEV_TRUSTED_LAUNCH_READY'
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastReason = ''
+  do {
+    $result = Invoke-AzureDevNativeCommand `
+      -FilePath 'ssh' `
+      -Arguments @(
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ClearAllForwardings=yes',
+        '-o',
+        'ConnectTimeout=15',
+        '-o',
+        'StrictHostKeyChecking=accept-new',
+        $Context.Config.SshHostAlias,
+        ($commands -join '; ')
+      )
+    if (
+      $result.ExitCode -eq 0 -and
+      $result.Text -match 'AZURE_DEV_TRUSTED_LAUNCH_READY'
+    ) {
+      return [pscustomobject]@{
+        Ready = $true
+        Reason = $null
+      }
+    }
+    $lastReason = $result.Text.Trim()
+    if ([string]::IsNullOrWhiteSpace($lastReason)) {
+      $lastReason = "SSH readiness check exited with code $($result.ExitCode)."
+    }
+    Start-Sleep -Seconds 10
+  } while ((Get-Date) -lt $deadline)
+
+  if ($NonBlocking) {
+    return [pscustomobject]@{
+      Ready = $false
+      Reason = $lastReason
+    }
+  }
+  $generationRecovery = if ($Plan.Action -eq 'UpgradeGen1') {
+    (
+      'A Gen1-to-Gen2 conversion cannot be rolled back in place. Restore the ' +
+      'pre-upgrade VM or disks from backup if the VM cannot be recovered.'
+    )
+  } else {
+    (
+      'If unsigned boot components are responsible, disable Secure Boot in ' +
+      'Azure, repair or replace those components, and validate before retrying.'
+    )
+  }
+  throw (
+    'Azure enabled Trusted Launch, but the VM did not return a successful SSH ' +
+    "readiness check within $TimeoutSeconds seconds. Last result: " +
+    "$lastReason $generationRecovery"
+  )
+}
+
 function Set-AzureDevSetupState {
   [CmdletBinding(SupportsShouldProcess = $true)]
   param(
@@ -345,6 +452,43 @@ function Invoke-AzureDevSetup {
     }
 
     $image = Get-AzureDevDeploymentImage -Config $Context.Config
+    $trustedLaunchPlan = Get-AzureDevTrustedLaunchPlan `
+      -Config $Context.Config
+    if ($WhatIfPreference -and $trustedLaunchPlan.RequiresGuestValidation) {
+      Write-Host (
+        'Trusted Launch preview: live guest validation is skipped during ' +
+        '-WhatIf. The preview preserves the Azure metadata-based plan and ' +
+        'assumes the guest readiness checks will pass during setup.'
+      )
+    }
+    if ($trustedLaunchPlan.Action -eq 'Unsupported') {
+      Write-Warning (
+        "Existing VM $($Context.Config.VmName) cannot be changed automatically " +
+        "to Trusted Launch with Secure Boot and vTPM: " +
+        "$($trustedLaunchPlan.Reason) Setup will omit the security profile, " +
+        'preserve the current VM and disks, and continue repairing mutable ' +
+        'configuration.'
+      )
+    } elseif (
+      $trustedLaunchPlan.Action -in @(
+        'EnableFeatures',
+        'UpgradeGen2',
+        'UpgradeGen1'
+      )
+    ) {
+      $conversionText = if ($trustedLaunchPlan.Action -eq 'UpgradeGen1') {
+        ' This irreversibly converts the VM from Gen1 to Gen2; Azure retains ' +
+          'the original Gen1 Marketplace image reference.'
+      } else {
+        ''
+      }
+      Write-Warning (
+        "Existing VM $($Context.Config.VmName) will be deallocated to enable " +
+        "Trusted Launch, Secure Boot, and vTPM.$conversionText Take a backup " +
+        'or restore point first if its OS disk contains anything that cannot ' +
+        'be recreated.'
+      )
+    }
     $dataDisk = Get-AzureDevDataDisk -Config $Context.Config
     $dataDiskExists = $null -ne $dataDisk
     Write-AzureDevCostSummary `
@@ -354,11 +498,109 @@ function Invoke-AzureDevSetup {
     Test-AzureDevVmSshPublicKeyDrift `
       -Context $Context `
       -SshPublicKey $publicKey
-    Test-AzureDevApproval -Context $Context -Action 'Create or update Azure VM resources.' | Out-Null
+    $approvalAction = if ($trustedLaunchPlan.Action -eq 'UpgradeGen1') {
+      (
+        "Irreversibly convert $($Context.Config.VmName) from Gen1 to Gen2 " +
+        'Trusted Launch, then create or update Azure VM resources.'
+      )
+    } elseif (
+      $trustedLaunchPlan.Action -in @('EnableFeatures', 'UpgradeGen2')
+    ) {
+      (
+        "Deallocate $($Context.Config.VmName), enable Trusted Launch, Secure " +
+        'Boot, and vTPM, then create or update Azure VM resources.'
+      )
+    } else {
+      'Create or update Azure VM resources.'
+    }
+    Test-AzureDevApproval `
+      -Context $Context `
+      -Action $approvalAction | Out-Null
 
     New-AzureDevResourceGroup `
       -Context $Context `
       -WhatIf:$WhatIfPreference
+
+    if (
+      $trustedLaunchPlan.Action -in @(
+        'EnableFeatures',
+        'UpgradeGen2',
+        'UpgradeGen1'
+      )
+    ) {
+      if ($WhatIfPreference) {
+        Write-Host (
+          "Trusted Launch preview: would deallocate " +
+          "$($Context.Config.VmName) and enable TrustedLaunch, Secure Boot, " +
+          'and vTPM before deployment.'
+        )
+      } else {
+        $guestReadiness = if ($Context.SkipSshConfig) {
+          [pscustomobject]@{
+            Ready = $false
+            Reason = (
+              'Trusted Launch validation requires the managed SSH alias. ' +
+              'Rerun setup without -SkipSshConfig to enable conversion.'
+            )
+          }
+        } else {
+          Start-AzureDevAzureVm -Context $Context
+          $trustedLaunchHostName = Get-AzureDevHostName -Context $Context
+          $sshConfigApplied = Set-AzureDevManagedSshConfig `
+            -Context $Context `
+            -HostName $trustedLaunchHostName
+          if (-not $sshConfigApplied) {
+            throw (
+              'Setup cannot validate Trusted Launch until the managed SSH ' +
+              'config is applied. Rerun setup with -Apply or -Yes.'
+            )
+          }
+          Wait-AzureDevTrustedLaunchGuestReadiness `
+            -Context $Context `
+            -Plan $trustedLaunchPlan `
+            -NonBlocking
+        }
+        if (-not $guestReadiness.Ready) {
+          $trustedLaunchPlan.Action = 'Unsupported'
+          $trustedLaunchPlan.TemplateEnabled = $false
+          $trustedLaunchPlan.RequiresGuestValidation = $false
+          $trustedLaunchPlan.Reason = (
+            'Guest readiness validation did not pass: ' +
+            $guestReadiness.Reason
+          )
+          Write-Warning (
+            "Existing VM $($Context.Config.VmName) cannot be changed " +
+            'automatically to Trusted Launch with Secure Boot and vTPM: ' +
+            "$($trustedLaunchPlan.Reason) Setup will omit the security " +
+            'profile, preserve the current VM and disks, and continue ' +
+            'repairing mutable configuration.'
+          )
+        } else {
+          $trustedLaunchResult = Set-AzureDevTrustedLaunch `
+            -Context $Context `
+            -Plan $trustedLaunchPlan
+          $trustedLaunchPlan.State = $trustedLaunchResult.State
+          $trustedLaunchPlan.TemplateEnabled = $trustedLaunchResult.Succeeded
+          if ($trustedLaunchResult.Succeeded) {
+            Start-AzureDevAzureVm -Context $Context
+            Wait-AzureDevTrustedLaunchGuestReadiness `
+              -Context $Context `
+              -Plan $trustedLaunchPlan | Out-Null
+          }
+        }
+        if (
+          $trustedLaunchPlan.TemplateEnabled -and
+          $trustedLaunchPlan.Action -eq 'UpgradeGen1'
+        ) {
+          Write-Warning (
+            "VM $($Context.Config.VmName) was converted to Gen2 Trusted " +
+            'Launch, but Azure still reports its original Gen1 Marketplace ' +
+            'image reference. Do not use Azure reimage for this VM. Recreate ' +
+            'from the configured Gen2 image to replace that source reference.'
+          )
+        }
+      }
+    }
 
     if ($dataDiskExists) {
       Set-AzureDevDataDiskSize `
@@ -382,6 +624,7 @@ function Invoke-AzureDevSetup {
         -SshPublicKey $publicKey `
         -Image $image `
         -DataDiskExists $dataDiskExists `
+        -TrustedLaunchEnabled $trustedLaunchPlan.TemplateEnabled `
         -Preview
 
       Write-Host 'setup -WhatIf completed. No Azure resources, SSH files, local state, locks, or logs were created or modified.'
@@ -394,6 +637,7 @@ function Invoke-AzureDevSetup {
       -SshPublicKey $publicKey `
       -Image $image `
       -DataDiskExists $dataDiskExists `
+      -TrustedLaunchEnabled $trustedLaunchPlan.TemplateEnabled `
       -WhatIf:$WhatIfPreference
 
     $hostName = Get-AzureDevHostName -Context $Context
@@ -531,7 +775,30 @@ function Get-AzureDevStatus {
   $state = Get-AzureDevState -Context $Context
   $publicIp = Get-AzureDevPublicIpAddress -Config $Context.Config
   $powerState = Get-AzureDevVmPowerState -Config $Context.Config
-  $image = Get-AzureDevVmImage -Config $Context.Config
+  $securityState = Get-AzureDevVmSecurityState -Config $Context.Config
+  $hasMarketplaceImage = (
+    $null -ne $securityState -and
+    $securityState.Exists -and
+    -not [string]::IsNullOrWhiteSpace("$($securityState.ImagePublisher)") -and
+    -not [string]::IsNullOrWhiteSpace("$($securityState.ImageOffer)") -and
+    -not [string]::IsNullOrWhiteSpace("$($securityState.ImageSku)") -and
+    -not [string]::IsNullOrWhiteSpace("$($securityState.ImageVersion)")
+  )
+  $image = if ($hasMarketplaceImage) {
+    [pscustomobject]@{
+      publisher = $securityState.ImagePublisher
+      offer = $securityState.ImageOffer
+      sku = $securityState.ImageSku
+      version = $securityState.ImageVersion
+      urn = (
+        "$($securityState.ImagePublisher):$($securityState.ImageOffer):" +
+        "$($securityState.ImageSku):$($securityState.ImageVersion)"
+      )
+      plan = $null
+    }
+  } else {
+    Get-AzureDevVmImage -Config $Context.Config
+  }
   if ($null -ne $image) {
     Write-AzureDevImageDeprecationWarning `
       -Config $Context.Config `
@@ -543,10 +810,42 @@ function Get-AzureDevStatus {
     $Context.Config.AllowedSshCidr
   }
   $validation = Get-AzureDevValidationStatus -State $state
+  $generationText = if ($null -ne $securityState -and $securityState.Exists) {
+    $securityState.HyperVGeneration
+  } else {
+    '<not found>'
+  }
+  $securityTypeText = if ($null -ne $securityState -and $securityState.Exists) {
+    $securityState.SecurityType
+  } else {
+    '<not found>'
+  }
+  $secureBootText = if (
+    $null -ne $securityState -and
+    $securityState.Exists -and
+    $null -ne $securityState.SecureBootEnabled
+  ) {
+    $securityState.SecureBootEnabled
+  } else {
+    '<not found>'
+  }
+  $vTpmText = if (
+    $null -ne $securityState -and
+    $securityState.Exists -and
+    $null -ne $securityState.VTpmEnabled
+  ) {
+    $securityState.VTpmEnabled
+  } else {
+    '<not found>'
+  }
 
   Write-Host "Resource group: $($Context.Config.ResourceGroup)"
   Write-Host "VM: $($Context.Config.VmName)"
   Write-Host "Image: $(if ($null -eq $image) { '<not found>' } else { $image.urn })"
+  Write-Host "Hyper-V generation: $generationText"
+  Write-Host "Security type: $securityTypeText"
+  Write-Host "Secure Boot: $secureBootText"
+  Write-Host "vTPM: $vTpmText"
   Write-Host "Power state: $powerState"
   Write-Host "Connectivity mode: $($Context.Config.ConnectivityMode)"
   Write-Host "Public IP: $publicIp"
