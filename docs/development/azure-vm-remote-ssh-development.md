@@ -285,6 +285,8 @@ Install these tools on the workstation:
 - VS Code with Remote SSH
 - GitHub CLI when GitHub access is required from the remote environment
 - MesloLGS Nerd Font Mono installed on the workstation
+- Optional: `age` 1.2.1 or later for encrypted workstation-transfer packages.
+  Install it manually as described in [Install age](#install-age).
 - Optional: Tailscale CLI for Tailscale cleanup checks
 
 Powerlevel10k is rendered on the workstation even when the shell runs on the
@@ -409,7 +411,6 @@ The other non-secret Azure VM values use code defaults and can be left
 unchanged:
 
 ```env
-AZURE_DEV_VM_ALLOWED_SSH_CIDR=auto
 AZURE_DEV_VM_AUTO_STOP_ENABLED=true
 AZURE_DEV_VM_AUTO_STOP_TIME=2200
 AZURE_DEV_VM_AUTO_STOP_TIME_ZONE=UTC
@@ -439,9 +440,13 @@ image state, Hyper-V generation V2, and Trusted Launch support. Existing VMs
 retain their immutable image reference even when these configuration values
 change.
 
-Use `AZURE_DEV_VM_ALLOWED_SSH_CIDR=auto` for the normal path. Setup detects
-your current public IPv4 address and proposes it as a `/32`. Do not use
-`0.0.0.0/0`; the tool refuses broad SSH ranges.
+Setup detects the initial workstation's current public IPv4 address and creates
+a named `/32` rule. It derives the workstation name from the local machine
+name. Pass optional `-WorkstationName` or `-Cidr` parameters when either value
+needs an explicit override. Explicit network CIDRs also require
+`-AllowNetworkCidr`. Additional workstations and networks use the named CIDR
+commands documented below. The tool refuses private IPv4 ranges, ranges broader
+than `/24`, and broad SSH ranges such as `0.0.0.0/0`.
 
 The parser intentionally supports only `KEY=value`, optional quotes, blank
 lines, and full-line comments. It does not evaluate shell expressions,
@@ -940,10 +945,33 @@ Show current state:
 Refresh only the SSH source CIDR after your public IP changes:
 
 ```powershell
-./scripts/azure-dev.ps1 update-cidr
+./scripts/azure-dev.ps1 set-cidr `
+  -AccessName "current"
 ```
 
-Print or apply the managed SSH block:
+Add another current public IP:
+
+```powershell
+./scripts/azure-dev.ps1 add-cidr `
+  -AccessName "office"
+```
+
+List or remove named CIDRs:
+
+```powershell
+./scripts/azure-dev.ps1 list-cidrs
+./scripts/azure-dev.ps1 remove-cidr `
+  -AccessName "office"
+```
+
+Each CIDR is an Azure-visible NSG rule. Setup reads and preserves the live
+managed list so that one workstation cannot overwrite another workstation's
+access. A `/32` is the default. Explicit `/24` through `/31` ranges require
+`-AllowNetworkCidr`. The tool supports at most 64 managed CIDR rules. These
+commands use the normalized local hostname as the workstation name by default;
+pass `-WorkstationName "<name>"` to override it.
+
+Print or explicitly apply the managed SSH block:
 
 ```powershell
 ./scripts/azure-dev.ps1 ssh-config
@@ -953,7 +981,225 @@ Print or apply the managed SSH block:
 Forwarded ports are `3000`, `3001`, `4443`, `1433`, `8080`, `18000`, `9323`,
 and `51204`.
 
-## Step 9: Manage Support Services
+## Step 9: Add Another Workstation
+
+Each workstation receives a distinct SSH key. The private key is generated and
+stays on the destination workstation. A signed text request moves to an
+authorized workstation, and an encrypted response package moves back.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Destination as Destination workstation
+    participant Source as Authorized workstation
+    participant Azure as Azure NSG
+    participant VM as Existing Azure VM
+
+    User->>Destination: new-workstation-request
+    Destination->>Destination: Generate destination SSH key
+    Destination-->>User: Signed text request<br/>Public onboarding data
+    User->>Source: Paste request or copy request file
+    Source->>Source: Verify signature, expiry, and fingerprint
+    User->>Source: Confirm verification code
+    Source->>Azure: Add named CIDR rule
+    Source->>VM: Add destination public key
+    Source-->>User: ASCII-armored destination-key-encrypted age package
+    User->>Destination: Transfer attachment or armored text
+    Destination->>Destination: extract-workstation-package
+    Destination-->>User: Private README and selected files
+    User->>Destination: Copy and configure files manually
+    User->>Destination: prepare-workstation-access
+    Destination-->>User: Readiness report and code command
+```
+
+The request is Base64-encoded text, not encrypted. It contains only public
+onboarding data and can be pasted into email:
+
+```text
+-----BEGIN KRAVHANTERING WORKSTATION REQUEST-----
+Version: 1
+
+<Base64 payload>
+-----END KRAVHANTERING WORKSTATION REQUEST-----
+```
+
+The request is signed by the destination key. The approving user must still
+compare the displayed fingerprint or verification code because an attacker
+could replace the entire request with a separately signed request.
+
+### Create the destination request
+
+On the destination workstation, clone the repository, install the normal
+workstation prerequisites, and run:
+
+```powershell
+./scripts/azure-dev.ps1 new-workstation-request
+```
+
+The command creates a dedicated Ed25519 key under the user's `.ssh` directory,
+saves the signed request under `.azure/workstation-requests`, and prints the
+same request for copy and paste. It also prints the normalized workstation
+name, requested CIDR, generated private-key path, public-key fingerprint, and
+verification code. The approval values can then be compared, and the generated
+path can be used for `AZURE_DEV_VM_SSH_PRIVATE_KEY_PATH`. It uses the normalized
+local machine name as the workstation name; pass `-WorkstationName "<name>"`
+to override it. Transfer only the request. The private key never leaves the
+destination workstation.
+
+### Install age
+
+The workstation package workflow uses `age` to encrypt and decrypt response
+packages. Install `age` 1.2.1 or later manually and ensure that it is available
+on `PATH`. The Azure development script never downloads or installs it.
+
+Use the package manager appropriate for the workstation:
+
+```powershell
+# Windows, current user without administrator privileges
+winget install --id FiloSottile.age --exact --scope user
+
+# macOS or Linux with Homebrew
+brew install age
+```
+
+On Windows, run the WinGet command from a normal, non-elevated PowerShell
+session. The explicit `--scope user` requirement installs the portable package
+for the current user. WinGet stores user-scoped portable packages under
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages` by default and creates the command
+alias on the user's `PATH`. See the
+[WinGet scope and portable-package settings](https://learn.microsoft.com/windows/package-manager/winget/settings#scope).
+
+If WinGet is unavailable, as on some Windows Server installations, install
+Scoop and `age` for the current user from a normal PowerShell session:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+scoop bucket add extras
+scoop install age
+```
+
+Scoop installs under the current user's home directory by default and does not
+require administrator privileges. It requires PowerShell `FullLanguage` mode
+and a current-user execution policy that permits its scripts. See the
+[official Scoop installation instructions](https://github.com/ScoopInstaller/Install#readme).
+If organizational policy blocks Scoop, download the signed Windows ZIP from
+the [official age releases](https://github.com/FiloSottile/age/releases),
+extract it into a user-owned directory, and add the directory containing
+`age.exe` to the user's `PATH`.
+
+For native Linux package managers, MacPorts, pre-built binaries, and other
+supported installation methods, see the
+[official age installation instructions](https://github.com/FiloSottile/age#installation).
+Confirm the installed version before continuing:
+
+```powershell
+age --version
+```
+
+### Approve the request
+
+Approve a request file:
+
+```powershell
+./scripts/azure-dev.ps1 approve-workstation `
+  -RequestPath "<request-file>" `
+  -OutputPath "<response-package>.age"
+```
+
+Omit `-RequestPath` to paste the text request interactively. Approval displays
+the requested workstation, CIDR, public-key fingerprint, and verification code.
+It can optionally include the complete
+`.env.azure.development.local` file, GitHub tokens from the current process,
+an exportable Git signing key, and the custom Zsh template. Secret values are
+never displayed.
+
+Approval temporarily starts a stopped VM when the user confirms, restores its
+original power state, adds and verifies the named CIDR and public key, and
+creates an ASCII-armored response package encrypted to the destination
+workstation's SSH public key. The package can only be decrypted with the
+private key that remains on that workstation.
+
+The `.age` response is plain ASCII text in the native `age` armor format:
+
+```text
+-----BEGIN AGE ENCRYPTED FILE-----
+<armored encrypted payload>
+-----END AGE ENCRYPTED FILE-----
+```
+
+Transfer it as a normal attachment or copy the complete block through a
+text-only channel. When copying text, save the complete block as a plain-text
+`.age` file on the destination workstation without changing the markers. The
+encrypted contents can be copied safely, but the armored representation is
+about one-third larger than the binary form. `age` detects and decrypts the
+armored file automatically.
+
+### Extract and configure manually
+
+On the destination workstation:
+
+```powershell
+./scripts/azure-dev.ps1 extract-workstation-package `
+  -PackagePath "<response-package>.age" `
+  -DestinationPath "<private-extraction-directory>"
+```
+
+Extraction validates the package, rejects unsafe archive paths, and writes every
+validated manifest entry, including permitted environment files, only under the
+selected destination. It does not automatically apply those files to the
+repository, configure the environment, update SSH configuration, edit shell
+profiles, install tokens, or launch VS Code.
+
+Open the generated `README.md`. It identifies each source and destination path,
+explains machine-specific values such as
+`AZURE_DEV_VM_SSH_PRIVATE_KEY_PATH`, and provides the remaining commands. If a
+GitHub token is already present on the destination, keep it and ignore the
+packaged copy. Packaged token files are plaintext after extraction; load them
+only into the required local process or an existing secure credential system.
+
+After manual configuration, validate readiness:
+
+```powershell
+./scripts/azure-dev.ps1 prepare-workstation-access
+```
+
+The command reports whether keys and tokens are available in the current
+PowerShell process and prints the commands for `ssh-config -Apply` and VS Code.
+A missing token is not necessarily a problem when PowerShell will not launch
+the Remote SSH session. Run the printed `code` command from Zsh, Bash, or
+another shell where the required tokens are available. The command does not
+inspect other shell configurations, apply destination configuration, or launch
+VS Code.
+
+Remove the plaintext extraction directory after finishing:
+
+```powershell
+./scripts/azure-dev.ps1 cleanup-workstation-package `
+  -DestinationPath "<private-extraction-directory>"
+```
+
+Cleanup validates the package manifest and asks before deleting that exact
+directory. It does not claim secure erasure on SSD storage.
+
+After the encrypted response package reaches the destination workstation,
+remove the source copy using the cleanup command printed by
+`approve-workstation`.
+
+### Remove workstation access
+
+From another authorized workstation:
+
+```powershell
+./scripts/azure-dev.ps1 remove-workstation `
+  -WorkstationName "secondary-laptop"
+```
+
+The command removes the managed guest key and all CIDRs owned by the
+workstation. It refuses to remove the final usable key or CIDR without the
+explicit recovery override.
+
+## Step 10: Manage Support Services
 
 On the VM, inspect the support stack as `vscode`:
 

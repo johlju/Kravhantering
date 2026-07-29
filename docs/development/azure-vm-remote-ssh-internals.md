@@ -91,8 +91,9 @@ The command flow is intentionally narrow:
   mutation, validates prerequisites, resolves SSH CIDR, preserves an existing
   VM's immutable image reference or resolves the latest active Gen2 image from
   the configured Marketplace publisher, offer, and SKU for a new VM, resolves
-  the live VM security state, creates or verifies the SSH key, checks existing
-  VM SSH-key drift, reconciles Trusted Launch when safe, converges the resource
+  the live VM security state, creates or verifies the SSH key, preserves the
+  immutable Azure VM infrastructure key, reconciles Trusted Launch when safe,
+  converges the resource
   group and Bicep deployment, starts the VM when needed, waits for SSH, uploads
   templates, reruns bootstrap, runs smoke validation, writes state, and prints
   SSH instructions.
@@ -117,7 +118,16 @@ The command flow is intentionally narrow:
 - `status` reads Azure state plus local state and prints a compact status.
   The Azure portion includes image, Hyper-V generation, security type, Secure
   Boot, and vTPM.
-- `update-cidr` updates only the SSH NSG rule and managed SSH config.
+- `add-cidr`, `set-cidr`, `list-cidrs`, and `remove-cidr` manage named,
+  Azure-visible SSH sources without replacing another workstation's rules.
+- `new-workstation-request` creates a destination-local key and a signed,
+  ASCII-armored request without requiring Azure scope.
+- `approve-workstation` verifies the request, adds its public key and CIDR, and
+  creates a response package encrypted to the destination SSH public key.
+- `extract-workstation-package` validates and extracts a package into one
+  explicitly selected directory without applying workstation changes.
+- `prepare-workstation-access` reports current-process readiness and prints
+  manual commands.
 - `ssh-config` prints the managed OpenSSH block or applies it when requested.
 - `remove` deletes only live resources selected by ownership tags, then removes
   owned local state and the managed SSH config block.
@@ -284,10 +294,19 @@ repair from forcing an invalid or unsafe conversion. The desired profile is
 
 ## SSH And Connectivity
 
-`public-ssh` is the default connectivity mode. The implementation detects the
-operator's current public IPv4 address and converts it to a `/32` when
-`AZURE_DEV_VM_ALLOWED_SSH_CIDR=auto`. Broad ranges such as `0.0.0.0/0` and
-`::/0` must remain blocked.
+`public-ssh` is the default connectivity mode. The initial workstation detects
+its current public IPv4 address and converts it to a named `/32` rule. The
+optional setup `-Cidr` parameter overrides detection. Each managed NSG rule has
+one CIDR, a reserved priority from `2000` through `2063`, and a description
+containing the schema version, workstation, and access-source names. Azure is
+the shared source of truth. Setup reads the live managed rules and passes the
+complete array to Bicep so local ignored files cannot erase another
+workstation's access.
+
+Explicit `/24` through `/31` networks require an approval switch. Private and
+reserved IPv4 ranges, ranges broader than `/24`, `0.0.0.0/0`, and `::/0`
+remain blocked. Duplicate CIDRs are allowed because multiple workstations can
+share one NAT address.
 
 The managed OpenSSH block is bounded by markers and is the only part of
 `~/.ssh/config` the tool may change. The block uses the configured host alias,
@@ -296,6 +315,11 @@ private key, and the local forwards documented in the development guide. It
 also contains `SendEnv` entries for `GH_TOKEN` and
 `COPILOT_GITHUB_TOKEN`; both token values remain in the workstation
 environment and are never written to the managed block.
+
+The readiness command checks token presence only in its current PowerShell
+process. It does not inspect Zsh, Bash, or other shell startup files. Missing
+tokens are acceptable when another shell that contains them starts the VS Code
+Remote SSH session.
 
 The setup and start connection output explains that `GH_TOKEN` and
 `COPILOT_GITHUB_TOKEN` must exist in the workstation environment that launches
@@ -325,6 +349,48 @@ existing VS Code Remote SSH session may already own the forwarded local ports.
 
 Tailscale mode is explicit. It uses ordinary OpenSSH over the VM's Tailscale
 address and does not enable Tailscale SSH.
+
+## Workstation Transfer Security
+
+`AzureDev.Workstation.psm1` owns workstation names, CIDR policy, destination
+key requests, guest-key registration, encrypted response packages, defensive
+extraction, and readiness reporting.
+
+Workstation-scoped commands derive their default name from
+`System.Environment.MachineName`, normalize it for the Azure rule name, and
+accept `-WorkstationName` as an optional override. The workstation name is not
+stored in an environment file.
+
+The request schema is canonical JSON wrapped in an ASCII-armored Base64
+envelope. It contains no secret or private key. `ssh-keygen -Y sign` signs the
+payload with namespace `kravhantering-workstation-request`; approval verifies
+that signature against the embedded public key. This proves possession and
+detects corruption. It does not authenticate a fully replaced request, so the
+human fingerprint and verification-code comparison remains mandatory.
+
+The response package is a ZIP payload encrypted with `age` to the destination
+workstation's SSH public key and emitted in the native ASCII-armored format.
+A compatible `age` 1.2.1 or later must be installed manually and available on
+`PATH`. The module validates the installed version but never downloads,
+installs, or manages the tool. Decryption auto-detects the armored input.
+
+The manifest binds the package to the request ID, workstation, environment,
+destination public-key fingerprint, and 24-hour expiry. Entry names are an
+allowlist. Extraction rejects rooted paths, backslashes, `..`, duplicates,
+undeclared entries, missing declared entries, oversized entries, unsupported
+schemas, and expired packages. It extracts only into a new user-selected
+directory with user-only permissions.
+
+The extractor never applies destination configuration. It creates a
+destination-specific `README.md` that explains source and destination paths,
+machine-specific path changes, Azure login, host-key comparison, SSH config,
+token capability, readiness validation, and plaintext cleanup. Secret values
+remain in separate restricted files and never enter the README, logs, or
+terminal output.
+
+Approval creates the encrypted response before changing access. A failure
+removes the invalid response and a newly created CIDR rule. A stopped VM starts
+only after approval and returns to its original power state in `finally`.
 
 Guest bootstrap writes
 `/etc/ssh/sshd_config.d/00-kravhantering-root-login.conf` with
@@ -522,8 +588,8 @@ Local state is a cache written to:
 
 It records the setup version, subscription, resource group, VM name, current
 public IP or Tailscale target, SSH alias and key paths, deployment outputs,
-last known SSH CIDR, and last validation status. Destructive paths must verify
-live Azure resources instead of trusting this file.
+last known named SSH CIDRs, and last validation status. Destructive paths must
+verify live Azure resources instead of trusting this file.
 
 Mutating commands create:
 

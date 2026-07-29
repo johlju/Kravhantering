@@ -157,7 +157,7 @@ describe('development environment contract', () => {
     )
     const statusStart = entryScript.indexOf('function Get-AzureDevStatus')
     const statusEnd = entryScript.indexOf(
-      '\nfunction Update-AzureDevCidr',
+      '\nfunction Get-AzureDevSshConfig',
       statusStart,
     )
     const statusFunction = entryScript.slice(statusStart, statusEnd)
@@ -1025,6 +1025,243 @@ describe('development environment contract', () => {
     expect(developmentGuide.replaceAll(/\s+/g, ' ')).toContain(
       'does not change the application-wide VS Code setting',
     )
+  })
+
+  it('keeps named SSH CIDRs in Azure as shared desired state', () => {
+    const entryScript = readWorkspaceFile('scripts/azure-dev.ps1')
+    const azureModule = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Azure.psm1',
+    )
+    const workstationModule = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Workstation.psm1',
+    )
+    const bicepTemplate = readWorkspaceFile(
+      'scripts/azure-dev/templates/main.bicep',
+    )
+
+    expect(bicepTemplate).toContain('type SshAccessRule = {')
+    expect(bicepTemplate).toContain('param sshAccessRules SshAccessRule[]')
+    expect(bicepTemplate).toContain(
+      'The inline securityRules collection is the authoritative NSG rule state.',
+    )
+    expect(bicepTemplate).toContain(
+      "for rule in (connectivityMode == 'public-ssh' ? sshAccessRules : [])",
+    )
+    expect(bicepTemplate).toContain('name: rule.name')
+    expect(bicepTemplate).toContain('sourceAddressPrefix: rule.cidr')
+    expect(bicepTemplate).not.toContain('param allowedSshCidr string')
+    expect(azureModule).toContain('function Get-AzureDevSshAccessRules')
+    expect(azureModule).toContain('function Set-AzureDevSshAccessRule')
+    expect(azureModule).toContain('$script:AzureDevSshRuleLimit = 64')
+    expect(azureModule).toContain("'tags.ssh-access-schema=2'")
+    expect(azureModule).toContain("'--source-port-ranges=*'")
+    expect(azureModule).toContain("'--destination-address-prefixes=*'")
+    expect(azureModule).toContain(
+      "'--force-string',\n      'true',\n      '--set',\n      'tags.ssh-access-schema=2'",
+    )
+    expect(entryScript).toContain('Get-AzureDevSetupSshAccessRules')
+    expect(entryScript).toMatch(
+      /Get-AzureDevWorkstationCidr[\s`]*-Cidr\s+\$CidrOverride[\s`]*-AllowNetwork:\$AllowNetworkCidr/u,
+    )
+    expect(entryScript).toContain('-SshAccessRules $sshAccessRules')
+    expect(workstationModule).toContain(
+      '$value = [System.Environment]::MachineName',
+    )
+    expect(workstationModule).toContain(
+      'GH_TOKEN in current PowerShell process:',
+    )
+    expect(workstationModule).toContain(
+      'Start the printed code command from a shell, such as Zsh or Bash, where ',
+    )
+    expect(entryScript).toContain('-WorkstationName $effectiveWorkstationName')
+    expect(entryScript).toMatch(
+      /Get-AzureDevWorkstationCidr[\s`]*-Cidr\s+\$CidrOverride[\s`]*-AllowNetwork:\$AllowNetworkCidr/u,
+    )
+    expect(azureModule).toContain(
+      '(?i)(ResourceGroupNotFound|ResourceNotFound|could not be found|was not found)',
+    )
+    expect(azureModule).not.toContain(
+      'function Update-AzureDevNetworkSecurityGroupCidr',
+    )
+    expect(azureModule).toContain('function Get-AzureDevSshAccessRuleName')
+    expect(workstationModule).toContain(
+      '$candidateName = Get-AzureDevSshAccessRuleName',
+    )
+  })
+
+  it('uses signed text requests and excludes destination private keys', () => {
+    const workstationModule = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Workstation.psm1',
+    )
+
+    expect(workstationModule).toContain(
+      '-----BEGIN KRAVHANTERING WORKSTATION REQUEST-----',
+    )
+    expect(workstationModule).toContain("'-Y',\n        'sign',")
+    expect(workstationModule).toContain("'-Y',\n        'verify',")
+    expect(workstationModule).toContain(
+      "$script:RequestNamespace = 'kravhantering-workstation-request'",
+    )
+    expect(workstationModule).toContain('publicKey = $publicKey')
+    expect(workstationModule).not.toContain(
+      'privateKey = $Context.Config.SshPrivateKeyPath',
+    )
+    expect(workstationModule).toContain(
+      "'The workstation request signature is invalid.'",
+    )
+    expect(workstationModule).toContain(
+      'Write-Host "Requested CIDR: $resolvedCidr"',
+    )
+    expect(workstationModule).toContain(
+      'Write-Host "SSH private key: $keyPath"',
+    )
+    expect(workstationModule).toContain('"``$destinationPrivateKey``."')
+    expect(workstationModule).toContain('[datetimeoffset]$request.expiresAt')
+    expect(workstationModule).toContain(
+      '$standardOutput = $process.StandardOutput.ReadToEndAsync()',
+    )
+    expect(workstationModule).toContain(
+      '$standardError = $process.StandardError.ReadToEndAsync()',
+    )
+    expect(workstationModule).toContain('$process.Dispose()')
+  })
+
+  it('requires a manually installed age binary for response packages', () => {
+    const entryScript = readWorkspaceFile('scripts/azure-dev.ps1')
+    const workstationModule = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Workstation.psm1',
+    )
+    const developmentGuide = readWorkspaceFile(
+      'docs/development/azure-vm-remote-ssh-development.md',
+    )
+    const internalsGuide = readWorkspaceFile(
+      'docs/development/azure-vm-remote-ssh-internals.md',
+    )
+    const normalizedDevelopmentGuide = developmentGuide.replaceAll(/\s+/gu, ' ')
+    const normalizedInternalsGuide = internalsGuide.replaceAll(/\s+/gu, ' ')
+
+    expect(workstationModule).toContain('-CommandType Application `')
+    expect(workstationModule).toContain(
+      'age 1.2.1 or later must be installed manually and available on PATH.',
+    )
+    expect(workstationModule).toContain(
+      "'(?<!\\d)v?(?<version>\\d+\\.\\d+\\.\\d+)(?!\\d)'",
+    )
+    expect(workstationModule).toContain(
+      "$installedVersion = [version]$versionMatch.Groups['version'].Value",
+    )
+    expect(workstationModule).toContain("$minimumVersion = [version]'1.2.1'")
+    expect(workstationModule).not.toContain('Invoke-WebRequest')
+    expect(workstationModule).not.toContain('Install-AzureDevTransferTool')
+    expect(entryScript).not.toContain("'install-transfer-tool'")
+    expect(developmentGuide).toContain(
+      'The Azure development script never downloads or installs it.',
+    )
+    expect(developmentGuide).toContain(
+      'winget install --id FiloSottile.age --exact --scope user',
+    )
+    expect(developmentGuide).toContain(
+      'run the WinGet command from a normal, non-elevated PowerShell',
+    )
+    expect(developmentGuide).toContain(
+      'Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression',
+    )
+    expect(developmentGuide).toContain('scoop install age')
+    expect(normalizedDevelopmentGuide).toContain(
+      'does not require administrator privileges',
+    )
+    expect(developmentGuide).not.toContain(
+      'The transfer workflow can install a pinned, verified copy',
+    )
+    expect(developmentGuide).toContain('brew install age')
+    expect(normalizedInternalsGuide).toContain(
+      'installed manually and available on `PATH`',
+    )
+    expect(internalsGuide).not.toContain('pinned user-local copy')
+    expect(workstationModule).toMatch(
+      /Invoke-AzureDevNativeCommand[\s`]*-FilePath\s+\$age[\s`]*-Arguments\s+@\('-a',\s*'-R',\s*\$recipientPath,\s*'-o',\s*\$OutputPath,\s*\$zipPath\)/u,
+    )
+    expect(workstationModule).toContain(
+      '$script:MaximumArmoredPackageBytes = 70MB',
+    )
+    expect(developmentGuide).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
+    expect(developmentGuide).toContain('age` detects and decrypts the')
+    expect(internalsGuide).toContain(
+      'emitted in the native ASCII-armored format',
+    )
+    expect(workstationModule).toContain(
+      "'reference/destination-public-key.pub'",
+    )
+    expect(workstationModule).toContain(
+      'function Get-AzureDevWorkstationPackageIdentityPaths',
+    )
+    expect(workstationModule).toContain("$decryptArguments.Add('-i')")
+    expect(workstationModule).toContain('-Arguments @($decryptArguments)')
+    expect(workstationModule).not.toContain("-Arguments @('-p'")
+  })
+
+  it('extracts packages defensively without changing workstation files', () => {
+    const workstationModule = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Workstation.psm1',
+    )
+
+    expect(workstationModule).toContain(
+      'function Test-AzureDevPackageEntryName',
+    )
+    expect(workstationModule).toContain("$Name -match '(^|/)\\.\\.($|/)'")
+    expect(workstationModule).toContain(
+      'The package contains an unsafe or duplicate entry:',
+    )
+    expect(workstationModule).toContain(
+      'The package contains an undeclared entry:',
+    )
+    expect(workstationModule).toContain('The workstation package has expired.')
+    expect(workstationModule).toContain('[datetimeoffset]$manifest.expiresAt')
+    expect(workstationModule).toContain(
+      '$actualTotal -gt $script:MaximumPackageBytes',
+    )
+    expect(workstationModule).toContain(
+      '$entryBytes -gt $script:MaximumEntryBytes',
+    )
+    expect(workstationModule).not.toContain('$entryInput.CopyTo($output)')
+    expect(workstationModule).toContain('Write-AzureDevExtractedReadme')
+    expect(workstationModule).toContain(
+      "Write-Host 'Open the shared workspace:'",
+    )
+    expect(workstationModule).not.toContain('Start-Process code')
+    expect(workstationModule).not.toContain(
+      'code --remote ssh-remote+$($Context.Config.SshHostAlias) /workspace &',
+    )
+  })
+
+  it('hardens workstation package and access-key lifecycle operations', () => {
+    const workstationModule = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Workstation.psm1',
+    )
+    const sshModule = readWorkspaceFile('scripts/azure-dev/AzureDev.Ssh.psm1')
+
+    expect(workstationModule).toContain('function New-AzureDevPrivateFile')
+    expect(workstationModule).toContain('function Copy-AzureDevPrivateFile')
+    expect(workstationModule).toContain(
+      'function Get-AzureDevRemoteWorkstationKeyComment',
+    )
+    expect(workstationModule).toContain(
+      "'AZURE_DEV_VM_ENVIRONMENT_ID contains unsupported characters.'",
+    )
+    expect(workstationModule).toMatch(
+      /\$packageDirectory\s*=\s*Join-Path[\s`]*\$Context\.StateDirectory[\s`]*'workstation-packages'/u,
+    )
+    expect(workstationModule).toContain(
+      'After transfer, remove the encrypted source package:',
+    )
+    expect(workstationModule).toContain(
+      'Refusing to remove every remaining managed CIDR without',
+    )
+    expect(workstationModule).toContain(
+      'Pass -WorkstationName with a stable name for this workstation.',
+    )
+    expect(workstationModule).not.toMatch(/\$[A-Za-z_][A-Za-z0-9_]*\?"/u)
+    expect(sshModule).toContain("-Arguments @('700', $directory)")
   })
 
   it('blocks direct root SSH and validates the effective policy', () => {

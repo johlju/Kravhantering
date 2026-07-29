@@ -33,8 +33,16 @@ param sshPublicKey string
 ])
 param connectivityMode string = 'public-ssh'
 
-@description('Allowed source CIDR for inbound SSH in public-ssh mode.')
-param allowedSshCidr string
+type SshAccessRule = {
+  name: string
+  description: string
+  priority: int
+  cidr: string
+}
+
+@description('Authoritative named inbound SSH rules. Omitted rules are removed from the NSG.')
+@maxLength(64)
+param sshAccessRules SshAccessRule[]
 
 @description('Enable Azure DevTestLab auto-shutdown.')
 param autoStopEnabled bool = true
@@ -90,21 +98,23 @@ var dataDiskProfile = union({
   diskSizeGB: dataDiskGiB
 })
 
-var sshRules = connectivityMode == 'public-ssh' ? [
-  {
-    name: 'AllowSshFromOperator'
+// The inline securityRules collection is the authoritative NSG rule state.
+var sshRules = [
+  for rule in (connectivityMode == 'public-ssh' ? sshAccessRules : []): {
+    name: rule.name
     properties: {
-      priority: 100
+      description: rule.description
+      priority: rule.priority
       direction: 'Inbound'
       access: 'Allow'
       protocol: 'Tcp'
       sourcePortRange: '*'
       destinationPortRange: '22'
-      sourceAddressPrefix: allowedSshCidr
+      sourceAddressPrefix: rule.cidr
       destinationAddressPrefix: '*'
     }
   }
-] : []
+]
 
 var nicIpProperties = union({
   subnet: {
