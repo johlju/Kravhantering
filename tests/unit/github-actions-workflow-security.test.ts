@@ -40,6 +40,7 @@ type WorkflowJob = {
 type WorkflowStep = {
   'continue-on-error'?: unknown
   env?: Record<string, unknown>
+  id?: unknown
   if?: unknown
   name?: unknown
   run?: unknown
@@ -500,7 +501,7 @@ describe('GitHub Actions workflow security', () => {
       releaseJob?.steps?.find(
         step => step.name === 'Stage deployment archive verification guide',
       )?.if,
-    ).toBe("always() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'")
+    ).toBe("success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'")
     for (const stepName of [
       'Write deployment archive release predicate',
       'Attest production deployment archive',
@@ -515,15 +516,118 @@ describe('GitHub Actions workflow security', () => {
     for (const stepName of [
       'Stop container stack',
       'Write artifact hashes',
-      'Stage production deployment bundle',
-      'Archive production deployment bundle',
-      'Write release notes',
       'Stage release artifacts',
     ]) {
       expect(releaseJob?.steps?.find(step => step.name === stepName)?.if).toBe(
         'always()',
       )
     }
+    for (const stepName of [
+      'Stage production deployment bundle',
+      'Archive production deployment bundle',
+      'Write release notes',
+    ]) {
+      expect(releaseJob?.steps?.find(step => step.name === stepName)?.if).toBe(
+        'success()',
+      )
+    }
+  })
+
+  it('gates container promotion on exact candidate scans and smoke tests', () => {
+    const workflow = readWorkflowYaml('container-release.yml')
+    const releaseJob = workflow.jobs?.['trusted-release']
+    const steps = releaseJob?.steps ?? []
+    const stepNames = steps.map(step => step.name)
+    const indexOf = (name: string) => {
+      const index = stepNames.indexOf(name)
+      expect(index, `Expected release step "${name}"`).toBeGreaterThanOrEqual(0)
+      return index
+    }
+    const candidateBuilds = steps.filter(step =>
+      String(step.name).match(/^Build .+ candidate OCI artifact$/u),
+    )
+    const candidateSbomSteps = steps.filter(step =>
+      String(step.name).match(/^Generate .+ SBOM$/u),
+    )
+
+    expect(candidateBuilds).toHaveLength(5)
+    expect(candidateSbomSteps).toHaveLength(5)
+    for (const step of candidateSbomSteps) {
+      expect(step.with?.image).toMatch(/^oci-archive:/u)
+      expect(step.with?.format).toBe('spdx-json')
+      expect(step.with?.['upload-artifact']).toBe(false)
+    }
+
+    const identityIndex = indexOf('Record exact candidate image identities')
+    const scanIndex = indexOf(
+      'Scan complete candidate SBOMs with current Grype database',
+    )
+    const scanRun = stepRunText(
+      releaseJob,
+      'Scan complete candidate SBOMs with current Grype database',
+    )
+    expect(scanRun).toContain('for attempt in 1 2 3; do')
+    expect(scanRun).toContain(
+      ['if "$', '{GRYPE_CMD}" db update; then'].join(''),
+    )
+    expect(scanRun).toContain(
+      ['if [[ "$', '{attempt}" -eq 3 ]]; then'].join(''),
+    )
+    expect(scanRun).toContain(['sleep "$', '{attempt}"'].join(''))
+    expect(scanRun).toContain('exit 1')
+    const policyIndex = indexOf('Evaluate committed vulnerability exceptions')
+    const smokeIndex = indexOf('Run release smoke tests')
+    const loginIndex = indexOf('Log in to GHCR after validation gates')
+    const promotionIndex = indexOf(
+      'Promote unchanged candidate OCI artifacts and verify digests',
+    )
+    const attestationIndex = indexOf('Attest app-runtime provenance')
+    const verifyAttestationIndex = indexOf('Verify final artifact attestations')
+    const releaseIndex = indexOf('Publish GitHub Release')
+
+    expect(identityIndex).toBeLessThan(scanIndex)
+    expect(scanIndex).toBeLessThan(policyIndex)
+    expect(policyIndex).toBeLessThan(smokeIndex)
+    expect(smokeIndex).toBeLessThan(loginIndex)
+    expect(loginIndex).toBeLessThan(promotionIndex)
+    expect(promotionIndex).toBeLessThan(attestationIndex)
+    expect(attestationIndex).toBeLessThan(verifyAttestationIndex)
+    expect(verifyAttestationIndex).toBeLessThan(releaseIndex)
+
+    const policyStep = steps[policyIndex]
+    expect(policyStep?.['continue-on-error']).toBeUndefined()
+    expect(steps[loginIndex]?.id).toBe('ghcr-login')
+    expect(steps[promotionIndex]?.if).toBe('success()')
+    expect(steps[promotionIndex]?.env?.REGISTRY_AUTH_FILE).toBe(
+      ['${{', 'steps.ghcr-login.outputs.authfile', '}}'].join(' '),
+    )
+    expect(steps[attestationIndex]?.if).toBe('success()')
+    expect(steps[verifyAttestationIndex]?.if).toBe('success()')
+    expect(steps[releaseIndex]?.if).toBe(
+      "success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'",
+    )
+    expect(
+      steps.find(step => step.name === 'Create preview tag when needed')?.if,
+    ).toBe(
+      "success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true' && env.RELEASE_PRERELEASE == 'true'",
+    )
+    expect(
+      steps.find(step => step.name === 'Archive stable operator upgrade notes')
+        ?.if,
+    ).toBe(
+      "success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true' && env.RELEASE_IS_STABLE == 'true'",
+    )
+
+    const uploadEvidence = steps.find(
+      step => step.name === 'Upload release metadata artifacts',
+    )
+    expect(uploadEvidence?.if).toBe('always()')
+    expect(uploadEvidence?.with?.path).toContain(
+      'tmp/container-release-artifacts/reports/',
+    )
+    expect(uploadEvidence?.with?.path).toContain(
+      'tmp/container-release-artifacts/sbom/',
+    )
   })
 
   it('keeps stable operator notes archives behind protected-main checks', () => {
@@ -532,7 +636,6 @@ describe('GitHub Actions workflow security', () => {
       'utf8',
     )
 
-    expect(workflow).toContain('Archive stable operator upgrade notes')
     expect(workflow).toMatch(
       /\bGH_TOKEN:\s*\$\{\{\s*secrets\.OPERATOR_UPGRADE_NOTES_TOKEN\s*\}\}/u,
     )

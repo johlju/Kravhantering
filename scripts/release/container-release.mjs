@@ -37,7 +37,7 @@ export const HSA_PERSON_LOOKUP_ADAPTER_DESCRIPTION =
 
 const USAGE = `Usage:
   node scripts/release/container-release.mjs plan --gitversion-json <path> --output <path> [--github-env <path>] [--changed-files <path>]
-  node scripts/release/container-release.mjs identities --plan <path> --app-metadata <path> --db-job-metadata <path> [--hsa-directory-mock-metadata <path>] [--hsa-person-lookup-adapter-metadata <path>] [--demo-seed-metadata <path>] --output <path> [--github-env <path>]
+  node scripts/release/container-release.mjs identities --plan <path> --app-metadata <path> --app-artifact <path> --db-job-metadata <path> --db-job-artifact <path> [--hsa-directory-mock-metadata <path> --hsa-directory-mock-artifact <path>] [--hsa-person-lookup-adapter-metadata <path> --hsa-person-lookup-adapter-artifact <path>] [--demo-seed-metadata <path> --demo-seed-artifact <path>] --output <path> [--github-env <path>]
   node scripts/release/container-release.mjs notes --plan <path> --metadata <path> --hashes <path> --output <path> [--operator-notes <path>]
   node scripts/release/container-release.mjs bundle --plan <path> --metadata <path> --stack-lock <path> --output-dir <path> [--hsa-integration-support-lock <path>] [--test-support-lock <path>] [--build-json <path>] [--hashes <path>] [--sbom-dir <path>]
   node scripts/release/container-release.mjs ensure-tag --plan <path>`
@@ -46,6 +46,7 @@ const { readExpectedDatabaseSchemaVersion } = buildMetadataTools
 
 const RELEVANT_PATH_PREFIXES = [
   '.github/workflows/container-release.yml',
+  '.github/container-vulnerability-exceptions.json',
   'app/',
   'components/',
   'containers/',
@@ -210,7 +211,7 @@ export function readOperatorUpgradeNotes(
   return extractUnreleasedOperatorUpgradeNotes(content, filePath)
 }
 
-function parseArgs(args) {
+export function parseArgs(args) {
   const [command, ...rest] = args
   const options = {}
 
@@ -317,6 +318,13 @@ function csv(values) {
   return values.join(',')
 }
 
+function createCandidatePlan(packageName, fileName, sha) {
+  return {
+    artifactPath: `${DEFAULT_RELEASE_OUTPUT_DIR}/candidates/${fileName}.oci.tar`,
+    localRef: `localhost/kravhantering-release-candidates/${packageName}:sha-${sha}`,
+  }
+}
+
 export function createReleasePlan(input = {}) {
   const env = input.env ?? process.env
   const cwd = input.cwd ?? process.cwd()
@@ -324,10 +332,20 @@ export function createReleasePlan(input = {}) {
   const gitVersion = input.gitVersion ?? {}
   const repository =
     readNonEmpty(input.repository) ?? readNonEmpty(env.GITHUB_REPOSITORY)
+  const repositoryPathOwner = readNonEmpty(repository?.split('/')[0])
+  const githubRepositoryOwner = readNonEmpty(env.GITHUB_REPOSITORY_OWNER)
+  if (
+    repositoryPathOwner &&
+    githubRepositoryOwner &&
+    normalizeOwner(repositoryPathOwner) !==
+      normalizeOwner(githubRepositoryOwner)
+  ) {
+    throw new Error('GITHUB_REPOSITORY_OWNER does not match GITHUB_REPOSITORY.')
+  }
   const repositoryOwner =
     readNonEmpty(input.repositoryOwner) ??
-    readNonEmpty(env.GITHUB_REPOSITORY_OWNER) ??
-    repository?.split('/')[0]
+    githubRepositoryOwner ??
+    repositoryPathOwner
   const owner = normalizeOwner(repositoryOwner)
   const sha =
     readNonEmpty(input.sha) ?? readNonEmpty(env.GITHUB_SHA) ?? 'unknown'
@@ -372,12 +390,28 @@ export function createReleasePlan(input = {}) {
     : shouldCreatePreviewRelease
       ? [version, ...commitTags]
       : commitTags
+  const candidates = {
+    appRuntime: createCandidatePlan(APP_RUNTIME_PACKAGE, 'app-runtime', sha),
+    dbJob: createCandidatePlan(DB_JOB_PACKAGE, 'db-job', sha),
+    demoSeed: createCandidatePlan(DEMO_SEED_PACKAGE, 'demo-seed', sha),
+    hsaDirectoryMock: createCandidatePlan(
+      HSA_DIRECTORY_MOCK_PACKAGE,
+      'hsa-directory-mock',
+      sha,
+    ),
+    hsaPersonLookupAdapter: createCandidatePlan(
+      HSA_PERSON_LOOKUP_ADAPTER_PACKAGE,
+      'hsa-person-lookup-adapter',
+      sha,
+    ),
+  }
 
   return {
     appRuntimeImage,
     appRuntimePackage: APP_RUNTIME_PACKAGE,
     appRuntimeTags: tags.map(tag => `${appRuntimeImage}:${tag}`),
     buildImageTag: `${appRuntimeImage}:${tags[0]}`,
+    candidates,
     changedFiles,
     commitSha: sha,
     createGitHubRelease: isStableRelease || shouldCreatePreviewRelease,
@@ -422,6 +456,8 @@ export function githubEnvLines(values) {
 
 export function releasePlanEnv(plan) {
   return {
+    APP_RUNTIME_CANDIDATE_ARTIFACT: plan.candidates.appRuntime.artifactPath,
+    APP_RUNTIME_CANDIDATE_REF: plan.candidates.appRuntime.localRef,
     APP_RUNTIME_DESCRIPTION,
     APP_RUNTIME_IMAGE: plan.appRuntimeImage,
     APP_RUNTIME_PACKAGE: plan.appRuntimePackage,
@@ -435,18 +471,25 @@ export function releasePlanEnv(plan) {
     CONTAINER_PROJECT_NAME: `kravhantering-container-stack-release-smoke-${plan.runId}`,
     CONTAINER_STACK_RUN_ID: plan.runId,
     DB_JOB_DESCRIPTION,
+    DB_JOB_CANDIDATE_ARTIFACT: plan.candidates.dbJob.artifactPath,
+    DB_JOB_CANDIDATE_REF: plan.candidates.dbJob.localRef,
     DB_JOB_IMAGE: plan.dbJobImage,
     DB_JOB_PACKAGE: plan.dbJobPackage,
     DB_JOB_PRIMARY_TAG: plan.dbJobTags[0],
     DB_JOB_PRIMARY_TAG_NAME: plan.tags[0],
     DB_JOB_TAGS_CSV: csv(plan.dbJobTags),
     DEMO_SEED_DESCRIPTION,
+    DEMO_SEED_CANDIDATE_ARTIFACT: plan.candidates.demoSeed.artifactPath,
+    DEMO_SEED_CANDIDATE_REF: plan.candidates.demoSeed.localRef,
     DEMO_SEED_IMAGE: plan.demoSeedImage,
     DEMO_SEED_PACKAGE: plan.demoSeedPackage,
     DEMO_SEED_PRIMARY_TAG: plan.demoSeedTags[0],
     DEMO_SEED_PRIMARY_TAG_NAME: plan.tags[0],
     DEMO_SEED_TAGS_CSV: csv(plan.demoSeedTags),
     HSA_DIRECTORY_MOCK_DESCRIPTION,
+    HSA_DIRECTORY_MOCK_CANDIDATE_ARTIFACT:
+      plan.candidates.hsaDirectoryMock.artifactPath,
+    HSA_DIRECTORY_MOCK_CANDIDATE_REF: plan.candidates.hsaDirectoryMock.localRef,
     HSA_DIRECTORY_MOCK_IMAGE: plan.hsaDirectoryMockImage,
     HSA_DIRECTORY_MOCK_PACKAGE: plan.hsaDirectoryMockPackage,
     HSA_DIRECTORY_MOCK_PRIMARY_TAG: plan.hsaDirectoryMockTags[0],
@@ -454,6 +497,10 @@ export function releasePlanEnv(plan) {
     HSA_DIRECTORY_MOCK_TAGS_CSV: csv(plan.hsaDirectoryMockTags),
     HSA_PERSON_LOOKUP_ADAPTER_DESCRIPTION:
       HSA_PERSON_LOOKUP_ADAPTER_DESCRIPTION,
+    HSA_PERSON_LOOKUP_ADAPTER_CANDIDATE_ARTIFACT:
+      plan.candidates.hsaPersonLookupAdapter.artifactPath,
+    HSA_PERSON_LOOKUP_ADAPTER_CANDIDATE_REF:
+      plan.candidates.hsaPersonLookupAdapter.localRef,
     HSA_PERSON_LOOKUP_ADAPTER_IMAGE: plan.hsaPersonLookupAdapterImage,
     HSA_PERSON_LOOKUP_ADAPTER_PACKAGE: plan.hsaPersonLookupAdapterPackage,
     HSA_PERSON_LOOKUP_ADAPTER_PRIMARY_TAG: plan.hsaPersonLookupAdapterTags[0],
@@ -485,6 +532,19 @@ function readChangedFilesFile(filePath, fsImpl = fs) {
   return changedFilesFromText(fsImpl.readFileSync(filePath, 'utf8'))
 }
 
+function readCandidateIdentity(plan, candidateName, archivePath, options = {}) {
+  if (!archivePath) return undefined
+  const candidatePlan = plan.candidates?.[candidateName]
+  if (!candidatePlan?.localRef) {
+    throw new Error(`Release plan is missing ${candidateName} candidate data.`)
+  }
+  return {
+    artifactPath: archivePath,
+    localRef: candidatePlan.localRef,
+    ...readOciArchiveIdentity(archivePath, options),
+  }
+}
+
 export function extractBuildxManifestDigest(metadata) {
   const manifestDigest =
     readNonEmpty(metadata?.['containerimage.digest']) ??
@@ -510,10 +570,117 @@ export function extractBuildxImageId(metadata) {
   return imageId
 }
 
-function createImageMetadata(image, tags, buildxMetadata) {
+function descriptorBlobPath(digest) {
+  const match = String(digest ?? '').match(
+    /^(?<algorithm>[a-z0-9]+):(?<value>[a-f\d]+)$/u,
+  )
+  if (!match?.groups) {
+    throw new Error(`OCI descriptor has an invalid digest: ${digest}.`)
+  }
+  return `blobs/${match.groups.algorithm}/${match.groups.value}`
+}
+
+export function extractOciArchiveIdentity(index, readDescriptorJson) {
+  if (
+    index?.schemaVersion !== 2 ||
+    !Array.isArray(index?.manifests) ||
+    index.manifests.length !== 1
+  ) {
+    throw new Error(
+      'OCI candidate archive must contain exactly one root descriptor.',
+    )
+  }
+  const root = index.manifests[0]
+  const isIndex = String(root.mediaType ?? '').includes('.image.index.')
+  const platformDescriptors = isIndex
+    ? readDescriptorJson(root).manifests
+    : [root]
+  if (!Array.isArray(platformDescriptors) || platformDescriptors.length === 0) {
+    throw new Error('OCI candidate archive has no platform manifests.')
+  }
+  platformDescriptors.forEach((descriptor, index) => {
+    if (
+      descriptor === null ||
+      typeof descriptor !== 'object' ||
+      Array.isArray(descriptor)
+    ) {
+      throw new Error(
+        `OCI platform descriptor at index ${index} must be an object.`,
+      )
+    }
+    descriptorBlobPath(descriptor.digest)
+    if (!readNonEmpty(descriptor.mediaType)) {
+      throw new Error(
+        `OCI platform descriptor at index ${index} has an invalid mediaType.`,
+      )
+    }
+    if (!Number.isSafeInteger(descriptor.size) || descriptor.size < 0) {
+      throw new Error(
+        `OCI platform descriptor at index ${index} has an invalid size.`,
+      )
+    }
+  })
+  return {
+    manifestDigest: root.digest,
+    mediaType: root.mediaType,
+    platformManifests: platformDescriptors.map(descriptor => ({
+      digest: descriptor.digest,
+      mediaType: descriptor.mediaType,
+      ...(descriptor.platform ? { platform: descriptor.platform } : {}),
+      size: descriptor.size,
+    })),
+    size: root.size,
+  }
+}
+
+function readTarJson(archivePath, member, execFileSync) {
+  let lastError
+  for (const candidate of [member, `./${member}`]) {
+    try {
+      return JSON.parse(
+        execFileSync('tar', ['-xOf', archivePath, candidate], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }),
+      )
+    } catch (error) {
+      lastError = error
+      // Archives may include or omit a leading "./".
+    }
+  }
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(
+    `Unable to read OCI candidate archive ${archivePath} member ${member}: ${detail}`,
+    { cause: lastError },
+  )
+}
+
+export function readOciArchiveIdentity(archivePath, options = {}) {
+  const execFileSync = options.execFileSync ?? childProcess.execFileSync
+  const index = readTarJson(archivePath, 'index.json', execFileSync)
+  return extractOciArchiveIdentity(index, descriptor =>
+    readTarJson(
+      archivePath,
+      descriptorBlobPath(descriptor.digest),
+      execFileSync,
+    ),
+  )
+}
+
+function createImageMetadata(image, tags, buildxMetadata, candidateIdentity) {
   const manifestDigest = extractBuildxManifestDigest(buildxMetadata)
   const imageId = extractBuildxImageId(buildxMetadata)
+  if (
+    candidateIdentity &&
+    candidateIdentity.manifestDigest !== manifestDigest
+  ) {
+    throw new Error(
+      `OCI candidate digest ${candidateIdentity.manifestDigest} does not match Buildx digest ${manifestDigest}.`,
+    )
+  }
   return {
+    ...(candidateIdentity ? { candidate: candidateIdentity } : {}),
     imageId,
     image,
     manifestDigest,
@@ -529,6 +696,7 @@ export function createReleaseMetadata(
   hsaDirectoryMockBuildxMetadata,
   hsaPersonLookupAdapterBuildxMetadata,
   demoSeedBuildxMetadata,
+  candidateIdentities = {},
 ) {
   const testSupport = hsaDirectoryMockBuildxMetadata
     ? {
@@ -536,6 +704,7 @@ export function createReleaseMetadata(
           plan.hsaDirectoryMockImage,
           plan.hsaDirectoryMockTags,
           hsaDirectoryMockBuildxMetadata,
+          candidateIdentities.hsaDirectoryMock,
         ),
       }
     : undefined
@@ -545,6 +714,7 @@ export function createReleaseMetadata(
           plan.hsaPersonLookupAdapterImage,
           plan.hsaPersonLookupAdapterTags,
           hsaPersonLookupAdapterBuildxMetadata,
+          candidateIdentities.hsaPersonLookupAdapter,
         ),
       }
     : undefined
@@ -553,6 +723,7 @@ export function createReleaseMetadata(
       plan.appRuntimeImage,
       plan.appRuntimeTags,
       appBuildxMetadata,
+      candidateIdentities.appRuntime,
     ),
     commitSha: plan.commitSha,
     database: {
@@ -562,6 +733,7 @@ export function createReleaseMetadata(
       plan.dbJobImage,
       plan.dbJobTags,
       dbJobBuildxMetadata,
+      candidateIdentities.dbJob,
     ),
     ...(demoSeedBuildxMetadata
       ? {
@@ -569,6 +741,7 @@ export function createReleaseMetadata(
             plan.demoSeedImage,
             plan.demoSeedTags,
             demoSeedBuildxMetadata,
+            candidateIdentities.demoSeed,
           ),
         }
       : {}),
@@ -1513,6 +1686,7 @@ export function ensureGitTag(plan, options = {}) {
   return 'created'
 }
 
+/* v8 ignore start -- CLI dispatch and file/subprocess orchestration. */
 export async function main(args, dependencies = {}) {
   const consoleObj = dependencies.consoleObj ?? console
   const fsImpl = dependencies.fsImpl ?? fs
@@ -1555,6 +1729,41 @@ export async function main(args, dependencies = {}) {
       const demoSeedBuildxMetadata = options['demo-seed-metadata']
         ? readJsonFile(options['demo-seed-metadata'], fsImpl)
         : undefined
+      const candidateOptions = {
+        execFileSync: dependencies.execFileSync,
+      }
+      const candidateIdentities = {
+        appRuntime: readCandidateIdentity(
+          plan,
+          'appRuntime',
+          options['app-artifact'],
+          candidateOptions,
+        ),
+        dbJob: readCandidateIdentity(
+          plan,
+          'dbJob',
+          options['db-job-artifact'],
+          candidateOptions,
+        ),
+        demoSeed: readCandidateIdentity(
+          plan,
+          'demoSeed',
+          options['demo-seed-artifact'],
+          candidateOptions,
+        ),
+        hsaDirectoryMock: readCandidateIdentity(
+          plan,
+          'hsaDirectoryMock',
+          options['hsa-directory-mock-artifact'],
+          candidateOptions,
+        ),
+        hsaPersonLookupAdapter: readCandidateIdentity(
+          plan,
+          'hsaPersonLookupAdapter',
+          options['hsa-person-lookup-adapter-artifact'],
+          candidateOptions,
+        ),
+      }
       const metadata = createReleaseMetadata(
         plan,
         readJsonFile(options['app-metadata'], fsImpl),
@@ -1562,6 +1771,7 @@ export async function main(args, dependencies = {}) {
         hsaDirectoryMockBuildxMetadata,
         hsaPersonLookupAdapterBuildxMetadata,
         demoSeedBuildxMetadata,
+        candidateIdentities,
       )
       writeJsonFile(options.output, metadata, fsImpl)
       appendGithubEnv(
@@ -1673,3 +1883,4 @@ const isDirectRun =
 if (isDirectRun) {
   process.exitCode = await main(process.argv.slice(2))
 }
+/* v8 ignore stop */
