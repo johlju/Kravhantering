@@ -6,6 +6,7 @@ import {
 } from '@/lib/requirements/lifecycle'
 import type { RequirementReportData } from '../data/fetch-requirement'
 import { requirementPackageName } from '../package-name'
+import { createReportPriorityIdentity } from '../priority'
 import {
   formatReportBoolean,
   formatReportTemplate,
@@ -14,12 +15,8 @@ import {
   type ReportLabels,
 } from '../report-labels'
 import { diffText } from '../text-diff'
-import type {
-  MetadataChange,
-  ReportModel,
-  ReportSection,
-  VersionSummaryData,
-} from '../types'
+import type { MetadataChange, ReportModel, ReportSection } from '../types'
+import { createReportVersionSummary } from '../version-summary'
 
 type LocalizedNameItem = {
   nameSv: string | null
@@ -71,66 +68,6 @@ function collectPackageIds(
     .join(',')
 }
 
-function toVersionSummary(
-  version: RequirementReportData['versions'][number],
-  locale: string,
-  labels: ReportLabels,
-): VersionSummaryData {
-  return {
-    versionNumber: version.versionNumber,
-    description: version.description,
-    acceptanceCriteria: version.acceptanceCriteria,
-    verifiable: version.verifiable,
-    verificationMethod: version.verificationMethod,
-    category: version.category
-      ? {
-          nameSv: version.category.nameSv,
-          nameEn: version.category.nameEn,
-        }
-      : null,
-    type: version.type
-      ? { nameSv: version.type.nameSv, nameEn: version.type.nameEn }
-      : null,
-    qualityCharacteristic: version.qualityCharacteristic
-      ? {
-          nameSv: version.qualityCharacteristic.nameSv,
-          nameEn: version.qualityCharacteristic.nameEn,
-        }
-      : null,
-    priorityLevel: version.priorityLevel
-      ? {
-          nameSv: version.priorityLevel.nameSv,
-          nameEn: version.priorityLevel.nameEn,
-          color: version.priorityLevel.color,
-          iconName: version.priorityLevel.iconName,
-        }
-      : null,
-    status: {
-      label: getStatusLabel(version, locale, labels),
-      color: version.statusColor,
-      iconName: version.statusIconName,
-    },
-    createdBy: version.createdBy,
-    createdAt: version.createdAt,
-    editedAt: version.editedAt,
-    publishedAt: version.publishedAt,
-    archivedAt: version.archivedAt,
-    normReferences: version.versionNormReferences
-      .filter(vnr => vnr.normReference)
-      .map(vnr => ({
-        name: vnr.normReference.name,
-        reference: vnr.normReference.reference,
-        uri: vnr.normReference.uri,
-      })),
-    requirementPackages: version.versionRequirementPackages.flatMap(
-      ({ requirementPackage }) => {
-        const name = requirementPackageName(requirementPackage).trim()
-        return name ? [{ name }] : []
-      },
-    ),
-  }
-}
-
 function computeMetadataChanges(
   baseVersion: RequirementReportData['versions'][number],
   reviewVersion: RequirementReportData['versions'][number],
@@ -169,13 +106,17 @@ function computeMetadataChanges(
     })
   }
 
-  const oldRl = getName(baseVersion.priorityLevel, locale)
-  const newRl = getName(reviewVersion.priorityLevel, locale)
-  if (oldRl !== newRl) {
+  const oldPriorityId = baseVersion.priorityLevel?.id ?? null
+  const newPriorityId = reviewVersion.priorityLevel?.id ?? null
+  if (oldPriorityId !== newPriorityId) {
     changes.push({
       field: labels.columns.priorityLevel,
-      oldValue: oldRl,
-      newValue: newRl,
+      oldValue: baseVersion.priorityLevel
+        ? createReportPriorityIdentity(baseVersion.priorityLevel)
+        : null,
+      newValue: reviewVersion.priorityLevel
+        ? createReportPriorityIdentity(reviewVersion.priorityLevel)
+        : null,
     })
   }
 
@@ -296,7 +237,10 @@ export function buildReviewReport(
     }
     sections.push({
       type: 'version-summary',
-      version: toVersionSummary(reviewVersion, locale, labels),
+      version: createReportVersionSummary(
+        reviewVersion,
+        getStatusLabel(reviewVersion, locale, labels),
+      ),
       label: formatReportTemplate(labels.common.reviewVersion, {
         version: reviewVersion.versionNumber,
       }),

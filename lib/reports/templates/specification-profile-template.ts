@@ -1,4 +1,5 @@
 import type { SpecificationOutputData } from '@/lib/reports/data/specification-output'
+import { createReportPriorityIdentityFromItem } from '@/lib/reports/priority'
 import {
   formatReportBoolean,
   formatRequirementCount,
@@ -161,6 +162,7 @@ function buildProgressRow(
 ): RequirementTableRow {
   const labels = getReportLabels(locale)
   return {
+    priorityLevel: createReportPriorityIdentityFromItem(item),
     cells: {
       area: formatArea(item, labels),
       category: localizeReportValue(
@@ -176,11 +178,6 @@ function buildProgressRow(
         locale,
         item.statusNameSv,
         item.statusNameEn,
-      ),
-      priorityLevel: localizeReportValue(
-        locale,
-        item.priorityLevelNameSv,
-        item.priorityLevelNameEn,
       ),
       type: localizeReportValue(locale, item.typeNameSv, item.typeNameEn),
       uniqueId: item.uniqueId,

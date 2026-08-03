@@ -713,6 +713,9 @@ test.describe('Requirement lifecycle manual cases', () => {
           await page
             .getByRole('combobox', { name: 'Kategori' })
             .selectOption({ label: 'IT-krav' })
+          await page
+            .getByRole('combobox', { name: 'Prioritet' })
+            .selectOption('4')
 
           const saveButton = page.getByRole('button', { name: 'Spara' })
           await expect(saveButton).toBeEnabled()
@@ -852,6 +855,7 @@ test.describe('Requirement lifecycle manual cases', () => {
               requirement.uniqueId,
               'Metadata Changes',
               'Category',
+              'P4 – High',
               'Review',
             ],
             history: [
@@ -861,6 +865,7 @@ test.describe('Requirement lifecycle manual cases', () => {
               `Unpublished Version (v${reviewVersionNumber})`,
               'Category',
               'IT requirement',
+              'P4 – High',
               'Published',
               'Review',
             ],
@@ -870,6 +875,7 @@ test.describe('Requirement lifecycle manual cases', () => {
               'Metadata Changes',
               'Category',
               'IT requirement',
+              'P4 – High',
               'Review',
             ],
             unexpected: [],
@@ -898,6 +904,7 @@ test.describe('Requirement lifecycle manual cases', () => {
               requirement.uniqueId,
               'Metadataändringar',
               'Kategori',
+              'P4 – Hög',
               'Granskning',
             ],
             history: [
@@ -907,6 +914,7 @@ test.describe('Requirement lifecycle manual cases', () => {
               `Opublicerad version (v${reviewVersionNumber})`,
               'Kategori',
               'IT-krav',
+              'P4 – Hög',
               'Publicerad',
               'Granskning',
             ],
@@ -916,6 +924,7 @@ test.describe('Requirement lifecycle manual cases', () => {
               'Metadataändringar',
               'Kategori',
               'IT-krav',
+              'P4 – Hög',
               'Granskning',
             ],
             unexpected: [

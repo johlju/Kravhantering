@@ -1,5 +1,6 @@
 import type { TraceabilityReportItem } from '@/lib/dal/requirements-specifications'
 import type { SpecificationTraceabilityData } from '@/lib/reports/data/specification-traceability'
+import { createReportPriorityIdentityFromItem } from '@/lib/reports/priority'
 import {
   formatReportBoolean,
   formatReportTemplate,
@@ -63,17 +64,6 @@ function formatUsageStatus(
     locale,
     item.specificationItemStatusNameSv,
     item.specificationItemStatusNameEn,
-  )
-}
-
-function formatPriorityLevel(
-  item: TraceabilityReportItem,
-  locale: string,
-): string {
-  return localizeReportValue(
-    locale,
-    item.priorityLevelNameSv,
-    item.priorityLevelNameEn,
   )
 }
 
@@ -225,7 +215,7 @@ function buildTableSection(
       note: item.note ?? '',
       origin: formatOrigin(item, locale),
       requirementId: item.uniqueId,
-      priorityLevel: formatPriorityLevel(item, locale),
+      priorityLevel: createReportPriorityIdentityFromItem(item),
       statusChangedAt: formatDate(item.statusUpdatedAt, locale),
       usageStatus: formatUsageStatus(item, locale),
       verification: formatVerification(item, locale),
