@@ -3334,6 +3334,7 @@ describe('RequirementsTable', () => {
         ...makeRow(),
         hasPendingVersion: true,
         pendingVersionStatusColor: '#3b82f6',
+        pendingVersionStatusIconName: 'Eye',
         pendingVersionStatusId: 2,
         version: {
           ...makeRow().version,
@@ -3344,7 +3345,10 @@ describe('RequirementsTable', () => {
       },
     ]
     render(<RequirementsTable locale="sv" rows={rows} />)
-    expect(screen.getByLabelText('hasPendingVersionReview')).toBeTruthy()
+    expect(screen.getByText('hasPendingVersionReview')).toHaveAttribute(
+      'data-accent-color',
+      '#3b82f6',
+    )
   })
 
   it('shows a blue pending draft indicator for archived rows', () => {
@@ -3355,6 +3359,7 @@ describe('RequirementsTable', () => {
         isArchived: true,
         hasPendingVersion: true,
         pendingVersionStatusColor: '#3b82f6',
+        pendingVersionStatusIconName: 'PenLine',
         pendingVersionStatusId: 1,
         version: {
           description: 'Arkiverad',
@@ -3384,11 +3389,15 @@ describe('RequirementsTable', () => {
 
     expect(screen.getAllByText('Arkiverad')).toHaveLength(2)
     expect(
-      screen.getByLabelText('hasPendingVersionDraft').closest('tr')?.className,
+      screen.getByText('hasPendingVersionDraft').closest('tr')?.className,
     ).not.toContain('opacity-50')
-    expect(screen.getByLabelText('hasPendingVersionDraft')).toHaveStyle({
-      color: '#3b82f6',
-    })
+    expect(screen.getByText('hasPendingVersionDraft')).toHaveAttribute(
+      'data-accent-color',
+      '#3b82f6',
+    )
+    expect(
+      screen.getByText('hasPendingVersionDraft').querySelector('svg'),
+    ).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('shows a yellow pending review indicator for archived rows', () => {
@@ -3399,6 +3408,7 @@ describe('RequirementsTable', () => {
         isArchived: true,
         hasPendingVersion: true,
         pendingVersionStatusColor: '#eab308',
+        pendingVersionStatusIconName: 'Eye',
         pendingVersionStatusId: 2,
         version: {
           description: 'Arkiverad',
@@ -3428,11 +3438,15 @@ describe('RequirementsTable', () => {
 
     expect(screen.getAllByText('Arkiverad')).toHaveLength(2)
     expect(
-      screen.getByLabelText('hasPendingVersionReview').closest('tr')?.className,
+      screen.getByText('hasPendingVersionReview').closest('tr')?.className,
     ).not.toContain('opacity-50')
-    expect(screen.getByLabelText('hasPendingVersionReview')).toHaveStyle({
-      color: '#eab308',
-    })
+    expect(screen.getByText('hasPendingVersionReview')).toHaveAttribute(
+      'data-accent-color',
+      '#eab308',
+    )
+    expect(
+      screen.getByText('hasPendingVersionReview').querySelector('svg'),
+    ).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('applies opacity for archived rows', () => {

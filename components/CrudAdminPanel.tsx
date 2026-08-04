@@ -35,8 +35,10 @@ interface CrudAdminPanelProps<TItem extends { id: CrudId }, TForm> {
   formDialogDeveloperModeValue?: (mode: CrudAdminFormMode) => string
   formMaxWidthClassName?: string
   formPresentation?: CrudAdminFormPresentation
+  formSubmitDisabled?: boolean
   formTitle?: (mode: CrudAdminFormMode) => string
   formTitleId?: string
+  notice?: ReactNode
   renderFormFields: (props: {
     disabled: boolean
     editId: CrudId | null
@@ -74,8 +76,10 @@ export default function CrudAdminPanel<TItem extends { id: CrudId }, TForm>({
   formDialogDeveloperModeValue,
   formMaxWidthClassName = 'max-w-lg',
   formPresentation = 'inline',
+  formSubmitDisabled = false,
   formTitle,
   formTitleId,
+  notice,
   renderFormFields,
   renderRowActions,
   title,
@@ -122,7 +126,7 @@ export default function CrudAdminPanel<TItem extends { id: CrudId }, TForm>({
         <DirtyStateButton
           className="btn-primary"
           dirty={controller.formDirty}
-          disabled={controller.submitting}
+          disabled={controller.submitting || formSubmitDisabled}
           type="submit"
         >
           {controller.submitting ? common('saving') : common('save')}
@@ -194,6 +198,8 @@ export default function CrudAdminPanel<TItem extends { id: CrudId }, TForm>({
             {visibleError}
           </div>
         )}
+
+        {notice}
 
         {formPresentation === 'modal' ? (
           <FormModal

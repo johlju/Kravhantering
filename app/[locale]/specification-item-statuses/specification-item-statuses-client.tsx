@@ -1,6 +1,7 @@
 'use client'
 
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { AlertTriangle } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useCallback, useRef, useState } from 'react'
 import DirtyStateButton from '@/components/DirtyStateButton'
@@ -8,7 +9,9 @@ import FieldLabelWithHelp from '@/components/FieldLabelWithHelp'
 import { type HelpContent, useHelpContent } from '@/components/HelpPanel'
 import IconPicker from '@/components/IconPicker'
 import StatusBadge from '@/components/StatusBadge'
+import StatusBadgeThemePreview from '@/components/StatusBadgeThemePreview'
 import { useCrudAdminResource } from '@/hooks/useCrudAdminResource'
+import { isStrictHexColor } from '@/lib/color-contrast'
 import { devMarker } from '@/lib/developer-mode-markers'
 import { apiFetch } from '@/lib/http/api-fetch'
 import { offsetPanelMotion } from '@/lib/reduced-motion'
@@ -125,6 +128,12 @@ export default function SpecificationItemStatusesClient() {
     toForm,
     toPayload,
   })
+  const invalidStoredStatuses = controller.items.filter(
+    status => !isStrictHexColor(status.color),
+  )
+  const previewLabel =
+    (locale === 'sv' ? controller.form.nameSv : controller.form.nameEn) ||
+    t('name')
 
   const fetchLinkedItems = useCallback(
     async (statusId: number) => {
@@ -202,6 +211,27 @@ export default function SpecificationItemStatusesClient() {
             })}
           >
             {controller.deleteError ?? controller.loadError}
+          </p>
+        )}
+
+        {invalidStoredStatuses.length > 0 && (
+          <p
+            className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
+            {...devMarker({
+              context: 'specification-item-statuses',
+              name: 'invalid color warning',
+              priority: 350,
+              value: invalidStoredStatuses.map(status => status.id).join(','),
+            })}
+            role="alert"
+          >
+            <AlertTriangle
+              aria-hidden="true"
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
+            {t('invalidStoredColors', {
+              statuses: invalidStoredStatuses.map(getName).join(', '),
+            })}
           </p>
         )}
 
@@ -308,29 +338,41 @@ export default function SpecificationItemStatusesClient() {
                   <div>
                     <FieldLabelWithHelp
                       help={t('colorHelp')}
-                      htmlFor="pis-color"
+                      htmlFor="pis-color-hex"
                       label={t('color')}
                       required
                     />
                     <div className="flex items-center gap-3">
+                      {isStrictHexColor(controller.form.color) && (
+                        <input
+                          aria-label={t('colorPicker')}
+                          className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border-2 border-secondary-400 dark:border-secondary-500"
+                          data-color-swatch="exact-rgb"
+                          disabled={controller.submitting}
+                          id="pis-color-picker"
+                          onChange={event =>
+                            controller.setForm(previousForm => ({
+                              ...previousForm,
+                              color: event.target.value,
+                            }))
+                          }
+                          required
+                          style={{ backgroundColor: controller.form.color }}
+                          type="color"
+                          value={controller.form.color}
+                        />
+                      )}
                       <input
-                        className="h-10 w-14 rounded-lg border cursor-pointer"
-                        disabled={controller.submitting}
-                        id="pis-color"
-                        onChange={event =>
-                          controller.setForm(previousForm => ({
-                            ...previousForm,
-                            color: event.target.value,
-                          }))
+                        aria-describedby={
+                          isStrictHexColor(controller.form.color)
+                            ? undefined
+                            : 'pis-color-warning'
                         }
-                        required
-                        type="color"
-                        value={controller.form.color}
-                      />
-                      <input
+                        aria-invalid={!isStrictHexColor(controller.form.color)}
                         aria-label={t('colorHex')}
                         className={inputClassName}
                         disabled={controller.submitting}
+                        id="pis-color-hex"
                         onChange={event =>
                           controller.setForm(previousForm => ({
                             ...previousForm,
@@ -339,12 +381,8 @@ export default function SpecificationItemStatusesClient() {
                         }
                         pattern="^#[0-9a-fA-F]{6}$"
                         placeholder="#3b82f6"
+                        required
                         value={controller.form.color}
-                      />
-                      <span
-                        aria-hidden="true"
-                        className="inline-block w-6 h-6 rounded-full shrink-0 border"
-                        style={{ backgroundColor: controller.form.color }}
                       />
                     </div>
                   </div>
@@ -354,30 +392,36 @@ export default function SpecificationItemStatusesClient() {
                       htmlFor="pis-icon"
                       label={t('icon')}
                     />
-                    <div className="flex items-center gap-3">
-                      <IconPicker
-                        disabled={controller.submitting}
-                        id="pis-icon"
-                        label={t('icon')}
-                        onChange={iconName =>
-                          controller.setForm(previousForm => ({
-                            ...previousForm,
-                            iconName,
-                          }))
-                        }
-                        value={controller.form.iconName}
-                      />
-                      <StatusBadge
-                        color={controller.form.color}
-                        iconName={controller.form.iconName}
-                        label={
-                          controller.form.nameSv ||
-                          controller.form.nameEn ||
-                          t('name')
-                        }
-                      />
-                    </div>
+                    <IconPicker
+                      disabled={controller.submitting}
+                      id="pis-icon"
+                      label={t('icon')}
+                      onChange={iconName =>
+                        controller.setForm(previousForm => ({
+                          ...previousForm,
+                          iconName,
+                        }))
+                      }
+                      value={controller.form.iconName}
+                    />
                   </div>
+                  <StatusBadgeThemePreview
+                    color={controller.form.color}
+                    copy={{
+                      contrastPassLabel: t('contrastPass'),
+                      contrastResultLabel: ratio =>
+                        t('contrastResult', { ratio }),
+                      darkThemeLabel: t('darkTheme'),
+                      guidance: t('themePreviewGuidance'),
+                      invalidColorWarning: t('invalidColorWarning'),
+                      lightThemeLabel: t('lightTheme'),
+                      title: t('themePreview'),
+                    }}
+                    developerModeContext="specification-item-statuses"
+                    iconName={controller.form.iconName}
+                    label={previewLabel}
+                    warningId="pis-color-warning"
+                  />
                   <div>
                     <FieldLabelWithHelp
                       help={t('sortOrderHelp')}
@@ -408,7 +452,10 @@ export default function SpecificationItemStatusesClient() {
                     <DirtyStateButton
                       className="btn-primary"
                       dirty={controller.formDirty}
-                      disabled={controller.submitting}
+                      disabled={
+                        controller.submitting ||
+                        !isStrictHexColor(controller.form.color)
+                      }
                       type="submit"
                     >
                       {controller.submitting ? tc('saving') : tc('save')}
