@@ -12,15 +12,21 @@ Provision AZURE_DEV_WORKSTATION_APPROVER_PUBLIC_KEY_PATH on destination workstat
 <!-- operator-upgrade:source pr-870 end -->
 
 <!-- operator-upgrade:source pr-880 start -->
-### Invalid requirement and usage status colors are reset during upgrade
-Before running `db-job migrate`, identify seeded requirement version statuses and usage statuses whose color is not an exact case-insensitive `#RRGGBB` value. Migration 0053 resets only these invalid rows to their canonical colors; valid custom colors, including their letter case, remain unchanged.
+### Invalid requirement and specification-item status colors are reset during upgrade
+
+Before running `db-job migrate`, identify seeded requirement statuses and
+specification-item statuses whose color is not an exact case-insensitive
+`#RRGGBB` value. Migration 0053 resets only these invalid rows to their
+canonical colors; valid custom colors, including their letter case, remain
+unchanged.
+
 ```sql
 SELECT N'requirement_statuses' AS catalog, id, color
 FROM requirement_statuses
 WHERE id IN (1, 2, 3, 4)
 AND (
 color IS NULL
-OR DATALENGTH(color)  14
+OR DATALENGTH(color) <> 14
 OR color COLLATE Latin1_General_100_BIN2 NOT LIKE
 N'#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'
 )
@@ -30,7 +36,7 @@ FROM specification_item_statuses
 WHERE id IN (1, 2, 3, 4, 5, 6)
 AND (
 color IS NULL
-OR DATALENGTH(color)  14
+OR DATALENGTH(color) <> 14
 OR color COLLATE Latin1_General_100_BIN2 NOT LIKE
 N'#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'
 );
