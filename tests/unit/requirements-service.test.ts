@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   listCategories: vi.fn(),
   listRequirements: vi.fn(),
   listRequirementPackages: vi.fn(),
+  listPriorityLevels: vi.fn(),
+  listSpecificationItemStatuses: vi.fn(),
   listStatuses: vi.fn(),
   listTransitions: vi.fn(),
   listSpecifications: vi.fn(),
@@ -123,6 +125,14 @@ vi.mock('@/lib/dal/requirement-packages', () => ({
   listRequirementPackages: mocks.listRequirementPackages,
 }))
 
+vi.mock('@/lib/dal/priority-levels', () => ({
+  listPriorityLevels: mocks.listPriorityLevels,
+}))
+
+vi.mock('@/lib/dal/specification-item-statuses', () => ({
+  listSpecificationItemStatuses: mocks.listSpecificationItemStatuses,
+}))
+
 vi.mock('@/lib/requirements/specification-item-page', () => ({
   querySpecificationItemPage: mocks.querySpecificationItemPage,
 }))
@@ -155,6 +165,11 @@ vi.mock('@/lib/dal/requirements', () => ({
 }))
 
 import { createRequirementsService } from '@/lib/requirements/service'
+import {
+  buildRequirementViewUri,
+  formatRequirementDetail,
+  formatRequirementListItem,
+} from '@/lib/requirements/service-requirements'
 
 function makeRequirementRecord() {
   return {
@@ -309,6 +324,8 @@ describe('createRequirementsService', () => {
     mocks.canAuthorArea.mockResolvedValue(true)
     mocks.canAuthorSpecification.mockResolvedValue(true)
     mocks.listRequirements.mockResolvedValue([])
+    mocks.listPriorityLevels.mockResolvedValue([])
+    mocks.listSpecificationItemStatuses.mockResolvedValue([])
     mocks.countRequirements.mockResolvedValue(0)
     mocks.getRequirementById.mockResolvedValue(makeRequirementRecord())
     mocks.getRequirementByUniqueId.mockResolvedValue(makeRequirementRecord())
@@ -1446,6 +1463,61 @@ describe('createRequirementsService', () => {
     )
   })
 
+  it('filters specification catalogs and shapes REST-only fields on demand', async () => {
+    const specification = {
+      businessNeedsReference: 'Business need',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      governanceObjectType: { id: 3, nameEn: 'Service', nameSv: 'Tjänst' },
+      id: 7,
+      implementationType: { id: 4, nameEn: 'Contract', nameSv: 'Avtal' },
+      itemCount: 2,
+      lifecycleStatus: { id: 1, nameEn: 'Draft', nameSv: 'Utkast' },
+      name: 'IAM Specification',
+      requirementAreas: [{ id: 2, name: 'Security' }],
+      responsibleDisplayName: 'Alice Owner',
+      responsibleHsaId: 'SE5560000001-alice1',
+      specificationCode: 'IAM-SPECIFICATION',
+      specificationGovernanceObjectTypeId: 3,
+      specificationImplementationTypeId: 4,
+      specificationLifecycleStatusId: 1,
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    }
+    mocks.listSpecificationsForActorCatalog.mockResolvedValue({
+      coAuthorHsaIdsBySpecification: new Map(),
+      specifications: [specification],
+    })
+    const service = createTestRequirementsService()
+
+    const filtered = await service.listSpecifications(makeContext(), {
+      nameSearch: 'iam',
+    })
+    const rest = await service.listSpecifications(makeContext(), {
+      includeRestFields: true,
+      nameSearch: 'IAM',
+      responseFormat: 'json',
+    })
+    const empty = await service.listSpecifications(makeContext(), {
+      nameSearch: 'missing',
+    })
+
+    expect(filtered.specifications).toEqual([
+      expect.objectContaining({
+        governanceObjectType: { nameEn: 'Service', nameSv: 'Tjänst' },
+        implementationType: { nameEn: 'Contract', nameSv: 'Avtal' },
+      }),
+    ])
+    expect(rest.specifications).toEqual([
+      expect.objectContaining({
+        governanceObjectType: expect.objectContaining({ id: 3 }),
+        implementationType: expect.objectContaining({ id: 4 }),
+        lifecycleStatus: expect.objectContaining({ id: 1 }),
+        permissions: expect.objectContaining({ canEditContent: true }),
+      }),
+    ])
+    expect(empty.specifications).toEqual([])
+    expect(empty.message).toContain('No specifications found.')
+  })
+
   it('rejects specification workflows without a specification reference', async () => {
     const service = createTestRequirementsService()
 
@@ -1892,6 +1964,40 @@ describe('createRequirementsService', () => {
     ).not.toHaveBeenCalled()
   })
 
+  it('reports missing graduation target areas and missing graduated records', async () => {
+    const service = createTestRequirementsService()
+    mocks.getAreaById.mockResolvedValueOnce(null)
+
+    await expect(
+      service.graduateSpecificationLocalRequirement(makeContext(), {
+        localRequirementId: 12,
+        requirementAreaId: 404,
+        specificationId: 7,
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      details: { requirementAreaId: 404 },
+    })
+
+    mocks.getAreaById.mockResolvedValueOnce({
+      id: 2,
+      name: 'Security',
+      ownerHsaId: 'SE5560000001-alice1',
+      prefix: 'SEC',
+    })
+    mocks.getRequirementById.mockResolvedValueOnce(null)
+    await expect(
+      service.graduateSpecificationLocalRequirement(makeContext(), {
+        localRequirementId: 12,
+        requirementAreaId: 2,
+        specificationId: 7,
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      details: { requirementId: 2 },
+    })
+  })
+
   it('does not emit specification addition audit events when no links are added', async () => {
     mocks.linkRequirementsToSpecificationAtomically.mockResolvedValue(0)
     const service = createTestRequirementsService()
@@ -1902,6 +2008,36 @@ describe('createRequirementsService', () => {
     })
 
     expect(emittedSecurityEvents()).toEqual([])
+  })
+
+  it('reports unpublished requirements as skipped without attempting links', async () => {
+    mocks.getPublishedVersionIdForRequirement
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(202)
+    mocks.linkRequirementsToSpecificationAtomically.mockResolvedValueOnce(1)
+    const service = createTestRequirementsService()
+
+    const result = await service.addToSpecification(makeContext(), {
+      locale: 'en',
+      requirementIds: [10, 11],
+      specificationId: 7,
+    })
+
+    expect(result).toMatchObject({
+      addedCount: 1,
+      skippedCount: 1,
+      skippedIds: [10],
+    })
+    expect(result.message).toContain(
+      'Skipped 1 requirement with no published version: 10.',
+    )
+    expect(
+      mocks.linkRequirementsToSpecificationAtomically,
+    ).toHaveBeenCalledWith(
+      expect.anything(),
+      7,
+      expect.objectContaining({ requirementIds: [11] }),
+    )
   })
 
   it('emits security audit events for sensitive requirement mutations', async () => {
@@ -2030,6 +2166,286 @@ describe('createRequirementsService', () => {
     ])
   })
 
+  it('lists localized deviations and preserves library and local item references', async () => {
+    mocks.countDeviationsBySpecification.mockResolvedValue({
+      approved: 1,
+      pending: 1,
+      rejected: 1,
+      total: 3,
+    })
+    mocks.listDeviationsForSpecification.mockResolvedValue([
+      {
+        createdAt: '2026-08-01T10:00:00.000Z',
+        createdBy: 'Alice',
+        decidedAt: null,
+        decidedBy: null,
+        decision: null,
+        decisionMotivation: null,
+        id: 7,
+        motivation: 'Library deviation',
+        requirementDescription: 'Library requirement',
+        requirementUniqueId: 'INT0001',
+        specificationItemId: 41,
+        specificationLocalRequirementId: null,
+      },
+      {
+        createdAt: '2026-08-02T10:00:00.000Z',
+        createdBy: null,
+        decidedAt: null,
+        decidedBy: null,
+        decision: null,
+        decisionMotivation: null,
+        id: 8,
+        motivation: 'Local deviation',
+        requirementDescription: 'Local requirement',
+        requirementUniqueId: 'LOCAL001',
+        specificationItemId: null,
+        specificationLocalRequirementId: 12,
+      },
+      {
+        createdAt: '2026-08-03T10:00:00.000Z',
+        createdBy: null,
+        decidedAt: null,
+        decidedBy: null,
+        decision: null,
+        decisionMotivation: null,
+        id: 9,
+        motivation: 'Legacy reference fallback',
+        requirementDescription: null,
+        requirementUniqueId: null,
+        specificationItemId: null,
+        specificationLocalRequirementId: null,
+      },
+    ])
+    const service = createTestRequirementsService()
+
+    const result = await service.listDeviations(makeContext(), {
+      locale: 'sv',
+      responseFormat: 'json',
+      specificationId: 7,
+    })
+
+    expect(result.deviations.map(row => row.specificationItemId)).toEqual([
+      41, -12, -9,
+    ])
+    expect(JSON.parse(result.message)).toEqual({
+      lines: ['3 avvikelse(r): 1 väntande, 1 godkända, 1 avvisade.'],
+      title: 'Avvikelser',
+    })
+  })
+
+  it('validates deviation creation before writing', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageDeviation(makeContext(), {
+        motivation: 'Needed',
+        operation: 'create',
+      }),
+    ).rejects.toThrow('Requirement application ID is required')
+    await expect(
+      service.manageDeviation(makeContext(), {
+        motivation: '   ',
+        operation: 'create',
+        specificationItemId: 41,
+      }),
+    ).rejects.toThrow('Motivation is required')
+    expect(mocks.createDeviation).not.toHaveBeenCalled()
+  })
+
+  it('creates a localized deviation from trimmed input and verified identity', async () => {
+    const service = createTestRequirementsService()
+
+    const result = await service.manageDeviation(makeContext(), {
+      locale: 'sv',
+      motivation: '  Saknar beslutad kontroll  ',
+      operation: 'create',
+      responseFormat: 'json',
+      specificationItemId: 41,
+    })
+
+    expect(mocks.createDeviation).toHaveBeenCalledWith(expect.anything(), {
+      createdBy: 'alice',
+      createdByHsaId: 'SE5560000001-alice1',
+      motivation: 'Saknar beslutad kontroll',
+      specificationItemId: 41,
+    })
+    expect(JSON.parse(result.message)).toEqual({
+      lines: ['Avvikelse registrerad (ID 5).'],
+      title: 'Avvikelse',
+    })
+  })
+
+  it('validates deviation IDs and edit motivation before writing', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageDeviation(makeContext(), { operation: 'delete' }),
+    ).rejects.toThrow('Deviation ID is required')
+    await expect(
+      service.manageDeviation(makeContext(), {
+        deviationId: 9,
+        motivation: '   ',
+        operation: 'edit',
+      }),
+    ).rejects.toThrow('Motivation is required for editing')
+    expect(mocks.deleteDeviation).not.toHaveBeenCalled()
+    expect(mocks.updateDeviation).not.toHaveBeenCalled()
+  })
+
+  it('edits deviations with trimmed motivation and a localized response', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageDeviation(makeContext(), {
+        deviationId: 9,
+        locale: 'sv',
+        motivation: '  Reviderad motivering  ',
+        operation: 'edit',
+      }),
+    ).resolves.toEqual({
+      message: '## Avvikelse\nAvvikelse 9 uppdaterad.',
+      result: { id: 9 },
+    })
+    expect(mocks.updateDeviation).toHaveBeenCalledWith(expect.anything(), 9, {
+      motivation: 'Reviderad motivering',
+    })
+  })
+
+  it('validates complete and supported deviation decisions', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageDeviation(makeContext(), {
+        decisionMotivation: 'Reviewed',
+        deviationId: 9,
+        operation: 'record_decision',
+      }),
+    ).rejects.toThrow('Decision and decision motivation are required')
+    await expect(
+      service.manageDeviation(makeContext(), {
+        decision: 1,
+        decisionMotivation: '   ',
+        deviationId: 9,
+        operation: 'record_decision',
+      }),
+    ).rejects.toThrow('Decision and decision motivation are required')
+    await expect(
+      service.manageDeviation(makeContext(), {
+        decision: 3,
+        decisionMotivation: 'Reviewed',
+        deviationId: 9,
+        operation: 'record_decision',
+      }),
+    ).rejects.toThrow('Invalid decision value')
+    expect(mocks.recordDecision).not.toHaveBeenCalled()
+  })
+
+  it('records a rejected deviation decision with Swedish output', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageDeviation(makeContext(), {
+        decision: 2,
+        decisionMotivation: '  Uppfyller inte policyn  ',
+        deviationId: 9,
+        locale: 'sv',
+        operation: 'record_decision',
+      }),
+    ).resolves.toEqual({
+      message:
+        '## Avvikelsebeslut\nBeslut registrerat för avvikelse 9: avvisad.',
+      result: { decision: 2, id: 9 },
+    })
+    expect(mocks.recordDecision).toHaveBeenCalledWith(expect.anything(), 9, {
+      decidedBy: 'alice',
+      decidedByHsaId: 'SE5560000001-alice1',
+      decision: 2,
+      decisionMotivation: 'Uppfyller inte policyn',
+    })
+  })
+
+  it('deletes deviations and returns the deleted identity', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageDeviation(makeContext(), {
+        deviationId: 9,
+        operation: 'delete',
+      }),
+    ).resolves.toEqual({
+      message: '## Deviation\nDeviation 9 deleted.',
+      result: { id: 9 },
+    })
+    expect(mocks.deleteDeviation).toHaveBeenCalledWith(expect.anything(), 9)
+  })
+
+  it('returns English deviation list and mutation messages for default locale branches', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.listDeviations(makeContext(), { specificationId: 7 }),
+    ).resolves.toMatchObject({
+      message:
+        '## Deviations\n0 deviation(s): 0 pending, 0 approved, 0 rejected.',
+    })
+    await expect(
+      service.manageDeviation(makeContext(), {
+        motivation: '  Required exception  ',
+        operation: 'create',
+        specificationItemId: 41,
+      }),
+    ).resolves.toMatchObject({
+      message: '## Deviation\nDeviation registered (ID 5).',
+    })
+    await expect(
+      service.manageDeviation(makeContext(), {
+        deviationId: 9,
+        motivation: '  Updated exception  ',
+        operation: 'edit',
+      }),
+    ).resolves.toMatchObject({
+      message: '## Deviation\nDeviation 9 updated.',
+    })
+  })
+
+  it('returns every localized deviation decision and deletion label', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageDeviation(makeContext(), {
+        decision: 1,
+        decisionMotivation: 'Godkänd av granskare',
+        deviationId: 9,
+        locale: 'sv',
+        operation: 'record_decision',
+      }),
+    ).resolves.toMatchObject({
+      message:
+        '## Avvikelsebeslut\nBeslut registrerat för avvikelse 9: godkänd.',
+    })
+    await expect(
+      service.manageDeviation(makeContext(), {
+        decision: 2,
+        decisionMotivation: 'Rejected by reviewer',
+        deviationId: 9,
+        operation: 'record_decision',
+      }),
+    ).resolves.toMatchObject({
+      message:
+        '## Deviation Decision\nDecision recorded for deviation 9: rejected.',
+    })
+    await expect(
+      service.manageDeviation(makeContext(), {
+        deviationId: 9,
+        locale: 'sv',
+        operation: 'delete',
+      }),
+    ).resolves.toMatchObject({
+      message: '## Avvikelse\nAvvikelse 9 borttagen.',
+    })
+  })
+
   it('emits security audit events for deviation decisions', async () => {
     const service = createTestRequirementsService()
 
@@ -2057,6 +2473,316 @@ describe('createRequirementsService', () => {
         event: 'requirements.sensitive_mutation.succeeded',
       }),
     ])
+  })
+
+  it('lists suggestions by unique ID with localized counts and complete rows', async () => {
+    mocks.getRequirementByUniqueId.mockResolvedValue({
+      ...makeRequirementRecord(),
+      id: 23,
+    })
+    mocks.countSuggestionsByRequirement.mockResolvedValue({
+      dismissed: 1,
+      pending: 2,
+      resolved: 3,
+      total: 6,
+    })
+    mocks.listSuggestionsForRequirement.mockResolvedValue([
+      {
+        content: 'Clarify encryption requirements',
+        createdAt: '2026-08-01T10:00:00.000Z',
+        createdBy: 'Alice',
+        id: 12,
+        isReviewRequested: 1,
+        requirementId: 23,
+        requirementVersionId: 45,
+        resolution: null,
+        resolutionMotivation: null,
+        resolvedAt: null,
+        resolvedBy: null,
+        updatedAt: '2026-08-02T10:00:00.000Z',
+      },
+    ])
+    const service = createTestRequirementsService()
+
+    const result = await service.listSuggestions(makeContext(), {
+      locale: 'sv',
+      responseFormat: 'json',
+      uniqueId: 'INT0023',
+    })
+
+    expect(mocks.listSuggestionsForRequirement).toHaveBeenCalledWith(
+      expect.anything(),
+      23,
+    )
+    expect(result.suggestions).toEqual([
+      {
+        content: 'Clarify encryption requirements',
+        createdAt: '2026-08-01T10:00:00.000Z',
+        createdBy: 'Alice',
+        id: 12,
+        isReviewRequested: 1,
+        requirementId: 23,
+        requirementVersionId: 45,
+        resolution: null,
+        resolutionMotivation: null,
+        resolvedAt: null,
+        resolvedBy: null,
+        updatedAt: '2026-08-02T10:00:00.000Z',
+      },
+    ])
+    expect(JSON.parse(result.message)).toEqual({
+      lines: ['6 förbättringsförslag: 2 väntande, 3 åtgärdade, 1 avvisade.'],
+      title: 'Förbättringsförslag',
+    })
+  })
+
+  it('reports missing suggestion requirement references and unknown unique IDs', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(service.listSuggestions(makeContext(), {})).rejects.toThrow(
+      'Either requirementId or uniqueId is required',
+    )
+    mocks.getRequirementByUniqueId.mockResolvedValueOnce(null)
+    await expect(
+      service.listSuggestions(makeContext(), { uniqueId: 'MISSING' }),
+    ).rejects.toThrow('Requirement not found: MISSING')
+    expect(mocks.listSuggestionsForRequirement).not.toHaveBeenCalled()
+  })
+
+  it('lists suggestions directly by requirement ID with default output options', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.listSuggestions(makeContext(), { requirementId: 23 }),
+    ).resolves.toEqual({
+      counts: { dismissed: 0, pending: 0, resolved: 0, total: 0 },
+      message:
+        '## Improvement suggestions\n0 improvement suggestion(s): 0 pending, 0 resolved, 0 dismissed.',
+      suggestions: [],
+    })
+  })
+
+  it('validates suggestion creation before writing', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        content: 'Clarify this requirement',
+        operation: 'create',
+      }),
+    ).rejects.toThrow('Requirement ID is required')
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        content: '   ',
+        operation: 'create',
+        requirementId: 23,
+      }),
+    ).rejects.toThrow('Content is required')
+    expect(mocks.createSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('creates suggestions from trimmed content and verified identity', async () => {
+    const service = createTestRequirementsService()
+
+    const result = await service.manageSuggestion(makeContext(), {
+      content: '  Clarify this requirement  ',
+      locale: 'sv',
+      operation: 'create',
+      requirementId: 23,
+      requirementVersionId: 45,
+      responseFormat: 'json',
+    })
+
+    expect(mocks.createSuggestion).toHaveBeenCalledWith(expect.anything(), {
+      content: 'Clarify this requirement',
+      createdBy: 'alice',
+      createdByHsaId: 'SE5560000001-alice1',
+      requirementId: 23,
+      requirementVersionId: 45,
+    })
+    expect(JSON.parse(result.message)).toEqual({
+      lines: ['Förbättringsförslag registrerat (ID 6).'],
+      title: 'Förbättringsförslag',
+    })
+  })
+
+  it('defaults a created suggestion to no requirement version', async () => {
+    const service = createTestRequirementsService()
+
+    await service.manageSuggestion(makeContext(), {
+      content: 'Clarify this requirement',
+      operation: 'create',
+      requirementId: 23,
+    })
+
+    expect(mocks.createSuggestion).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ requirementVersionId: null }),
+    )
+  })
+
+  it('validates suggestion IDs and edit content before writing', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), { operation: 'edit' }),
+    ).rejects.toThrow('Suggestion ID is required')
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        content: '   ',
+        operation: 'edit',
+        suggestionId: 12,
+      }),
+    ).rejects.toThrow('Content is required for editing')
+    expect(mocks.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('edits and reverts suggestions with localized success messages', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        content: '  Updated suggestion  ',
+        locale: 'sv',
+        operation: 'edit',
+        suggestionId: 12,
+      }),
+    ).resolves.toEqual({
+      message: '## Förbättringsförslag\nFörbättringsförslag 12 uppdaterat.',
+      result: { id: 12 },
+    })
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        locale: 'sv',
+        operation: 'revert_to_draft',
+        suggestionId: 12,
+      }),
+    ).resolves.toEqual({
+      message:
+        '## Förbättringsförslag\nFörbättringsförslag 12 återställt till utkast.',
+      result: { id: 12 },
+    })
+    expect(mocks.updateSuggestion).toHaveBeenCalledWith(expect.anything(), 12, {
+      content: 'Updated suggestion',
+    })
+    expect(mocks.revertToDraft).toHaveBeenCalledWith(expect.anything(), 12)
+  })
+
+  it('validates resolution motivation before resolving or dismissing', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        operation: 'dismiss',
+        resolutionMotivation: '   ',
+        suggestionId: 12,
+      }),
+    ).rejects.toThrow('Resolution motivation is required')
+    expect(mocks.recordResolution).not.toHaveBeenCalled()
+  })
+
+  it('dismisses suggestions with Swedish output and verified identity', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        locale: 'sv',
+        operation: 'dismiss',
+        resolutionMotivation: '  Inte relevant  ',
+        suggestionId: 12,
+      }),
+    ).resolves.toEqual({
+      message: '## Förbättringsförslag\nFörbättringsförslag 12 avvisat.',
+      result: { id: 12, resolution: 2 },
+    })
+    expect(mocks.recordResolution).toHaveBeenCalledWith(expect.anything(), 12, {
+      resolution: 2,
+      resolutionMotivation: 'Inte relevant',
+      resolvedBy: 'alice',
+      resolvedByHsaId: 'SE5560000001-alice1',
+    })
+  })
+
+  it('deletes suggestions and returns the deleted identity', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        operation: 'delete',
+        suggestionId: 12,
+      }),
+    ).resolves.toEqual({
+      message: '## Improvement suggestion\nImprovement suggestion 12 deleted.',
+      result: { id: 12 },
+    })
+    expect(mocks.deleteSuggestion).toHaveBeenCalledWith(expect.anything(), 12)
+  })
+
+  it('returns English suggestion edit and revert messages', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        content: 'Updated suggestion',
+        operation: 'edit',
+        suggestionId: 12,
+      }),
+    ).resolves.toMatchObject({
+      message: '## Improvement suggestion\nImprovement suggestion 12 updated.',
+    })
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        operation: 'revert_to_draft',
+        suggestionId: 12,
+      }),
+    ).resolves.toMatchObject({
+      message:
+        '## Improvement suggestion\nImprovement suggestion 12 reverted to draft.',
+    })
+  })
+
+  it('returns every localized suggestion review, resolution, and deletion label', async () => {
+    const service = createTestRequirementsService()
+
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        locale: 'sv',
+        operation: 'request_review',
+        suggestionId: 12,
+      }),
+    ).resolves.toMatchObject({
+      message:
+        '## Förbättringsförslag\nFörbättringsförslag 12 skickat för granskning.',
+    })
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        locale: 'sv',
+        operation: 'resolve',
+        resolutionMotivation: 'Åtgärdat',
+        suggestionId: 12,
+      }),
+    ).resolves.toMatchObject({
+      message: '## Förbättringsförslag\nFörbättringsförslag 12 åtgärdat.',
+    })
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        operation: 'dismiss',
+        resolutionMotivation: 'Not applicable',
+        suggestionId: 12,
+      }),
+    ).resolves.toMatchObject({
+      message:
+        '## Improvement suggestion\nImprovement suggestion 12 dismissed.',
+    })
+    await expect(
+      service.manageSuggestion(makeContext(), {
+        locale: 'sv',
+        operation: 'delete',
+        suggestionId: 12,
+      }),
+    ).resolves.toMatchObject({
+      message: '## Förbättringsförslag\nFörbättringsförslag 12 borttaget.',
+    })
   })
 
   it('preserves suggestion review success messages and reason-coded conflicts', async () => {
@@ -2136,5 +2862,324 @@ describe('createRequirementsService', () => {
       status: 400,
     })
     expect(mocks.deleteSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('formats sparse and pending requirement list records without inventing lookup values', () => {
+    const base = {
+      acceptanceCriteria: null,
+      archiveInitiatedAt: null,
+      areaName: null,
+      categoryNameEn: null,
+      categoryNameSv: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      description: 'Sparse requirement',
+      id: 1,
+      isArchived: false,
+      maxVersion: 1,
+      normReferenceIds: null,
+      normReferenceUris: null,
+      pendingVersionStatusColor: '#fff',
+      pendingVersionStatusIconName: 'clock',
+      pendingVersionStatusId: 2,
+      priorityLevelCode: null,
+      priorityLevelColor: null,
+      priorityLevelIconName: null,
+      priorityLevelId: null,
+      priorityLevelNameEn: null,
+      priorityLevelNameSv: null,
+      priorityLevelSortOrder: undefined,
+      qualityCharacteristicId: null,
+      qualityCharacteristicNameEn: null,
+      qualityCharacteristicNameSv: null,
+      requirementAreaId: 1,
+      requirementCategoryId: null,
+      requirementPackages: [],
+      requirementTypeId: null,
+      revisionToken: 'token',
+      status: 1,
+      statusColor: null,
+      statusIconName: null,
+      statusNameEn: null,
+      statusNameSv: null,
+      suggestionCount: 0,
+      typeNameEn: null,
+      typeNameSv: null,
+      uniqueId: 'INT0001',
+      verifiable: false,
+      versionCreatedAt: '2026-01-01T00:00:00.000Z',
+      versionId: 10,
+      versionNumber: 1,
+    }
+
+    expect(formatRequirementListItem(base as never)).toMatchObject({
+      area: null,
+      hasPendingVersion: false,
+      normReferenceIds: [],
+      normReferenceUris: [],
+      pendingVersionStatusColor: null,
+      pendingVersionStatusId: null,
+      version: { priorityLevelSortOrder: null },
+    })
+    expect(
+      formatRequirementListItem({
+        ...base,
+        areaName: 'Integration',
+        maxVersion: 2,
+        normReferenceIds: '10,,20',
+        normReferenceUris: 'https://one,https://two',
+      } as never),
+    ).toMatchObject({
+      area: { id: 1, name: 'Integration' },
+      hasPendingVersion: true,
+      normReferenceIds: ['10', '20'],
+      normReferenceUris: ['https://one', 'https://two'],
+      pendingVersionStatusColor: '#fff',
+      pendingVersionStatusIconName: 'clock',
+      pendingVersionStatusId: 2,
+    })
+  })
+
+  it('executes mutation audit callbacks for archive, cancellation, reactivation, and transition', async () => {
+    const service = createTestRequirementsService()
+
+    await service.manageRequirement(makeContext(), {
+      id: 1,
+      operation: 'archive',
+    })
+    await service.manageRequirement(makeContext(), {
+      id: 1,
+      operation: 'cancel_archiving',
+    })
+    await service.manageRequirement(makeContext(), {
+      id: 1,
+      operation: 'reactivate',
+    })
+    await service.transitionRequirement(makeContext(), {
+      id: 1,
+      toStatusId: 2,
+    })
+
+    expect(mocks.auditQuery).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT TOP (1) unique_id'),
+      [1],
+    )
+  })
+
+  it('reports a missing post-mutation reload for create, edit, and transition', async () => {
+    const service = createTestRequirementsService()
+    mocks.getRequirementById.mockResolvedValueOnce(null)
+    await expect(
+      service.manageRequirement(makeContext(), {
+        operation: 'create',
+        requirement: { areaId: 1, description: 'Created' },
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'Created requirement could not be reloaded',
+    })
+
+    mocks.getRequirementById
+      .mockResolvedValueOnce(makeRequirementRecord())
+      .mockResolvedValueOnce(null)
+    await expect(
+      service.manageRequirement(makeContext(), {
+        id: 1,
+        operation: 'edit',
+        requirement: {
+          baseRevisionToken: '11111111-1111-4111-8111-111111111111',
+          baseVersionId: 10,
+          description: 'Edited',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'Edited requirement could not be reloaded',
+    })
+
+    mocks.getRequirementById
+      .mockResolvedValueOnce(makeRequirementRecord())
+      .mockResolvedValueOnce(null)
+    await expect(
+      service.transitionRequirement(makeContext(), {
+        id: 1,
+        toStatusId: 2,
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'Transitioned requirement could not be reloaded',
+    })
+  })
+
+  it('formats sparse detail joins with stable identifiers and null catalog records', () => {
+    const record = makeRequirementRecord()
+    const sparse = {
+      ...record,
+      area: null,
+      versions: [
+        {
+          ...record.versions[0],
+          category: null,
+          createdBy: null,
+          priorityLevel: null,
+          qualityCharacteristic: null,
+          type: null,
+          verificationMethod: null,
+          versionNormReferences: [{ normReference: null, normReferenceId: 45 }],
+          versionRequirementPackages: [
+            { requirementPackage: null, requirementPackageId: 67 },
+          ],
+        },
+      ],
+    }
+
+    expect(formatRequirementDetail(sparse as never)).toMatchObject({
+      area: null,
+      versions: [
+        {
+          category: null,
+          ownerName: null,
+          priorityLevel: null,
+          qualityCharacteristic: null,
+          type: null,
+          versionNormReferences: [
+            {
+              normReference: {
+                id: 45,
+                issuer: '',
+                name: '',
+                normReferenceId: '',
+                reference: '',
+                type: '',
+                uri: null,
+                version: null,
+              },
+            },
+          ],
+          versionRequirementPackages: [
+            {
+              requirementPackage: {
+                id: 67,
+                name: null,
+                ownerId: null,
+                purposeAndScope: null,
+              },
+            },
+          ],
+        },
+      ],
+    })
+    expect(buildRequirementViewUri({ id: 7 })).toBe(
+      'ui://requirements/requirement-detail/7',
+    )
+    expect(buildRequirementViewUri({ uniqueId: 'SEC / 7' }, 3)).toBe(
+      'ui://requirements/requirement-detail/SEC%20%2F%207?version=3',
+    )
+  })
+
+  it('searches every lookup catalog through its catalog-specific fields', async () => {
+    mocks.listAreas.mockResolvedValue([
+      {
+        description: 'Coordinates integrations',
+        id: 1,
+        name: 'Integration',
+        ownerHsaId: 'SE5560000001-owner1',
+        prefix: 'INT',
+      },
+    ])
+    mocks.listPriorityLevels.mockResolvedValue([
+      {
+        assessmentCriteriaEn: 'Immediate action',
+        assessmentCriteriaSv: 'Omedelbar åtgärd',
+        code: 'P1',
+        descriptionEn: 'Critical',
+        descriptionSv: 'Kritisk',
+        id: 1,
+        nameEn: 'Highest',
+        nameSv: 'Högst',
+      },
+    ])
+    mocks.listRequirementPackages.mockResolvedValue([
+      {
+        id: 2,
+        leadDisplayName: 'Package Lead',
+        name: 'Citizen portal',
+        purposeAndScope: 'Self service',
+      },
+    ])
+    mocks.listTypes.mockResolvedValue([
+      {
+        id: 3,
+        nameEn: 'Quality',
+        nameSv: 'Kvalitet',
+        qualityCharacteristics: [
+          { nameEn: 'Reliability', nameSv: 'Tillförlitlighet' },
+        ],
+      },
+    ])
+    mocks.listSpecificationItemStatuses.mockResolvedValue([
+      {
+        descriptionEn: 'Included in baseline',
+        descriptionSv: 'Ingår i baslinje',
+        id: 4,
+        nameEn: 'Included',
+        nameSv: 'Ingår',
+      },
+    ])
+    mocks.listStatuses.mockResolvedValue([
+      { id: 5, nameEn: 'Published', nameSv: 'Publicerad' },
+    ])
+    mocks.listTransitions.mockResolvedValue([
+      {
+        fromStatus: { nameEn: 'Draft', nameSv: 'Utkast' },
+        fromStatusId: 1,
+        id: 6,
+        toStatus: { nameEn: 'Review', nameSv: 'Granskning' },
+        toStatusId: 2,
+      },
+    ])
+    const service = createTestRequirementsService()
+    const cases = [
+      ['areas', 'owner1', 'ownerHsaId'],
+      ['priority_levels', 'Immediate', 'assessmentCriteriaEn'],
+      ['requirement_packages', 'Package Lead', 'leadDisplayName'],
+      ['types', 'Reliability', 'qualityCharacteristicNamesEn'],
+      ['specification_item_statuses', 'baseline', 'descriptionEn'],
+      ['statuses', 'Published', 'nameEn'],
+      ['transitions', 'Review', 'toStatusNameEn'],
+    ] as const
+
+    for (const [catalog, search, matchedField] of cases) {
+      const result = await service.queryCatalog(makeContext(), {
+        catalog,
+        operation: 'search',
+        search,
+      })
+      expect(result.result).toEqual([
+        expect.objectContaining({
+          match: expect.objectContaining({ matchedFields: [matchedField] }),
+        }),
+      ])
+    }
+  })
+
+  it('sorts lookup rows by localized fallback fields and stable ids', async () => {
+    mocks.listPriorityLevels.mockResolvedValue([
+      { id: 6 },
+      { code: 'C', id: 5 },
+      { id: 4, nameEn: 'B' },
+      { id: 3, nameSv: 'A' },
+      { id: 2, name: 'Same' },
+      { id: 1, name: 'Same' },
+    ])
+    const service = createTestRequirementsService()
+
+    const result = await service.queryCatalog(makeContext(), {
+      catalog: 'priority_levels',
+      operation: 'list',
+    })
+
+    expect((result.result as Array<{ id: number }>).map(row => row.id)).toEqual(
+      [6, 3, 4, 5, 1, 2],
+    )
   })
 })

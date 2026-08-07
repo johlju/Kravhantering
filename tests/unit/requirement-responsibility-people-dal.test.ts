@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   cleanupUnassignedRequirementResponsibilityPeople,
+  getRequirementResponsibilityPerson,
   upsertRequirementResponsibilityPerson,
 } from '@/lib/dal/requirement-responsibility-people'
 
@@ -86,5 +87,49 @@ describe('requirement responsibility people DAL', () => {
     ).resolves.toEqual([])
 
     expect(query).not.toHaveBeenCalled()
+  })
+
+  it('preserves the protected-person flag and supports the default fetch time', async () => {
+    const query = vi.fn(async (..._args: unknown[]) => [])
+    await upsertRequirementResponsibilityPerson(
+      { query },
+      {
+        email: null,
+        givenName: 'Protected',
+        hasProtectedPersonalData: true,
+        hsaId: 'SE5560000001-protected1',
+        middleName: null,
+        surname: null,
+      },
+    )
+    const parameters = query.mock.calls[0]?.[1] as unknown[]
+    expect(parameters[5]).toBe(true)
+    expect(parameters[6]).toBeInstanceOf(Date)
+  })
+
+  it('returns a stored responsibility person or null by HSA-id', async () => {
+    const person = {
+      email: 'owner@example.test',
+      givenName: 'Area',
+      hsaId: 'SE5560000001-owner1',
+      middleName: null,
+      surname: 'Owner',
+    }
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([person])
+      .mockResolvedValueOnce([])
+
+    await expect(
+      getRequirementResponsibilityPerson({ query }, person.hsaId),
+    ).resolves.toBe(person)
+    await expect(
+      getRequirementResponsibilityPerson({ query }, 'SE5560000001-missing1'),
+    ).resolves.toBeNull()
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE hsa_id = @0'),
+      [person.hsaId],
+    )
   })
 })

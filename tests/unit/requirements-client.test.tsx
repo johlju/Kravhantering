@@ -1,4 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RequirementsClient from '@/app/[locale]/requirements/requirements-client'
 import type { RequirementsTableProps } from '@/components/RequirementsTable'
@@ -24,6 +32,7 @@ const helpPanelState = vi.hoisted(() => ({
 const navigationState = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
 }))
+const localeState = vi.hoisted(() => ({ value: 'sv' }))
 
 const tableState = vi.hoisted(() => ({
   detailChangeHandlers: new Map<
@@ -54,7 +63,7 @@ const storageGetItem = vi.fn()
 const storageSetItem = vi.fn()
 
 vi.mock('next-intl', () => ({
-  useLocale: () => 'sv',
+  useLocale: () => localeState.value,
   useTranslations: () => (key: string) => key,
 }))
 
@@ -151,7 +160,7 @@ vi.mock('@/components/RequirementsTable', () => ({
     })
 
     return (
-      <div data-testid="requirements-table">
+      <section aria-label="requirements table" data-testid="requirements-table">
         <div data-testid="floating-actions-order">
           {(floatingActions ?? [])
             .map(
@@ -175,14 +184,27 @@ vi.mock('@/components/RequirementsTable', () => ({
         <div data-testid="has-more">{String(hasMore ?? false)}</div>
         <div data-testid="loading">{String(loading ?? false)}</div>
         <div data-testid="loading-more">{String(loadingMore ?? false)}</div>
-        {(rows ?? []).map(row => (
-          <div key={row.id}>
-            <button onClick={() => onRowClick?.(row.id)} type="button">
-              {`row-${row.id}`}
-            </button>
-            {expandedId === row.id ? renderExpanded?.(row.id) : null}
-          </div>
-        ))}
+        <table>
+          <tbody>
+            {(rows ?? []).map(row => (
+              <tr aria-label={`requirement ${row.uniqueId}`} key={row.id}>
+                <th scope="row">
+                  <button onClick={() => onRowClick?.(row.id)} type="button">
+                    {`row-${row.id}`}
+                  </button>
+                </th>
+                <td aria-label="area">{row.area?.name}</td>
+                <td aria-label="category">{row.version?.categoryNameSv}</td>
+                <td aria-label="type">{row.version?.typeNameSv}</td>
+                <td aria-label="version">{row.version?.versionNumber}</td>
+                <td aria-label="description">{row.version?.description}</td>
+                <td>
+                  {expandedId === row.id ? renderExpanded?.(row.id) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         {(floatingActions ?? []).map(action =>
           action.href ? (
             <a
@@ -260,7 +282,7 @@ vi.mock('@/components/RequirementsTable', () => ({
         >
           load-more
         </button>
-      </div>
+      </section>
     )
   },
 }))
@@ -351,6 +373,36 @@ vi.mock('@/app/[locale]/requirements/[id]/requirement-detail-client', () => ({
           type="button"
         >
           {`detail-apply-archive-${requirementId}`}
+        </button>
+        <button
+          onClick={() =>
+            void onChange?.({
+              ...makeRequirementDetail(requirementId ?? 1),
+              area: null,
+              versions: [
+                {
+                  ...makeRequirementDetail(requirementId ?? 1).versions[0],
+                  category: null,
+                  type: null,
+                },
+              ],
+            })
+          }
+          type="button"
+        >
+          {`detail-apply-sparse-${requirementId}`}
+        </button>
+        <button
+          onClick={() =>
+            void onChange?.({
+              ...makeRequirementDetail(requirementId ?? 1),
+              area: null,
+              versions: [],
+            })
+          }
+          type="button"
+        >
+          {`detail-apply-without-version-${requirementId}`}
         </button>
         <button onClick={onClose} type="button">
           {`detail-close-${requirementId}`}
@@ -567,6 +619,7 @@ function latestFloatingActions(): FloatingAction[] {
 
 describe('RequirementsClient', () => {
   beforeEach(() => {
+    localeState.value = 'sv'
     navigationState.searchParams = new URLSearchParams()
     fetchMock.mockReset()
     helpPanelState.useHelpContent.mockReset()
@@ -745,6 +798,154 @@ describe('RequirementsClient', () => {
       ],
       titleKey: 'requirements.title',
     })
+  })
+
+  it('renders the requirement list when optional metadata payloads are omitted', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/requirements?')) {
+        return okJson({ pagination: {}, requirements: [] })
+      }
+      if (url.startsWith('/api/norm-references')) {
+        return okJson({})
+      }
+      if (
+        [
+          '/api/requirement-areas',
+          '/api/requirement-categories',
+          '/api/requirement-types',
+          '/api/quality-characteristics',
+          '/api/requirement-statuses',
+          '/api/requirement-packages',
+          '/api/priority-levels',
+        ].includes(url)
+      ) {
+        return okJson({})
+      }
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<RequirementsClient />)
+
+    expect(
+      await screen.findByRole('region', { name: 'requirements table' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('maps sparse changed requirement details with and without versions', async () => {
+    const sparseRefresh = createDeferredJsonResponse<{
+      pagination: { hasMore: boolean; nextCursor?: string }
+      requirements: ReturnType<typeof makeRequirementRow>[]
+    }>()
+    const versionlessRefresh = createDeferredJsonResponse<{
+      pagination: { hasMore: boolean }
+      requirements: ReturnType<typeof makeRequirementRow>[]
+    }>()
+    const listResponses: Promise<Response>[] = [
+      Promise.resolve(
+        okJson({
+          pagination: { hasMore: false },
+          requirements: [makeRequirementRow(1)],
+        }),
+      ),
+      sparseRefresh.promise,
+      versionlessRefresh.promise,
+    ]
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/requirements?')) {
+        const response = listResponses.shift()
+        if (response) return response
+      }
+
+      const metadataResponse = mockMetadataFetch(url)
+      if (metadataResponse) return metadataResponse
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<RequirementsClient />)
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'row-1' }))
+    const sparseDetailButton = await screen.findByRole('button', {
+      name: 'detail-apply-sparse-1',
+    })
+    await user.click(sparseDetailButton)
+    await act(async () => {
+      sparseRefresh.resolve({
+        pagination: { hasMore: true, nextCursor: 'sparse-cursor' },
+        requirements: [makeRequirementRow(1)],
+      })
+    })
+
+    await waitFor(() => {
+      const sparseRow = screen.getByRole('row', {
+        name: 'requirement INT0001',
+      })
+      expect(
+        within(sparseRow).getByRole('cell', { name: 'area' }),
+      ).toBeEmptyDOMElement()
+      expect(
+        within(sparseRow).getByRole('cell', { name: 'category' }),
+      ).toBeEmptyDOMElement()
+      expect(
+        within(sparseRow).getByRole('cell', { name: 'type' }),
+      ).toBeEmptyDOMElement()
+      expect(
+        within(sparseRow).getByRole('cell', { name: 'version' }),
+      ).toHaveTextContent('1')
+      expect(
+        within(sparseRow).getByRole('cell', { name: 'description' }),
+      ).toHaveTextContent('Pinned krav 1')
+      expect(screen.getByRole('button', { name: 'load-more' })).toBeEnabled()
+    })
+
+    const withoutVersionButton = screen.getByRole('button', {
+      name: 'detail-apply-without-version-1',
+    })
+    await user.click(withoutVersionButton)
+    await act(async () => {
+      versionlessRefresh.resolve({
+        pagination: { hasMore: false },
+        requirements: [makeRequirementRow(1)],
+      })
+    })
+
+    await waitFor(() => {
+      const versionlessRow = screen.getByRole('row', {
+        name: 'requirement INT0001',
+      })
+      expect(
+        within(versionlessRow).getByRole('cell', { name: 'area' }),
+      ).toBeEmptyDOMElement()
+      expect(
+        within(versionlessRow).getByRole('cell', { name: 'category' }),
+      ).toBeEmptyDOMElement()
+      expect(
+        within(versionlessRow).getByRole('cell', { name: 'type' }),
+      ).toBeEmptyDOMElement()
+      expect(
+        within(versionlessRow).getByRole('cell', { name: 'version' }),
+      ).toBeEmptyDOMElement()
+      expect(
+        within(versionlessRow).getByRole('cell', { name: 'description' }),
+      ).toBeEmptyDOMElement()
+      expect(screen.getByRole('button', { name: 'load-more' })).toBeDisabled()
+    })
+  })
+
+  it('collapses a selected row when that row is clicked again', async () => {
+    mockCommonFetches()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<RequirementsClient />)
+
+    const row = await screen.findByRole('button', { name: 'row-1' })
+    fireEvent.click(row)
+    expect(await screen.findByText('detail')).toBeInTheDocument()
+    fireEvent.click(row)
+    expect(screen.queryByText('detail')).not.toBeInTheDocument()
   })
 
   it('waits for hydrated preferences and the first row response before mounting the table', async () => {
@@ -1556,6 +1757,7 @@ describe('RequirementsClient', () => {
   })
 
   it('delegates CSV export failures to the shared download flow', async () => {
+    localeState.value = 'en'
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input)
 
@@ -1589,6 +1791,7 @@ describe('RequirementsClient', () => {
     await waitFor(() =>
       expect(pdfDownloadState.download).toHaveBeenCalledWith(
         expect.objectContaining({
+          fallbackFilename: 'requirements-library.csv',
           output: 'csv',
           url: expect.stringContaining('/api/requirements/export?'),
         }),
@@ -2460,6 +2663,31 @@ describe('RequirementsClient', () => {
     await waitFor(() => expect(window.location.search).toBe(''))
   })
 
+  it('hydrates a numeric selected requirement from the URL', async () => {
+    navigationState.searchParams = new URLSearchParams('selected=9')
+    window.history.replaceState({}, '', '/sv/requirements?selected=9')
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/requirements?')) {
+        return Promise.resolve(
+          okJson({ pagination: { hasMore: false }, requirements: [] }),
+        )
+      }
+      if (url === '/api/requirements/9') {
+        return Promise.resolve(okJson(makeRequirementDetail(9)))
+      }
+      const metadataResponse = mockMetadataFetch(url)
+      if (metadataResponse) return metadataResponse
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<RequirementsClient />)
+
+    expect(await screen.findByText('detail-refresh-9')).toBeInTheDocument()
+    await waitFor(() => expect(window.location.search).toBe(''))
+  })
+
   it('keeps the URL-selected pin when hydration resolves before row refresh detail', async () => {
     navigationState.searchParams = new URLSearchParams('selected=PWT0009')
     window.history.replaceState({}, '', '/sv/requirements?selected=PWT0009')
@@ -2902,6 +3130,34 @@ describe('RequirementsClient', () => {
     )
     expect(cursorRequestCount).toBe(2)
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps existing rows when an additional page omits optional collections', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/requirements?')) {
+        if (url.includes('cursor=cursor-1')) return okJson({})
+        return okJson({
+          pagination: { hasMore: true, nextCursor: 'cursor-1' },
+          requirements: [makeRequirementRow(1)],
+        })
+      }
+      const metadataResponse = mockMetadataFetch(url)
+      if (metadataResponse) return metadataResponse
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<RequirementsClient />)
+    const row = await screen.findByRole('button', { name: 'row-1' })
+    const loadMore = screen.getByRole('button', { name: 'load-more' })
+    expect(loadMore).toBeEnabled()
+    fireEvent.click(loadMore)
+
+    await waitFor(() => {
+      expect(loadMore).toBeDisabled()
+    })
+    expect(row).toBeInTheDocument()
   })
 
   it('refreshes from the first page and announces an invalid cursor', async () => {
