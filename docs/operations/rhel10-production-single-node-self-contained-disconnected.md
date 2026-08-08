@@ -5,7 +5,7 @@
 This guide describes how to prepare and import disconnected release artifacts
 for the self-contained single-node RHEL 10 production topology, where nginx,
 `app-runtime`, SQL Server, Keycloak and `db-job` run in one rootless Podman
-Compose network.
+Quadlet network.
 
 The default disconnected topology is `single-node`. The optional
 `single-node-demo` topology is test-only and adds Kong, the HSA person lookup
