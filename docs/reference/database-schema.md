@@ -2911,14 +2911,22 @@ graph LR
 ## Database Roles
 
 Migration 0054 creates the custom `kravhantering_runtime` database role. The
-role receives `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on each current
-application table in `dbo`, but only `SELECT` on the TypeORM `migrations`
-history table. Future tables receive no implicit access. Reconciliation
-removes unexpected direct permissions and membership in parent roles while
-preserving identities assigned to the custom role.
+release-versioned manifest in
+[`typeorm/runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
+is authoritative for exact object, operation, and update-column grants. Future
+tables receive no implicit access. Reconciliation removes unexpected direct
+permissions from the project role without changing other roles, user grants,
+or site-owned extension roles; unexpected parent roles fail verification.
+
+`dbo.migrations` is `SELECT`-only. `action_audit_events` permits `SELECT`,
+`INSERT`, and `UPDATE` only for `actor_hsa_id` and `actor_display_name`, with no
+`DELETE`; access-review and retention evidence tables have similarly explicit
+workflow/privacy columns and no unsupported deletion. Runtime has no DDL,
+ownership, role-administration, or stored-procedure execution grant.
 
 The application runtime and the migration job use separate SQL Server logins.
 The migration login retains `db_owner` so TypeORM can apply versioned schema
 changes. Existing application-login membership in `db_datareader` and
-`db_datawriter` remains during the transition to the custom role; migration
-0054 does not add or remove login memberships.
+`db_datawriter` remains during the transition to the custom role. Bootstrap
+assigns the custom and transitional memberships, while ordinary upgrades only
+verify explicitly declared `DB_RUNTIME_USER` principals.

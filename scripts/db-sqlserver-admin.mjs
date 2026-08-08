@@ -2,6 +2,16 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { DataSource, MigrationExecutor } from 'typeorm'
+import {
+  buildRuntimePermissionReconcileSql,
+  buildRuntimeRoleCreateSql,
+  RUNTIME_PERMISSION_MANIFEST,
+  RUNTIME_PERMISSION_MANIFEST_DIGEST,
+  RUNTIME_PERMISSION_MANIFEST_VERSION,
+  SQL_SERVER_RUNTIME_ROLE,
+} from '../typeorm/runtime-permission-manifest.mjs'
+
+export { SQL_SERVER_RUNTIME_ROLE }
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 export const MIGRATIONS_DIR = resolve(SCRIPT_DIR, '../typeorm/migrations')
@@ -147,7 +157,6 @@ export const DEFAULT_PORT = 1433
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 export const DEFAULT_WAIT_RETRY_MS = 1_000
 export const DEFAULT_WAIT_TIMEOUT_MS = 30_000
-export const SQL_SERVER_RUNTIME_ROLE = 'kravhantering_runtime'
 const DB_ADMIN_IMAGE_ENV = 'KRAVHANTERING_DB_ADMIN_IMAGE'
 const DB_JOB_IMAGE_KIND = 'db-job'
 const CORE_COMMANDS = Object.freeze([
@@ -157,6 +166,8 @@ const CORE_COMMANDS = Object.freeze([
   'bootstrap',
   'migration-status',
   'migrate',
+  'permission-status',
+  'permission-reconcile',
   'seed:required',
 ])
 const DEMO_DATA_COMMANDS = Object.freeze(['seed:demo', 'demo:clear', 'setup'])
@@ -345,6 +356,30 @@ export function getSqlServerDatabaseUrl(env = process.env, options = {}) {
   }
 
   return resolved
+}
+
+export function getSqlServerMigrationUrl(env = process.env) {
+  const explicit = env.DATABASE_MIGRATION_URL?.trim()
+  if (explicit) {
+    if (!isSqlServerUrl(explicit)) {
+      throw new Error('DATABASE_MIGRATION_URL must be an mssql:// URL.')
+    }
+    return explicit
+  }
+  const username = env.DB_MIGRATION_USER?.trim()
+  const password = env.DB_MIGRATION_PASSWORD
+  if (!username && !password) return getSqlServerDatabaseUrl(env)
+  if (!username || !password) {
+    throw new Error(
+      'DB_MIGRATION_USER and DB_MIGRATION_PASSWORD must be configured together.',
+    )
+  }
+  return buildSqlServerDatabaseUrlFromParts({
+    ...env,
+    DB_PASSWORD: password,
+    DB_USER: username,
+    DATABASE_URL: undefined,
+  })
 }
 
 export function parseSqlServerConnectionString(
@@ -795,86 +830,12 @@ function buildBootstrapLoginSql(principals) {
       const escapedLoginNameLiteral = `N'${escapeSqlServerStringLiteral(principal.username)}'`
       const escapedPassword = `'${escapeSqlServerStringLiteral(principal.password)}'`
       return `
-      IF EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = ${escapedLoginNameLiteral})
-      BEGIN
-        ALTER LOGIN ${escapedLoginName} WITH PASSWORD = ${escapedPassword}
-      END
-      ELSE
+      IF NOT EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = ${escapedLoginNameLiteral})
       BEGIN
         CREATE LOGIN ${escapedLoginName} WITH PASSWORD = ${escapedPassword}
       END`
     })
     .join('\n')
-}
-
-function buildRuntimeRoleSql() {
-  const escapedRuntimeRole = quoteSqlServerIdentifier(SQL_SERVER_RUNTIME_ROLE)
-  const escapedRuntimeRoleLiteral = `N'${escapeSqlServerStringLiteral(SQL_SERVER_RUNTIME_ROLE)}'`
-
-  return `
-      IF EXISTS (
-        SELECT 1
-        FROM sys.database_principals
-        WHERE [name] = ${escapedRuntimeRoleLiteral}
-          AND [type] <> N'R'
-      )
-        THROW 51021, 'Cannot provision ${SQL_SERVER_RUNTIME_ROLE}: a non-role database principal uses that name.', 1
-
-      DECLARE @runtimeRoleMembers TABLE ([name] sysname NOT NULL)
-      DECLARE @runtimeRoleSql nvarchar(max) = N''
-
-      IF DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral}) IS NOT NULL
-      BEGIN
-        INSERT INTO @runtimeRoleMembers ([name])
-        SELECT principals.[name]
-        FROM sys.database_role_members AS members
-        INNER JOIN sys.database_principals AS principals
-          ON members.member_principal_id = principals.principal_id
-        WHERE members.role_principal_id = DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral})
-
-        SELECT @runtimeRoleSql +=
-          N'ALTER ROLE ${escapedRuntimeRole} DROP MEMBER ' + QUOTENAME([name]) + N';'
-        FROM @runtimeRoleMembers
-        EXEC sp_executesql @runtimeRoleSql
-
-        SET @runtimeRoleSql = N''
-        SELECT @runtimeRoleSql +=
-          N'ALTER ROLE ' + QUOTENAME(roles.[name]) +
-          N' DROP MEMBER ${escapedRuntimeRole};'
-        FROM sys.database_role_members AS members
-        INNER JOIN sys.database_principals AS roles
-          ON members.role_principal_id = roles.principal_id
-        WHERE members.member_principal_id = DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral})
-        EXEC sp_executesql @runtimeRoleSql
-
-        DROP ROLE ${escapedRuntimeRole}
-      END
-
-      CREATE ROLE ${escapedRuntimeRole} AUTHORIZATION [dbo]
-
-      SET @runtimeRoleSql = N''
-      SELECT @runtimeRoleSql +=
-        N'ALTER ROLE ${escapedRuntimeRole} ADD MEMBER ' + QUOTENAME([name]) + N';'
-      FROM @runtimeRoleMembers
-      EXEC sp_executesql @runtimeRoleSql
-
-      SET @runtimeRoleSql = N''
-      SELECT @runtimeRoleSql +=
-        CASE
-          WHEN tables.[name] = N'migrations' THEN
-            N'GRANT SELECT ON OBJECT::' + QUOTENAME(schemas.[name]) + N'.' +
-            QUOTENAME(tables.[name]) + N' TO ${escapedRuntimeRole};'
-          ELSE
-            N'GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::' +
-            QUOTENAME(schemas.[name]) + N'.' + QUOTENAME(tables.[name]) +
-            N' TO ${escapedRuntimeRole};'
-        END
-      FROM sys.tables AS tables
-      INNER JOIN sys.schemas AS schemas
-        ON tables.schema_id = schemas.schema_id
-      WHERE schemas.[name] = N'dbo'
-        AND tables.is_ms_shipped = 0
-      EXEC sp_executesql @runtimeRoleSql`
 }
 
 function buildBootstrapUserSql(principals) {
@@ -907,12 +868,13 @@ function buildBootstrapUserSql(principals) {
       IF DATABASE_PRINCIPAL_ID(${escapedUserNameLiteral}) IS NULL
       BEGIN
         CREATE USER ${escapedUserName} FOR LOGIN ${escapedUserName}
+          WITH DEFAULT_SCHEMA = [dbo]
       END
 ${roleSql}`
     })
     .join('\n')
 
-  return `${buildRuntimeRoleSql()}
+  return `${buildRuntimeRoleCreateSql()}
 ${principalSql}`
 }
 
@@ -944,7 +906,7 @@ export async function bootstrapSqlServerDatabase(
       defaultPassword: env.DB_BOOTSTRAP_APP_PASSWORD,
       defaultUsername: env.DB_BOOTSTRAP_APP_USER,
       passwordEnv: 'DB_BOOTSTRAP_APP_PASSWORD',
-      roles: ['db_datareader', 'db_datawriter'],
+      roles: ['db_datareader', 'db_datawriter', SQL_SERVER_RUNTIME_ROLE],
       userEnv: 'DB_BOOTSTRAP_APP_USER',
     }),
   ]
@@ -987,6 +949,286 @@ ${buildBootstrapLoginSql(principals)}
   }
 }
 
+export function getExpectedRuntimeUsers(env = process.env, options = {}) {
+  const configured = [
+    env.DB_RUNTIME_USER,
+    ...(env.DB_RUNTIME_USERS?.split(',') ?? []),
+  ]
+    .map(value => value?.trim())
+    .filter(Boolean)
+  const users = [...new Set(configured)]
+  if (options.required && users.length < 1) {
+    throw new Error(
+      'DB_RUNTIME_USER is required to verify the managed runtime database user.',
+    )
+  }
+  return users
+}
+
+function expectedRuntimePermissionRows() {
+  return RUNTIME_PERMISSION_MANIFEST.flatMap(entry => {
+    const [schemaName, objectName] = entry.object.split('.')
+    return [
+      ...entry.permissions.map(permissionName => ({
+        columnName: null,
+        objectName,
+        permissionName,
+        schemaName,
+      })),
+      ...(entry.updateColumns ?? []).map(columnName => ({
+        columnName,
+        objectName,
+        permissionName: 'UPDATE',
+        schemaName,
+      })),
+    ]
+  })
+}
+
+function permissionRowKey(row) {
+  return [
+    row.schemaName ?? '',
+    row.objectName ?? '',
+    row.permissionName,
+    row.columnName ?? '*',
+  ].join(':')
+}
+
+export async function getSqlServerRuntimePermissionStatus(
+  queryExecutor,
+  options = {},
+) {
+  const env = options.env ?? process.env
+  const expectedRuntimeUsers =
+    options.expectedRuntimeUsers ?? getExpectedRuntimeUsers(env)
+  const [roleRows, permissionRows, runtimeUserRows, parentRoleRows] =
+    await Promise.all([
+      queryExecutor.query(
+        `SELECT [name], [type]
+         FROM sys.database_principals
+         WHERE [name] = N'${SQL_SERVER_RUNTIME_ROLE}'`,
+      ),
+      queryExecutor.query(
+        `SELECT
+           schemas.[name] AS schemaName,
+           objects.[name] AS objectName,
+           permissions.permission_name AS permissionName,
+           columns.[name] AS columnName,
+           permissions.state_desc AS stateDesc,
+           permissions.class_desc AS classDesc
+         FROM sys.database_permissions AS permissions
+         LEFT JOIN sys.objects AS objects
+           ON permissions.class = 1
+          AND permissions.major_id = objects.object_id
+         LEFT JOIN sys.schemas AS schemas
+           ON objects.schema_id = schemas.schema_id
+         LEFT JOIN sys.columns AS columns
+           ON permissions.class = 1
+          AND permissions.major_id = columns.object_id
+          AND permissions.minor_id = columns.column_id
+         WHERE permissions.grantee_principal_id =
+           DATABASE_PRINCIPAL_ID(N'${SQL_SERVER_RUNTIME_ROLE}')`,
+      ),
+      queryExecutor.query(
+        `SELECT
+           principals.[name],
+           principals.default_schema_name AS defaultSchema,
+           CAST(CASE WHEN members.member_principal_id IS NULL THEN 0 ELSE 1 END AS bit) AS isMember
+         FROM sys.database_principals AS principals
+         LEFT JOIN sys.database_role_members AS members
+           ON members.member_principal_id = principals.principal_id
+          AND members.role_principal_id =
+            DATABASE_PRINCIPAL_ID(N'${SQL_SERVER_RUNTIME_ROLE}')
+         WHERE principals.[name] IN (${expectedRuntimeUsers.length > 0 ? expectedRuntimeUsers.map(user => `N'${escapeSqlServerStringLiteral(user)}'`).join(', ') : 'NULL'})`,
+      ),
+      queryExecutor.query(
+        `SELECT roles.[name]
+         FROM sys.database_role_members AS members
+         INNER JOIN sys.database_principals AS roles
+           ON members.role_principal_id = roles.principal_id
+         WHERE members.member_principal_id =
+           DATABASE_PRINCIPAL_ID(N'${SQL_SERVER_RUNTIME_ROLE}')`,
+      ),
+    ])
+
+  const rolePresent = roleRows.some(row => row.type === 'R')
+  const expectedRows = expectedRuntimePermissionRows()
+  const expectedByKey = new Map(
+    expectedRows.map(row => [permissionRowKey(row), row]),
+  )
+  const actualGrantRows = permissionRows
+    .filter(row => row.stateDesc === 'GRANT')
+    .map(row => ({
+      columnName: row.columnName ?? null,
+      objectName: row.objectName ?? null,
+      permissionName: row.permissionName,
+      schemaName: row.schemaName ?? null,
+    }))
+  const actualByKey = new Map(
+    actualGrantRows.map(row => [permissionRowKey(row), row]),
+  )
+  const missingGrants = expectedRows.filter(
+    row => !actualByKey.has(permissionRowKey(row)),
+  )
+  const unexpectedGrants = permissionRows
+    .filter(
+      row =>
+        row.stateDesc !== 'GRANT' || !expectedByKey.has(permissionRowKey(row)),
+    )
+    .map(row => ({
+      class: row.classDesc,
+      columnName: row.columnName ?? null,
+      objectName: row.objectName ?? null,
+      permissionName: row.permissionName,
+      schemaName: row.schemaName ?? null,
+      state: row.stateDesc,
+    }))
+  const foundRuntimeUsers = new Map(runtimeUserRows.map(row => [row.name, row]))
+  const runtimeUsers = expectedRuntimeUsers.map(name => {
+    const user = foundRuntimeUsers.get(name)
+    return {
+      defaultSchema: user?.defaultSchema ?? null,
+      member: Boolean(user?.isMember),
+      name,
+      present: Boolean(user),
+    }
+  })
+  const unexpectedParentRoles = parentRoleRows.map(row => row.name).sort()
+  const compatible =
+    rolePresent &&
+    missingGrants.length === 0 &&
+    unexpectedGrants.length === 0 &&
+    unexpectedParentRoles.length === 0 &&
+    runtimeUsers.every(
+      user => user.present && user.member && user.defaultSchema === 'dbo',
+    )
+
+  return {
+    compatible,
+    manifest: {
+      digest: RUNTIME_PERMISSION_MANIFEST_DIGEST,
+      version: RUNTIME_PERMISSION_MANIFEST_VERSION,
+    },
+    missingGrants,
+    role: { name: SQL_SERVER_RUNTIME_ROLE, present: rolePresent },
+    runtimeUsers,
+    unexpectedGrants,
+    unexpectedParentRoles,
+  }
+}
+
+export function assertRuntimePermissionStatus(status) {
+  if (status.compatible) return
+  const missingUsers = status.runtimeUsers
+    .filter(user => !user.present)
+    .map(user => user.name)
+  const missingMemberships = status.runtimeUsers
+    .filter(user => user.present && !user.member)
+    .map(user => user.name)
+  const invalidDefaultSchemas = status.runtimeUsers
+    .filter(user => user.present && user.defaultSchema !== 'dbo')
+    .map(user => `${user.name}=${user.defaultSchema ?? 'none'}`)
+  const details = [
+    !status.role.present ? 'runtime role is missing' : null,
+    missingUsers.length > 0
+      ? `runtime database user is missing: ${missingUsers.join(', ')}`
+      : null,
+    missingMemberships.length > 0
+      ? `runtime role membership is missing: ${missingMemberships.join(', ')}`
+      : null,
+    invalidDefaultSchemas.length > 0
+      ? `runtime database user default schema must be dbo: ${invalidDefaultSchemas.join(', ')}`
+      : null,
+    status.missingGrants.length > 0
+      ? `${status.missingGrants.length} manifest grant(s) are missing`
+      : null,
+    status.unexpectedGrants.length > 0
+      ? `${status.unexpectedGrants.length} unexpected direct grant(s) remain`
+      : null,
+    status.unexpectedParentRoles.length > 0
+      ? `runtime role is nested in: ${status.unexpectedParentRoles.join(', ')}`
+      : null,
+  ].filter(Boolean)
+  throw new Error(
+    `SQL runtime permission verification failed: ${details.join('; ')}.`,
+  )
+}
+
+export async function reconcileSqlServerRuntimePermissions(
+  queryExecutor,
+  options = {},
+) {
+  const env = options.env ?? process.env
+  const expectedRuntimeUsers =
+    options.expectedRuntimeUsers ?? getExpectedRuntimeUsers(env)
+
+  await queryExecutor.query(buildRuntimePermissionReconcileSql())
+  const beforeMembership = await getSqlServerRuntimePermissionStatus(
+    queryExecutor,
+    { expectedRuntimeUsers },
+  )
+  const missingUsers = beforeMembership.runtimeUsers.filter(
+    user => !user.present,
+  )
+  if (missingUsers.length > 0) {
+    throw new Error(
+      `SQL runtime permission verification failed: runtime database user is missing: ${missingUsers.map(user => user.name).join(', ')}.`,
+    )
+  }
+  for (const user of beforeMembership.runtimeUsers.filter(
+    user => !user.member,
+  )) {
+    await queryExecutor.query(
+      `ALTER ROLE [${SQL_SERVER_RUNTIME_ROLE}] ADD MEMBER ${quoteSqlServerIdentifier(user.name)}`,
+    )
+  }
+  const status = await getSqlServerRuntimePermissionStatus(queryExecutor, {
+    expectedRuntimeUsers,
+  })
+  assertRuntimePermissionStatus(status)
+  return status
+}
+
+async function withRuntimePermissionDataSource(
+  connectionString,
+  options,
+  callback,
+) {
+  const env = options.env ?? process.env
+  const DataSourceCtor = options.dataSourceCtor ?? DataSource
+  const dataSource = new DataSourceCtor(
+    buildMigrationDataSourceOptions(connectionString, [], env),
+  )
+  await dataSource.initialize()
+  try {
+    return await callback(dataSource)
+  } finally {
+    if (typeof dataSource.destroy === 'function') await dataSource.destroy()
+  }
+}
+
+export async function getSqlServerRuntimePermissionStatusForConnection(
+  connectionString,
+  options = {},
+) {
+  return withRuntimePermissionDataSource(
+    connectionString,
+    options,
+    dataSource => getSqlServerRuntimePermissionStatus(dataSource, options),
+  )
+}
+
+export async function reconcileSqlServerRuntimePermissionsForConnection(
+  connectionString,
+  options = {},
+) {
+  return withRuntimePermissionDataSource(
+    connectionString,
+    options,
+    dataSource => reconcileSqlServerRuntimePermissions(dataSource, options),
+  )
+}
+
 export async function runSqlServerMigrations(connectionString, options = {}) {
   const DataSourceCtor = options.dataSourceCtor ?? DataSource
   const env = options.env ?? process.env
@@ -1023,6 +1265,16 @@ export async function runSqlServerMigrations(connectionString, options = {}) {
     )
     assertMigrationStateCompatible(postMigration)
     assertPostMigrationHeadMatchesTarget(postMigration)
+    const reconcileRuntimePermissionsImpl =
+      options.reconcileRuntimePermissionsImpl ??
+      reconcileSqlServerRuntimePermissions
+    const runtimePermissions = await reconcileRuntimePermissionsImpl(
+      dataSource,
+      {
+        env,
+        expectedRuntimeUsers: options.expectedRuntimeUsers,
+      },
+    )
 
     return {
       database: parseSqlServerConnectionString(connectionString, env).database,
@@ -1038,6 +1290,7 @@ export async function runSqlServerMigrations(connectionString, options = {}) {
       migrationsApplied: migrations.length,
       postMigration,
       preflight,
+      runtimePermissions,
     }
   } finally {
     if (typeof dataSource.destroy === 'function') {
@@ -1542,12 +1795,48 @@ export async function main(args, dependencies = {}) {
     }
   }
 
+  if (command === 'permission-status' || command === 'permission-reconcile') {
+    try {
+      const expectedRuntimeUsers = getExpectedRuntimeUsers(env, {
+        required: true,
+      })
+      const permissionOptions = {
+        ...dependencies,
+        env,
+        expectedRuntimeUsers,
+      }
+      const result =
+        command === 'permission-status'
+          ? await (
+              dependencies.getRuntimePermissionStatusImpl ??
+              getSqlServerRuntimePermissionStatusForConnection
+            )(connectionString, permissionOptions)
+          : await (
+              dependencies.reconcileRuntimePermissionsForConnectionImpl ??
+              reconcileSqlServerRuntimePermissionsForConnection
+            )(connectionString, permissionOptions)
+      consoleObj.log(JSON.stringify(result, null, 2))
+      return result.compatible ? 0 : 1
+    } catch (error) {
+      consoleObj.error(
+        error instanceof Error
+          ? error.message
+          : `SQL Server ${command} failed.`,
+      )
+      return 1
+    }
+  }
+
   if (command === 'migrate') {
     try {
-      const result = await runSqlServerMigrations(
-        connectionString,
-        dependencies,
-      )
+      const expectedRuntimeUsers = getExpectedRuntimeUsers(env, {
+        required: true,
+      })
+      const result = await runSqlServerMigrations(connectionString, {
+        ...dependencies,
+        env,
+        expectedRuntimeUsers,
+      })
       if (jsonOutput) {
         consoleObj.log(JSON.stringify(result, null, 2))
       } else {
@@ -1616,33 +1905,69 @@ export async function main(args, dependencies = {}) {
   }
 
   if (command === 'setup') {
-    const masterConnectionString =
-      createMasterConnectionString(connectionString)
+    const migrationConnectionString = getSqlServerMigrationUrl(env)
+    const parsed = parseSqlServerConnectionString(
+      migrationConnectionString,
+      env,
+    )
+    const adminMasterConnectionString = createBootstrapAdminConnectionString(
+      migrationConnectionString,
+      env,
+    )
+    const adminDatabaseConnectionString = createBootstrapAdminConnectionString(
+      migrationConnectionString,
+      env,
+      { database: parsed.database },
+    )
+    const expectedRuntimeUsers = getExpectedRuntimeUsers(env, {
+      required: true,
+    })
 
     try {
       consoleObj.log(
-        'Step 1/6: waiting for SQL Server to accept connections...',
+        'Step 1/7: waiting for SQL Server to accept connections...',
       )
-      await waitForSqlServer(masterConnectionString, dependencies)
-      consoleObj.log('Step 2/6: resetting SQL Server database...')
-      await resetSqlServerDatabase(connectionString, dependencies)
-      consoleObj.log('Step 3/6: applying SQL Server migrations...')
-      await runSqlServerMigrations(connectionString, dependencies)
-      consoleObj.log('Step 4/6: seeding required SQL Server data...')
-      const requiredResult = await seedSqlServerDatabase(connectionString, {
-        ...dependencies,
-        configureReadonlyAccess: false,
-        profile: 'required',
-      })
-      consoleObj.log('Step 5/6: seeding demo SQL Server data...')
-      const demoResult = await seedSqlServerDatabase(connectionString, {
-        ...dependencies,
-        configureReadonlyAccess: false,
-        profile: 'demo',
-      })
-      consoleObj.log('Step 6/6: configuring read-only database access...')
+      await waitForSqlServer(adminMasterConnectionString, dependencies)
+      consoleObj.log('Step 2/7: resetting SQL Server database...')
+      await (dependencies.resetSqlServerDatabaseImpl ?? resetSqlServerDatabase)(
+        adminDatabaseConnectionString,
+        dependencies,
+      )
+      consoleObj.log('Step 3/7: provisioning distinct SQL principals...')
+      await (
+        dependencies.bootstrapSqlServerDatabaseImpl ??
+        bootstrapSqlServerDatabase
+      )(migrationConnectionString, dependencies)
+      consoleObj.log('Step 4/7: applying SQL Server migrations...')
+      await (dependencies.runSqlServerMigrationsImpl ?? runSqlServerMigrations)(
+        migrationConnectionString,
+        {
+          ...dependencies,
+          env,
+          expectedRuntimeUsers,
+        },
+      )
+      consoleObj.log('Step 5/7: seeding required SQL Server data...')
+      const requiredResult = await seedSqlServerDatabase(
+        migrationConnectionString,
+        {
+          ...dependencies,
+          configureReadonlyAccess: false,
+          profile: 'required',
+        },
+      )
+      consoleObj.log('Step 6/7: seeding demo SQL Server data...')
+      const demoResult = await seedSqlServerDatabase(
+        migrationConnectionString,
+        {
+          ...dependencies,
+          configureReadonlyAccess: false,
+          profile: 'demo',
+        },
+      )
+      consoleObj.log('Step 7/7: configuring read-only database access...')
       const readonlyAccess = await ensureReadonlySqlServerAccess(
-        connectionString,
+        migrationConnectionString,
         dependencies,
       )
       consoleObj.log(

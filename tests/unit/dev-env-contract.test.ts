@@ -499,6 +499,34 @@ describe('development environment contract', () => {
     expect(azureModule).toContain('[System.IO.File]::Delete($stderrPath)')
   })
 
+  it('provisions distinct runtime and migration SQL identities in every development topology', () => {
+    const devcontainerEnv = readWorkspaceFile('.devcontainer/.env.example')
+    const defaultProfile = readWorkspaceFile('.devcontainer/devcontainer.json')
+    const elevatedProfile = readWorkspaceFile(
+      '.devcontainer/elevated/devcontainer.json',
+    )
+    const azureBootstrap = readWorkspaceFile(
+      'scripts/azure-dev/templates/bootstrap-host.sh',
+    )
+    const azureValidation = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Validation.psm1',
+    )
+
+    expect(devcontainerEnv).toContain('DB_USER=kravhantering_app')
+    expect(devcontainerEnv).toContain('DB_RUNTIME_USER=kravhantering_app')
+    expect(devcontainerEnv).toContain('DB_MIGRATION_USER=kravhantering_job')
+    expect(devcontainerEnv).toContain('DB_BOOTSTRAP_ADMIN_USER=sa')
+    expect(defaultProfile).toContain('npm run db:setup')
+    expect(elevatedProfile).toContain('npm run db:setup')
+    expect(azureBootstrap).toContain(
+      "printf 'DB_MIGRATION_USER=kravhantering_job\\n'",
+    )
+    expect(azureBootstrap).toContain(
+      "printf 'DB_RUNTIME_USER=kravhantering_app\\n'",
+    )
+    expect(azureValidation).toContain('npm run db:permission-status')
+  })
+
   it('manages Azure data disk size outside the VM deployment', () => {
     const entryScript = readWorkspaceFile('scripts/azure-dev.ps1')
     const azureModule = readWorkspaceFile(

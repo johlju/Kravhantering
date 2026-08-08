@@ -10,14 +10,14 @@ target version.
 <!-- operator-upgrade:source issue-484 start -->
 ### Least-privilege SQL runtime role is provisioned beside legacy roles
 
-Migration 0054 idempotently creates or reconciles the
-`kravhantering_runtime` database role. It grants runtime DML on each current
-application table in `dbo`, read-only access to the TypeORM `migrations`
-history table, and no implicit access to future tables. Reconciliation removes
-unexpected direct permissions and parent-role membership while preserving the
-identities assigned to the custom role. Existing `db_datareader` and
-`db_datawriter` assignments remain available during the transition. Continue
-to run migrations with the separate db-job identity.
+Set the non-secret `DB_RUNTIME_USER` to the existing runtime database user
+before running `db-job migrate`; migration 0054 and the post-migration step
+create/reconcile the explicit runtime-permission manifest and fail on grant or
+membership drift. Continue using the separate `db_owner` db-job identity for
+migrations and required seed, while retaining the runtime user's transitional
+`db_datareader` and `db_datawriter` memberships until #485. Retain the
+`runtimePermissions` JSON from `migrate --json` or run `permission-status` for
+equivalent secret-free evidence.
 <!-- operator-upgrade:source issue-484 end -->
 
 <!-- operator-upgrade:source pr-870 start -->

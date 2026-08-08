@@ -492,6 +492,7 @@ cd /workspace
 wait_for_sql_server_login
 run_workspace_command_or_diagnose 'SQL Server database setup' npm run db:setup
 run_workspace_command_or_diagnose 'SQL Server health check' npm run db:health
+run_workspace_command_or_diagnose 'SQL Server runtime permission status' npm run db:permission-status
 run_workspace_command_or_diagnose 'Playwright dry-run install check' ./node_modules/.bin/playwright install --dry-run chromium
 '@
 

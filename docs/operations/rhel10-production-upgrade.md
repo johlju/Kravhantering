@@ -289,10 +289,10 @@ place.
    the optional `kravhantering-demo-seed` image in production. Review the target
    release's Operator Upgrade Notes before running `db-job migrate`.
 
-   Migration 0054 reconciles the `kravhantering_runtime` role without changing
-   the existing `db_datareader` or `db_datawriter` memberships. Keep the
-   migration and runtime credentials separate; only the db-job identity has
-   schema migration permission.
+   Migration 0054 and the post-migration reconciler apply the explicit runtime
+   manifest and verify the `DB_RUNTIME_USER` membership without changing other
+   roles or direct user grants. Keep transitional `db_datareader` and
+   `db_datawriter`; only the db-job identity has migration permission.
 
    ```bash
    sudo -iu kravhantering
@@ -314,6 +314,9 @@ place.
    podman run --rm --env-file /etc/kravhantering/db-job.env \
      "$DB_JOB_IMAGE_REF" migration-status \
      > "$EVIDENCE_DIR/migration-status-after-${VERSION}.json"
+   podman run --rm --env-file /etc/kravhantering/db-job.env \
+     "$DB_JOB_IMAGE_REF" permission-status \
+     > "$EVIDENCE_DIR/runtime-permissions-${VERSION}.json"
    podman run --rm --env-file /etc/kravhantering/db-job.env \
      "$DB_JOB_IMAGE_REF" seed:required
 
@@ -511,7 +514,8 @@ place.
     Add the final bundle checksum, image refs, restore-point reference and
     `migration-status-before-<version>.json`,
     `migration-run-<version>.json`,
-    `migration-status-after-<version>.json` and readiness results to the
+    `migration-status-after-<version>.json`,
+    `runtime-permissions-<version>.json` and readiness results to the
     [Operational Evidence](./rhel10-production-deploy.md#operational-evidence)
     record.
 
@@ -521,6 +525,11 @@ Rollback after a migration requires restoring the database backup or restore
 point taken before the upgrade. Use the captured migration evidence to confirm
 which database head was observed before and after the failed upgrade. The
 supported sequence is:
+
+Migration 0054's down path removes only the custom role, its grants, and its
+memberships; runtime/migration users and legacy fixed-role memberships remain.
+The supported production rollback remains restoration of the pre-upgrade
+database state as described below.
 
 1. Disable traffic to all app nodes.
 

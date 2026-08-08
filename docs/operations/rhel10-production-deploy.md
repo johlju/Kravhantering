@@ -487,8 +487,8 @@ database platform tooling must provide:
 - database name, normally `kravhantering`
 - app runtime login/user with `db_datareader` and `db_datawriter`
 - db-job login/user with `db_owner`
-- custom `kravhantering_runtime` role with runtime DML on each current
-  application table in `dbo` and read-only TypeORM migration history
+- custom `kravhantering_runtime` role and app-user membership; db-job applies
+  the release-versioned object/operation/column permission manifest
 - encrypted connection settings and trust configuration
 - backup and restore procedure approved for the release window
 
@@ -501,10 +501,11 @@ this transition. Do not remove `db_datareader` or `db_datawriter` yet. The
 runtime role intentionally has no DDL permission; only the separate db-job
 identity may apply TypeORM migrations.
 
-Role reconciliation preserves assigned identities but removes unexpected
-direct permissions and membership in broader parent roles. Future tables do
-not inherit runtime access; the migration that introduces a new runtime table
-must reconcile its required permissions explicitly.
+Role reconciliation removes unexpected direct permissions from the custom role
+without changing other roles, direct user grants, or site extensions. An
+unexpected parent role is reported as incompatible for explicit DBA handling.
+Future tables do not inherit access; their required operations must first be
+added to the release manifest.
 
 Set `/etc/kravhantering/app.env` with the app runtime user:
 
@@ -526,11 +527,17 @@ DB_PORT=1433
 DB_NAME=kravhantering
 DB_USER=kravhantering_job
 DB_PASSWORD=<db-job-password>
+DB_RUNTIME_USER=kravhantering_app
 DB_CONNECTION_TIMEOUT_MS=15000
 DB_REQUEST_TIMEOUT_MS=30000
 DB_ENCRYPT=true
 DB_TRUST_SERVER_CERTIFICATE=false
 ```
+
+`DB_RUNTIME_USER` is a non-secret verification name only. The db-job does not
+connect as that user, create it during ordinary upgrades, or rotate its
+credentials. After `migrate --json`, retain `runtimePermissions` or run
+`permission-status` with the same db-job environment for standalone evidence.
 
 `DB_CONNECTION_TIMEOUT_MS` is the time allowed to open each SQL Server
 connection. Raise it when the external database is slow to accept connections
@@ -744,6 +751,9 @@ podman run --rm --env-file /etc/kravhantering/db-job.env \
 podman run --rm --env-file /etc/kravhantering/db-job.env \
   "$DB_JOB_IMAGE_REF" migration-status \
   > "$EVIDENCE_DIR/migration-status-after-${VERSION}.json"
+podman run --rm --env-file /etc/kravhantering/db-job.env \
+  "$DB_JOB_IMAGE_REF" permission-status \
+  > "$EVIDENCE_DIR/runtime-permissions-${VERSION}.json"
 podman run --rm --env-file /etc/kravhantering/db-job.env \
   "$DB_JOB_IMAGE_REF" seed:required
 
@@ -1165,6 +1175,7 @@ Keep these files with the deployment record:
 - `migration-status-before-<version>.json`
 - `migration-run-<version>.json`
 - `migration-status-after-<version>.json`
+- `runtime-permissions-<version>.json`
 - SQL backup or restore-point reference
 - final `/etc/kravhantering/release.env` image refs
 - readiness check results

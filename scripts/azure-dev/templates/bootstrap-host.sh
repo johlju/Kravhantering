@@ -910,7 +910,9 @@ write_vm_env_override() {
   local start="# >>> kravhantering azure vm managed"
   local end="# <<< kravhantering azure vm managed"
   local tmp
+  local sa_password
   tmp="$(mktemp)"
+  sa_password="$(sed -n 's/^MSSQL_SA_PASSWORD=//p' "${KRAV_CONFIG_DIR}/sqlserver.env")"
 
   if [ -f "${file}" ]; then
     awk -v start="${start}" -v end="${end}" '
@@ -922,6 +924,17 @@ write_vm_env_override() {
 
   {
     printf '%s\n' "${start}"
+    printf 'DB_BOOTSTRAP_ADMIN_PASSWORD=%s\n' "${sa_password}"
+    printf 'DB_BOOTSTRAP_ADMIN_USER=sa\n'
+    printf 'DB_BOOTSTRAP_APP_PASSWORD=RuntimeOnly!Passw0rd7\n'
+    printf 'DB_BOOTSTRAP_APP_USER=kravhantering_app\n'
+    printf 'DB_HOST=127.0.0.1\n'
+    printf 'DB_MIGRATION_PASSWORD=MigrationOnly!Passw0rd7\n'
+    printf 'DB_MIGRATION_USER=kravhantering_job\n'
+    printf 'DB_PASSWORD=RuntimeOnly!Passw0rd7\n'
+    printf 'DB_RUNTIME_USER=kravhantering_app\n'
+    printf 'DB_USER=kravhantering_app\n'
+    printf 'MSSQL_SA_PASSWORD=%s\n' "${sa_password}"
     printf 'HSA_PERSON_LOOKUP_URL=http://127.0.0.1:18000/hsa/person-records/lookup\n'
     printf '%s\n' "${end}"
   } >> "${tmp}"

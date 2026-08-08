@@ -75,8 +75,10 @@ DB_ENCRYPT=...
 DB_TRUST_SERVER_CERTIFICATE=...
 ```
 
-The write connection defaults to the `sa` login using `MSSQL_SA_PASSWORD`
-unless you explicitly set `DB_USER` / `DB_PASSWORD`.
+The committed development defaults use `kravhantering_app` for the application,
+`kravhantering_job` for migration and required seed, and `sa` only for
+principal/database bootstrap. `db:setup` creates and maps those principals
+idempotently; it does not rotate existing login passwords.
 
 For the read-only login, avoid passwords that contain the login name
 (`readonly`) because SQL Server password policy can reject them even when they
@@ -89,19 +91,25 @@ settings. The Next.js runtime and admin CLI both use these names.
 The canonical runtime contract is:
 
 ```env
-DATABASE_URL=...
+DATABASE_URL=... # runtime identity
+DATABASE_MIGRATION_URL=... # migration identity
 DATABASE_READONLY_URL=...
 ```
 
 Application runtime and schema migration use separate SQL Server credentials.
-Migration 0054 idempotently reconciles the `kravhantering_runtime` database
-role with `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on each current
-application table in `dbo`. It grants only `SELECT` on the TypeORM `migrations`
-history table and grants nothing implicitly to future tables. Reconciliation
-removes direct-permission and parent-role drift while preserving the role's
-assigned identities. A role-only runtime login cannot run TypeORM migrations.
-Existing `db_datareader` and `db_datawriter` memberships remain available
-during the migration period.
+The release-versioned manifest in
+[`typeorm/runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
+lists exact object/operation grants, including protected column-scoped updates;
+new tables receive nothing implicitly. `db:migrate` reconciles direct grants
+after migrations and verifies `DB_RUNTIME_USER` membership. It does not alter
+other roles or direct user permissions, and a role-only runtime login cannot
+run TypeORM migrations. Existing `db_datareader` and `db_datawriter`
+memberships remain available until #485.
+
+Use `npm run db:permission-status` for secret-free JSON evidence or
+`npm run db:permission-reconcile` for an explicit repair. Both report the
+manifest version/digest, role presence, missing/unexpected grants, managed-user
+presence and membership, and unexpected parent roles.
 
 The Next.js runtime builds one shared TypeORM `DataSource` per process. The
 runtime DataSource keeps SQL Server behavior explicit:

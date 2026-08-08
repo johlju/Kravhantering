@@ -9,8 +9,11 @@ import {
   DEMO_RESET_TABLES,
   ensureReadonlySqlServerAccess,
   formatReadonlyBrowseConfig,
+  getExpectedRuntimeUsers,
   getSqlServerDatabaseUrl,
   getSqlServerMigrationStatus,
+  getSqlServerMigrationUrl,
+  getSqlServerRuntimePermissionStatus,
   healthCheckSqlServer,
   listMigrationFilenames,
   loadMigrationClasses,
@@ -116,6 +119,24 @@ describe('db-sqlserver-admin.mjs', () => {
       ),
     ).toBe(
       'mssql://readonly:Readonly123!@db:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+    )
+  })
+
+  it('derives a distinct migration URL without changing runtime connection parts', () => {
+    expect(
+      getSqlServerMigrationUrl({
+        DB_ENCRYPT: 'true',
+        DB_HOST: 'db',
+        DB_MIGRATION_PASSWORD: 'Migration123!',
+        DB_MIGRATION_USER: 'kravhantering_job',
+        DB_NAME: 'kravhantering',
+        DB_PORT: '1433',
+        DB_TRUST_SERVER_CERTIFICATE: 'true',
+        DB_PASSWORD: 'Runtime123!',
+        DB_USER: 'kravhantering_app',
+      }),
+    ).toBe(
+      'mssql://kravhantering_job:Migration123!@db:1433/kravhantering?encrypt=true&trustServerCertificate=true',
     )
   })
 
@@ -306,8 +327,8 @@ describe('db-sqlserver-admin.mjs', () => {
       },
     })
 
-    expect(exitCode).toBe(0)
     expect(error).not.toHaveBeenCalled()
+    expect(exitCode).toBe(0)
     expect(log).toHaveBeenCalledTimes(2)
     expect(log.mock.calls[1][0]).toContain('"username": "readonly"')
   })
@@ -402,13 +423,10 @@ describe('db-sqlserver-admin.mjs', () => {
     expect(queries[0]).toContain('CREATE DATABASE')
     expect(queries[0]).toContain('CREATE LOGIN [kravhantering_job]')
     expect(queries[0]).toContain('CREATE LOGIN [kravhantering_app]')
+    expect(queries[0]).not.toContain('ALTER LOGIN')
     expect(queries[1]).toContain('CREATE ROLE [kravhantering_runtime]')
-    expect(queries[1]).toContain("WHEN tables.[name] = N'migrations' THEN")
-    expect(queries[1]).toContain('GRANT SELECT ON OBJECT::')
-    expect(queries[1]).toContain(
-      'GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::',
-    )
-    expect(queries[1]).toContain('DROP ROLE [kravhantering_runtime]')
+    expect(queries[1]).toContain('WITH DEFAULT_SCHEMA = [dbo]')
+    expect(queries[1]).not.toContain('GRANT SELECT ON OBJECT::')
     expect(queries[1]).toContain('ALTER ROLE [db_owner]')
     expect(queries[1]).toContain('ALTER ROLE [db_datareader]')
     expect(queries[1]).toContain('ALTER ROLE [db_datawriter]')
@@ -425,6 +443,9 @@ describe('db-sqlserver-admin.mjs', () => {
     const destroy = vi.fn(async () => undefined)
     const initialize = vi.fn(async () => undefined)
     const runMigrations = vi.fn(async () => [{ name: 'InitialMigration' }])
+    const reconcileRuntimePermissionsImpl = vi.fn(async () => ({
+      compatible: true,
+    }))
     const migrationExecutorCtor = await createTargetHeadMigrationExecutor()
     class FakeDataSource {
       constructor(options) {
@@ -437,7 +458,11 @@ describe('db-sqlserver-admin.mjs', () => {
 
     const result = await runSqlServerMigrations(
       'mssql://sa:Password123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
-      { dataSourceCtor: FakeDataSource, migrationExecutorCtor },
+      {
+        dataSourceCtor: FakeDataSource,
+        migrationExecutorCtor,
+        reconcileRuntimePermissionsImpl,
+      },
     )
 
     expect(initialize).toHaveBeenCalled()
@@ -449,6 +474,7 @@ describe('db-sqlserver-admin.mjs', () => {
       dataSourceOptions.migrations.map(migration => migration.name),
     ).toEqual(expectedMigrationNames)
     expect(runMigrations).toHaveBeenCalled()
+    expect(reconcileRuntimePermissionsImpl).toHaveBeenCalled()
     expect(destroy).toHaveBeenCalled()
     expect(result).toMatchObject({
       database: 'kravhantering',
@@ -459,8 +485,96 @@ describe('db-sqlserver-admin.mjs', () => {
       preflight: {
         compatible: true,
       },
+      runtimePermissions: {
+        compatible: true,
+      },
     })
   })
+
+  it('parses explicitly managed runtime users without duplicates', () => {
+    expect(
+      getExpectedRuntimeUsers({
+        DB_RUNTIME_USER: 'kravhantering_app',
+        DB_RUNTIME_USERS: 'site_worker, kravhantering_app',
+      }),
+    ).toEqual(['kravhantering_app', 'site_worker'])
+    expect(() => getExpectedRuntimeUsers({}, { required: true })).toThrow(
+      /DB_RUNTIME_USER is required/u,
+    )
+  })
+
+  it('reports secret-free runtime permission and membership drift', async () => {
+    const query = vi.fn(async sql => {
+      if (sql.includes('FROM sys.database_permissions')) return []
+      if (sql.includes('member_principal_id = principals.principal_id')) {
+        return [
+          {
+            defaultSchema: 'dbo',
+            isMember: false,
+            name: 'kravhantering_app',
+          },
+        ]
+      }
+      if (sql.includes('members.member_principal_id =')) return []
+      return [{ name: 'kravhantering_runtime', type: 'R' }]
+    })
+
+    const result = await getSqlServerRuntimePermissionStatus(
+      { query },
+      { expectedRuntimeUsers: ['kravhantering_app'] },
+    )
+
+    expect(result).toMatchObject({
+      compatible: false,
+      manifest: {
+        digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        version: expect.any(String),
+      },
+      role: { name: 'kravhantering_runtime', present: true },
+      runtimeUsers: [
+        {
+          defaultSchema: 'dbo',
+          member: false,
+          name: 'kravhantering_app',
+          present: true,
+        },
+      ],
+    })
+    expect(result.missingGrants.length).toBeGreaterThan(50)
+    expect(JSON.stringify(result)).not.toContain('password')
+  })
+
+  it.each(['permission-status', 'permission-reconcile'])(
+    'prints JSON evidence for %s',
+    async command => {
+      const error = vi.fn()
+      const log = vi.fn()
+      const result = {
+        compatible: true,
+        manifest: { digest: 'abc', version: 'test' },
+      }
+      const statusImpl = vi.fn(async () => result)
+      const reconcileImpl = vi.fn(async () => result)
+
+      const exitCode = await main([command], {
+        consoleObj: { error, log },
+        env: {
+          DATABASE_URL:
+            'mssql://job:Password123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+          DB_RUNTIME_USER: 'kravhantering_app',
+        },
+        getRuntimePermissionStatusImpl: statusImpl,
+        reconcileRuntimePermissionsForConnectionImpl: reconcileImpl,
+      })
+
+      expect(exitCode).toBe(0)
+      expect(error).not.toHaveBeenCalled()
+      expect(JSON.parse(log.mock.calls[0][0])).toEqual(result)
+      expect(
+        command === 'permission-status' ? statusImpl : reconcileImpl,
+      ).toHaveBeenCalledOnce()
+    },
+  )
 
   it('reports migration status with pending migrations as compatible', async () => {
     class InitialSchema1713720000000 {
@@ -1090,30 +1204,20 @@ describe('db-sqlserver-admin.mjs', () => {
         server: '127.0.0.1',
       }
     })
-    const request = {
-      input: vi.fn().mockReturnThis(),
-      query: vi.fn(async () => {
-        events.push('reset')
-      }),
-    }
-    const connectImpl = vi.fn(async () => ({
-      close: vi.fn(async () => undefined),
-      request: vi.fn(() => request),
-    }))
-    const runMigrations = vi.fn(async () => {
+    const runSqlServerMigrationsImpl = vi.fn(async () => {
       events.push('migrate')
-      return [{ name: 'InitialMigration' }]
+      return { migrationsApplied: 1 }
     })
-    const migrationExecutorCtor = await createTargetHeadMigrationExecutor()
     class FakeDataSource {
       destroy = vi.fn(async () => undefined)
       initialize = vi.fn(async () => undefined)
       query = vi.fn(async () => undefined)
-      runMigrations = runMigrations
     }
 
     const exitCode = await main(['setup'], {
-      connectImpl,
+      bootstrapSqlServerDatabaseImpl: vi.fn(async () => {
+        events.push('bootstrap')
+      }),
       consoleObj: { error, log },
       dataSourceCtor: FakeDataSource,
       env: {
@@ -1122,9 +1226,14 @@ describe('db-sqlserver-admin.mjs', () => {
         DB_READONLY_USER: '',
         DATABASE_URL:
           'mssql://sa:Password123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+        DB_BOOTSTRAP_ADMIN_PASSWORD: 'Password123!',
+        DB_RUNTIME_USER: 'kravhantering_app',
       },
       healthCheckImpl,
-      migrationExecutorCtor,
+      resetSqlServerDatabaseImpl: vi.fn(async () => {
+        events.push('reset')
+      }),
+      runSqlServerMigrationsImpl,
       seedDemoDatabaseImpl: vi.fn(async () => {
         events.push('demo')
         return 11
@@ -1135,14 +1244,21 @@ describe('db-sqlserver-admin.mjs', () => {
       }),
     })
 
-    expect(exitCode).toBe(0)
     expect(error).not.toHaveBeenCalled()
-    expect(events).toEqual(['wait', 'reset', 'migrate', 'required', 'demo'])
+    expect(exitCode).toBe(0)
+    expect(events).toEqual([
+      'wait',
+      'reset',
+      'bootstrap',
+      'migrate',
+      'required',
+      'demo',
+    ])
     expect(log).toHaveBeenCalledWith(
-      'Step 4/6: seeding required SQL Server data...',
+      'Step 5/7: seeding required SQL Server data...',
     )
     expect(log).toHaveBeenCalledWith(
-      'Step 5/6: seeding demo SQL Server data...',
+      'Step 6/7: seeding demo SQL Server data...',
     )
     expect(log).toHaveBeenCalledWith(
       'SQL Server setup completed (5 required seed rows, 11 demo seed rows).',
@@ -1212,7 +1328,7 @@ describe('db-sqlserver-admin.mjs', () => {
 
     expect(exitCode).toBe(1)
     expect(error).toHaveBeenCalledWith(
-      'Usage: node scripts/db-sqlserver-admin.mjs <health|wait|reset|bootstrap|migration-status|migrate|seed:required|seed:demo|demo:clear|setup|browse-config>',
+      'Usage: node scripts/db-sqlserver-admin.mjs <health|wait|reset|bootstrap|migration-status|migrate|permission-status|permission-reconcile|seed:required|seed:demo|demo:clear|setup|browse-config>',
     )
   })
 

@@ -24,13 +24,18 @@ npm run container:build:db-job
 The image entrypoint is `node scripts/db-sqlserver-admin.mjs`, so Compose or
 manual runs pass the admin command as arguments:
 
-- `bootstrap` creates the database plus the app and job SQL principals and
-  reconciles the least-privilege `kravhantering_runtime` database role.
+- `bootstrap` creates the database plus distinct app and job SQL principals,
+  their `dbo` default schema, transitional memberships, and the
+  `kravhantering_runtime` role membership. It does not rotate existing logins.
 - `migration-status` prints JSON evidence with expected, observed, pending and
   unknown TypeORM migrations without modifying the database.
-- `migrate` applies TypeORM migrations.
+- `migrate` applies TypeORM migrations, reconciles the runtime permission
+  manifest, and fails if grants or managed-user membership do not verify.
 - `migrate --json` applies TypeORM migrations and prints the preflight,
-  applied migration and post-migration evidence as JSON.
+  applied migration, post-migration, and runtime-permission evidence as JSON.
+- `permission-status` prints secret-free JSON evidence without changing state.
+- `permission-reconcile` reapplies the manifest and managed memberships, then
+  prints the verified JSON status.
 - `seed:required` applies only required system and lookup seed data.
 - `health` runs a simple SQL Server read check.
 - `wait` polls SQL Server until it responds.
@@ -40,13 +45,19 @@ A production-like empty database is bootstrap, migration, and
 its required seed helper modules, and excludes `typeorm/seed.mjs`, dogfood
 seed, archiving-retention demo seed, tests, and documentation.
 
-The runtime role grants `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on each
-current application table in `dbo`. The TypeORM `migrations` history table is
-read-only for runtime readiness checks, and future tables receive no implicit
-access. Reconciliation removes permission and parent-role drift while
-preserving identities already assigned to the custom role. Existing app
-membership in `db_datareader` and `db_datawriter` remains available during the
-transition. Migrations continue to use the separate db-job login.
+[`runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
+is the release-versioned authority for exact object, operation, and
+column-scoped grants. New objects receive no runtime access until added there.
+The runtime can read but not write `dbo.migrations`; protected audit and review
+tables have narrower insert, update-column, and delete boundaries. The
+reconciler removes unexpected direct permissions from the project role but
+does not modify other roles, direct user grants, or site-owned extension-role
+memberships. Such parent-role drift makes verification fail for an operator to
+resolve explicitly.
+
+Existing app membership in `db_datareader` and `db_datawriter` remains during
+the transition to #485. Migrations and required seed continue to use the
+separate db-job login with `db_owner`.
 
 The image installs only the dependency subset needed by the one-shot job:
 `mssql`, `typeorm`, and `reflect-metadata`. It deliberately does not include
@@ -62,6 +73,10 @@ Required values:
 
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` select the
   SQL Server database used for migrations and required seed data.
+- `DB_RUNTIME_USER` names the existing runtime database user whose custom-role
+  membership must verify. It is non-secret and never authorizes login creation,
+  password rotation, or a runtime connection. Additional managed users may be
+  listed comma-separated in `DB_RUNTIME_USERS`.
 - `DB_ENCRYPT` and `DB_TRUST_SERVER_CERTIFICATE` configure the SQL Server TLS
   connection.
 - `DB_CONNECTION_TIMEOUT_MS` and `DB_REQUEST_TIMEOUT_MS` bound database

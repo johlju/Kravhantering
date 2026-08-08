@@ -5,8 +5,8 @@
 
   Replace every value in angle brackets before running. The migration/job
   principal needs db_owner because TypeORM migrations create and alter schema.
-  The custom runtime role contains only current-table application DML and
-  read-only access to TypeORM migration history.
+  The custom runtime role's release-versioned grants are reconciled by db-job
+  after migrations; this template owns principals and initial membership only.
   The app principal keeps the broad read/write data roles during the transition
   to the custom role.
 */
@@ -39,13 +39,15 @@ GO
 
 IF DATABASE_PRINCIPAL_ID(N'<db-job-login>') IS NULL
 BEGIN
-  CREATE USER [<db-job-login>] FOR LOGIN [<db-job-login>];
+  CREATE USER [<db-job-login>] FOR LOGIN [<db-job-login>]
+    WITH DEFAULT_SCHEMA = [dbo];
 END
 GO
 
 IF DATABASE_PRINCIPAL_ID(N'<app-login>') IS NULL
 BEGIN
-  CREATE USER [<app-login>] FOR LOGIN [<app-login>];
+  CREATE USER [<app-login>] FOR LOGIN [<app-login>]
+    WITH DEFAULT_SCHEMA = [dbo];
 END
 GO
 
@@ -57,65 +59,8 @@ IF EXISTS (
 )
   THROW 51021, 'Cannot provision kravhantering_runtime: a non-role database principal uses that name.', 1;
 
-DECLARE @runtimeRoleMembers TABLE ([name] sysname NOT NULL);
-DECLARE @runtimeRoleSql nvarchar(max) = N'';
-
-IF DATABASE_PRINCIPAL_ID(N'kravhantering_runtime') IS NOT NULL
-BEGIN
-  INSERT INTO @runtimeRoleMembers ([name])
-  SELECT principals.[name]
-  FROM sys.database_role_members AS members
-  INNER JOIN sys.database_principals AS principals
-    ON members.member_principal_id = principals.principal_id
-  WHERE members.role_principal_id =
-    DATABASE_PRINCIPAL_ID(N'kravhantering_runtime');
-
-  SELECT @runtimeRoleSql +=
-    N'ALTER ROLE [kravhantering_runtime] DROP MEMBER ' +
-    QUOTENAME([name]) + N';'
-  FROM @runtimeRoleMembers;
-  EXEC sp_executesql @runtimeRoleSql;
-
-  SET @runtimeRoleSql = N'';
-  SELECT @runtimeRoleSql +=
-    N'ALTER ROLE ' + QUOTENAME(roles.[name]) +
-    N' DROP MEMBER [kravhantering_runtime];'
-  FROM sys.database_role_members AS members
-  INNER JOIN sys.database_principals AS roles
-    ON members.role_principal_id = roles.principal_id
-  WHERE members.member_principal_id =
-    DATABASE_PRINCIPAL_ID(N'kravhantering_runtime');
-  EXEC sp_executesql @runtimeRoleSql;
-
-  DROP ROLE [kravhantering_runtime];
-END
-
-CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo];
-
-SET @runtimeRoleSql = N'';
-SELECT @runtimeRoleSql +=
-  N'ALTER ROLE [kravhantering_runtime] ADD MEMBER ' +
-  QUOTENAME([name]) + N';'
-FROM @runtimeRoleMembers;
-EXEC sp_executesql @runtimeRoleSql;
-
-SET @runtimeRoleSql = N'';
-SELECT @runtimeRoleSql +=
-  CASE
-    WHEN tables.[name] = N'migrations' THEN
-      N'GRANT SELECT ON OBJECT::' + QUOTENAME(schemas.[name]) + N'.' +
-      QUOTENAME(tables.[name]) + N' TO [kravhantering_runtime];'
-    ELSE
-      N'GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::' +
-      QUOTENAME(schemas.[name]) + N'.' + QUOTENAME(tables.[name]) +
-      N' TO [kravhantering_runtime];'
-  END
-FROM sys.tables AS tables
-INNER JOIN sys.schemas AS schemas
-  ON tables.schema_id = schemas.schema_id
-WHERE schemas.[name] = N'dbo'
-  AND tables.is_ms_shipped = 0;
-EXEC sp_executesql @runtimeRoleSql;
+IF DATABASE_PRINCIPAL_ID(N'kravhantering_runtime') IS NULL
+  CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo];
 
 IF NOT EXISTS (
   SELECT 1
@@ -157,5 +102,19 @@ IF NOT EXISTS (
 )
 BEGIN
   ALTER ROLE [db_datawriter] ADD MEMBER [<app-login>];
+END
+
+IF NOT EXISTS (
+  SELECT 1
+  FROM sys.database_role_members AS members
+  INNER JOIN sys.database_principals AS roles
+    ON members.role_principal_id = roles.principal_id
+  INNER JOIN sys.database_principals AS principals
+    ON members.member_principal_id = principals.principal_id
+  WHERE roles.name = N'kravhantering_runtime'
+    AND principals.name = N'<app-login>'
+)
+BEGIN
+  ALTER ROLE [kravhantering_runtime] ADD MEMBER [<app-login>];
 END
 GO

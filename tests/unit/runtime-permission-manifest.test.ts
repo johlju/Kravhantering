@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest'
+import {
+  buildRuntimePermissionReconcileSql,
+  RUNTIME_PERMISSION_MANIFEST,
+  RUNTIME_PERMISSION_MANIFEST_DIGEST,
+  RUNTIME_PERMISSION_MANIFEST_VERSION,
+} from '@/typeorm/runtime-permission-manifest.mjs'
+
+function permissionFor(objectName: string) {
+  return RUNTIME_PERMISSION_MANIFEST.find(entry => entry.object === objectName)
+}
+
+describe('runtime permission manifest', () => {
+  it('is release-versioned, stable, and explicit about protected objects', () => {
+    expect(RUNTIME_PERMISSION_MANIFEST_VERSION).toMatch(/^2026\.08\.08\./u)
+    expect(RUNTIME_PERMISSION_MANIFEST_DIGEST).toMatch(/^[a-f0-9]{64}$/u)
+    expect(permissionFor('dbo.migrations')).toEqual({
+      object: 'dbo.migrations',
+      permissions: ['SELECT'],
+    })
+    expect(permissionFor('dbo.action_audit_events')).toEqual({
+      object: 'dbo.action_audit_events',
+      permissions: ['SELECT', 'INSERT'],
+      updateColumns: ['actor_hsa_id', 'actor_display_name'],
+    })
+    expect(permissionFor('dbo.archiving_retention_runs')).toEqual({
+      object: 'dbo.archiving_retention_runs',
+      permissions: ['SELECT', 'INSERT'],
+    })
+  })
+
+  it('builds reconciliation from explicit objects without schema-wide or dynamic grants', () => {
+    const sql = buildRuntimePermissionReconcileSql()
+
+    expect(sql).toContain('REVOKE SELECT ON OBJECT::[dbo].[migrations]')
+    expect(sql).toContain('GRANT SELECT ON OBJECT::[dbo].[migrations]')
+    expect(sql).toContain(
+      'GRANT UPDATE ([actor_hsa_id], [actor_display_name]) ON OBJECT::[dbo].[action_audit_events]',
+    )
+    expect(sql).not.toContain('GRANT SELECT ON SCHEMA::')
+    expect(sql).not.toContain('GRANT INSERT ON SCHEMA::')
+    expect(sql).not.toContain('FROM sys.tables')
+    expect(sql).not.toContain(
+      'GRANT DELETE ON OBJECT::[dbo].[action_audit_events]',
+    )
+  })
+})

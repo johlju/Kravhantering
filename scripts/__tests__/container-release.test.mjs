@@ -1635,19 +1635,21 @@ describe('trusted container release helpers', () => {
     const template = readWorkspaceFile(
       'containers/production/sqlserver/dba-provision.sql.template',
     )
+    const dockerfile = readWorkspaceFile('containers/app/Dockerfile')
 
     expect(template).toContain("AND [type] <> N'R'")
     expect(template).toContain(
       'CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo]',
     )
-    expect(template).toContain('DROP ROLE [kravhantering_runtime]')
-    expect(template).toContain(
-      'GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::',
-    )
-    expect(template).toContain('GRANT SELECT ON OBJECT::')
+    expect(template).toContain('WITH DEFAULT_SCHEMA = [dbo]')
+    expect(template).not.toContain('GRANT SELECT ON OBJECT::')
     expect(template).not.toContain('ON SCHEMA::[dbo]')
     expect(template).toContain('ALTER ROLE [db_datareader]')
     expect(template).toContain('ALTER ROLE [db_datawriter]')
+    expect(template).toContain('ALTER ROLE [kravhantering_runtime]')
+    expect(dockerfile).toContain(
+      'typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs',
+    )
   })
 
   it('ships nginx templates with dynamic upstream DNS resolution', () => {

@@ -7,11 +7,15 @@ import {
 } from '@/lib/dal/requirement-areas'
 import { createAppDataSource } from '@/lib/typeorm/data-source'
 import {
+  getSqlServerRuntimePermissionStatus,
+  reconcileSqlServerRuntimePermissions,
   resetSqlServerDatabase,
   runSqlServerMigrations,
   SQL_SERVER_RUNTIME_ROLE,
+  seedSqlServerDatabase,
 } from '@/scripts/db-sqlserver-admin.mjs'
 import RuntimeRoleMigration from '@/typeorm/migrations/0054_runtime_role.mjs'
+import { RUNTIME_PERMISSION_MANIFEST } from '@/typeorm/runtime-permission-manifest.mjs'
 import { resolveSqlIntegrationTestsUrl } from './helpers/sql-test-database'
 
 const RUNTIME_LOGIN = 'kravhantering_runtime_test'
@@ -156,50 +160,16 @@ describe('least-privilege SQL Server runtime role', () => {
     }
   })
 
-  it('reconciles the custom role idempotently with only runtime DML grants', async () => {
+  it('reconciles manifest grants without altering site-owned role memberships', async () => {
     await adminDb.query(`
       GRANT ALTER ON SCHEMA::[dbo] TO [${SQL_SERVER_RUNTIME_ROLE}]
       ALTER ROLE [db_owner] ADD MEMBER [${SQL_SERVER_RUNTIME_ROLE}]
     `)
-    const migration = new RuntimeRoleMigration()
-    await expect(migration.up(migrationDb)).resolves.toBeUndefined()
-    await expect(migration.up(migrationDb)).resolves.toBeUndefined()
-
-    const unexpectedPermissions = (await adminDb.query(
-      `SELECT permission_name AS permissionName
-       FROM sys.database_permissions
-       WHERE grantee_principal_id = DATABASE_PRINCIPAL_ID(@0)
-         AND NOT (
-           class_desc = N'OBJECT_OR_COLUMN'
-           AND state_desc = N'GRANT'
-           AND minor_id = 0
-           AND permission_name IN (N'SELECT', N'INSERT', N'UPDATE', N'DELETE')
-           AND (
-             OBJECT_NAME(major_id) <> N'migrations'
-             OR permission_name = N'SELECT'
-           )
-         )`,
-      [SQL_SERVER_RUNTIME_ROLE],
-    )) as Array<{ permissionName: string }>
-    expect(unexpectedPermissions).toEqual([])
-
-    const representativePermissions = (await adminDb.query(
-      `SELECT
-         OBJECT_NAME(major_id) AS objectName,
-         permission_name AS permissionName
-       FROM sys.database_permissions
-       WHERE grantee_principal_id = DATABASE_PRINCIPAL_ID(@0)
-         AND OBJECT_NAME(major_id) IN (N'migrations', N'requirement_areas')
-       ORDER BY objectName, permissionName`,
-      [SQL_SERVER_RUNTIME_ROLE],
-    )) as Array<{ objectName: string; permissionName: string }>
-    expect(representativePermissions).toEqual([
-      { objectName: 'migrations', permissionName: 'SELECT' },
-      { objectName: 'requirement_areas', permissionName: 'DELETE' },
-      { objectName: 'requirement_areas', permissionName: 'INSERT' },
-      { objectName: 'requirement_areas', permissionName: 'SELECT' },
-      { objectName: 'requirement_areas', permissionName: 'UPDATE' },
-    ])
+    await expect(
+      reconcileSqlServerRuntimePermissions(migrationDb, {
+        expectedRuntimeUsers: [RUNTIME_LOGIN],
+      }),
+    ).rejects.toThrow(/nested in: db_owner/u)
 
     const parentRoles = (await adminDb.query(
       `SELECT roles.name
@@ -209,7 +179,49 @@ describe('least-privilege SQL Server runtime role', () => {
        WHERE members.member_principal_id = DATABASE_PRINCIPAL_ID(@0)`,
       [SQL_SERVER_RUNTIME_ROLE],
     )) as Array<{ name: string }>
-    expect(parentRoles).toEqual([])
+    expect(parentRoles).toEqual([{ name: 'db_owner' }])
+
+    await adminDb.query(
+      `ALTER ROLE [db_owner] DROP MEMBER [${SQL_SERVER_RUNTIME_ROLE}]`,
+    )
+    await expect(
+      reconcileSqlServerRuntimePermissions(migrationDb, {
+        expectedRuntimeUsers: [RUNTIME_LOGIN],
+      }),
+    ).resolves.toMatchObject({ compatible: true })
+    await expect(
+      reconcileSqlServerRuntimePermissions(migrationDb, {
+        expectedRuntimeUsers: [RUNTIME_LOGIN],
+      }),
+    ).resolves.toMatchObject({ compatible: true })
+
+    const status = await getSqlServerRuntimePermissionStatus(migrationDb, {
+      expectedRuntimeUsers: [RUNTIME_LOGIN],
+    })
+    expect(status).toMatchObject({
+      compatible: true,
+      missingGrants: [],
+      unexpectedGrants: [],
+      unexpectedParentRoles: [],
+    })
+    const currentTables = (await adminDb.query(
+      `SELECT schemas.[name] + N'.' + tables.[name] AS objectName
+       FROM sys.tables AS tables
+       INNER JOIN sys.schemas AS schemas ON tables.schema_id = schemas.schema_id
+       WHERE schemas.[name] = N'dbo' AND tables.is_ms_shipped = 0
+       ORDER BY objectName`,
+    )) as Array<{ objectName: string }>
+    expect(
+      RUNTIME_PERMISSION_MANIFEST.map(entry => entry.object).sort(),
+    ).toEqual(currentTables.map(row => row.objectName))
+
+    await migrationDb.query(
+      'CREATE TABLE [runtime_future_table_probe] ([id] int NOT NULL)',
+    )
+    await expect(
+      runtimeDb.query('SELECT * FROM [runtime_future_table_probe]'),
+    ).rejects.toThrow(/permission|denied/u)
+    await migrationDb.query('DROP TABLE [runtime_future_table_probe]')
   })
 
   it('supports health and representative runtime data workflows using only the custom role', async () => {
@@ -256,6 +268,39 @@ describe('least-privilege SQL Server runtime role', () => {
       name: 'Updated runtime role probe',
     })
     await expect(deleteArea(runtimeDb, area.id)).resolves.toBe(1)
+
+    const auditRows = (await runtimeDb.query(
+      `INSERT INTO action_audit_events (
+         occurred_at, actor_hsa_id, actor_display_name, actor_kind,
+         action, target_kind, decision
+       )
+       OUTPUT INSERTED.id AS id
+       VALUES (SYSUTCDATETIME(), N'SE5560000001-runtime', N'Runtime Role',
+         N'user', N'runtime.role.probe', N'test', N'allowed')`,
+    )) as Array<{ id: string }>
+    const auditId = auditRows[0]?.id
+    await expect(
+      runtimeDb.query(
+        `UPDATE action_audit_events
+         SET actor_hsa_id = NULL, actor_display_name = N'Raderad användare'
+         WHERE id = @0`,
+        [auditId],
+      ),
+    ).resolves.toBeUndefined()
+    await expect(
+      runtimeDb.query(
+        `UPDATE action_audit_events SET action = N'changed' WHERE id = @0`,
+        [auditId],
+      ),
+    ).rejects.toThrow(/permission|denied/u)
+    await expect(
+      runtimeDb.query('DELETE FROM action_audit_events WHERE id = @0', [
+        auditId,
+      ]),
+    ).rejects.toThrow(/permission|denied/u)
+    await adminDb.query('DELETE FROM action_audit_events WHERE id = @0', [
+      auditId,
+    ])
   })
 
   it('allows the migration identity and denies the runtime identity schema access', async () => {
@@ -290,6 +335,12 @@ describe('least-privilege SQL Server runtime role', () => {
     expect(migrationResult.postMigration.observedHead?.name).toBe(
       'RuntimeRole1720100000000',
     )
+    await expect(
+      seedSqlServerDatabase(migrationProbeUrl, {
+        configureReadonlyAccess: false,
+        profile: 'required',
+      }),
+    ).resolves.toMatchObject({ insertedRows: expect.any(Number) })
 
     await expect(
       migrationDb.query(
@@ -305,7 +356,54 @@ describe('least-privilege SQL Server runtime role', () => {
       ),
     ).rejects.toThrow(/permission|denied/u)
     await expect(
+      runtimeDb.query(
+        `ALTER ROLE [db_datareader] ADD MEMBER [${RUNTIME_LOGIN}]`,
+      ),
+    ).rejects.toThrow(/permission|denied/u)
+    await expect(
       runtimeDb.query('UPDATE [migrations] SET [name] = [name] WHERE 1 = 0'),
     ).rejects.toThrow(/permission|denied/u)
+  })
+
+  it('rolls back only the custom role while retaining users and legacy memberships', async () => {
+    await adminDb.query(`
+      ALTER ROLE [db_datareader] ADD MEMBER [${RUNTIME_LOGIN}]
+      ALTER ROLE [db_datawriter] ADD MEMBER [${RUNTIME_LOGIN}]
+    `)
+    const migration = new RuntimeRoleMigration()
+    await expect(migration.down(migrationDb)).resolves.toBeUndefined()
+
+    const principals = (await adminDb.query(
+      `SELECT [name], [type]
+       FROM sys.database_principals
+       WHERE [name] IN (@0, @1)
+       ORDER BY [name]`,
+      [RUNTIME_LOGIN, SQL_SERVER_RUNTIME_ROLE],
+    )) as Array<{ name: string; type: string }>
+    expect(principals).toEqual([{ name: RUNTIME_LOGIN, type: 'S' }])
+    const memberships = (await adminDb.query(
+      `SELECT roles.[name]
+       FROM sys.database_role_members AS members
+       INNER JOIN sys.database_principals AS roles
+         ON roles.principal_id = members.role_principal_id
+       INNER JOIN sys.database_principals AS principals
+         ON principals.principal_id = members.member_principal_id
+       WHERE principals.[name] = @0
+       ORDER BY roles.[name]`,
+      [RUNTIME_LOGIN],
+    )) as Array<{ name: string }>
+    expect(memberships.map(row => row.name)).toEqual([
+      'db_datareader',
+      'db_datawriter',
+    ])
+
+    await migration.up(migrationDb)
+    await reconcileSqlServerRuntimePermissions(migrationDb, {
+      expectedRuntimeUsers: [RUNTIME_LOGIN],
+    })
+    await adminDb.query(`
+      ALTER ROLE [db_datareader] DROP MEMBER [${RUNTIME_LOGIN}]
+      ALTER ROLE [db_datawriter] DROP MEMBER [${RUNTIME_LOGIN}]
+    `)
   })
 })

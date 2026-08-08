@@ -13,7 +13,10 @@ import {
 } from '@/lib/ai/generation-availability'
 import { isAiRequirementGenerationDisabled } from '@/lib/ai/scan-guard'
 import type { SqlServerDatabase } from '@/lib/db'
-import { validationError } from '@/lib/requirements/errors'
+import {
+  serviceUnavailableError,
+  validationError,
+} from '@/lib/requirements/errors'
 import { toBoolean } from '@/lib/typeorm/value-mappers'
 
 export interface AiGenerationSettings {
@@ -594,7 +597,7 @@ export async function updateAiGenerationSettings(
   const now = new Date().toISOString()
 
   await db.transaction(async manager => {
-    await manager.query(
+    const updatedRows = (await manager.query(
       `
         UPDATE ai_settings
         SET
@@ -605,27 +608,8 @@ export async function updateAiGenerationSettings(
           mcp_max_request_bytes = @4,
           requirement_generation_enabled = @5,
           updated_at = @6
+        OUTPUT INSERTED.id AS id
         WHERE id = 1;
-
-        IF @@ROWCOUNT = 0
-        BEGIN
-          SET IDENTITY_INSERT ai_settings ON;
-
-          INSERT INTO ai_settings (
-            id,
-            ai_safety_forensic_logging_enabled,
-            ai_safety_rule_cache_ttl_seconds,
-            mcp_import_max_rows,
-            mcp_import_validation_ttl_minutes,
-            mcp_max_request_bytes,
-            requirement_generation_enabled,
-            created_at,
-            updated_at
-          )
-          VALUES (1, @0, @1, @2, @3, @4, @5, @6, @6);
-
-          SET IDENTITY_INSERT ai_settings OFF;
-        END
       `,
       [
         values.aiSafetyForensicLoggingEnabled,
@@ -636,7 +620,13 @@ export async function updateAiGenerationSettings(
         values.requirementGenerationEnabled,
         now,
       ],
-    )
+    )) as Array<{ id: number }>
+    if (updatedRows.length !== 1) {
+      throw serviceUnavailableError(
+        'AI settings are missing from the database. Run privileged database repair before changing settings.',
+        { reason: 'ai_settings_database_drift' },
+      )
+    }
     await options.audit?.(manager)
   })
 
