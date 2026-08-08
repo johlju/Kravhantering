@@ -330,8 +330,8 @@ Each trusted run also writes runtime evidence:
   and outcome.
 - `promotion-result.json` records each verified non-promoted staging identity
   and final GHCR tag with its manifest digest after successful validation.
-- `container-stack.compose.yml` is the generated Compose file that the local
-  release-smoke harness started. It is smoke evidence, not a production
+- `container-stack.compose.yml` is the generated Compose file used by the local
+  release-smoke harness. It is smoke evidence, not a production
   deployment asset.
 - `hashes.sha256` contains checksums for saved runtime evidence.
 - `public/build.json` contains the app version, commit SHA, build time, image

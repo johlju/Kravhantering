@@ -565,7 +565,7 @@ For either rollback that follows a failed Quadlet start:
 
    rm -f ~/.config/containers/systemd/kravhantering-*.container \
      ~/.config/containers/systemd/kravhantering-*.network \
-     ~/.config/containers/systemd/kravhantering-*.target
+     ~/.config/systemd/user/kravhantering-app-node.target
    systemctl --user daemon-reload
    COMPOSE_FILE=compose/app-node-tls.compose.yml
    # COMPOSE_FILE=compose/app-node-http.compose.yml

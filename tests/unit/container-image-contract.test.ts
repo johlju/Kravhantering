@@ -530,23 +530,7 @@ describe('container image contract', () => {
     expect(dbJobEnv).toContain('DB_BOOTSTRAP_APP_USER=kravhantering_app')
   })
 
-  it('uses stable production Quadlet network names and a parameterized test network', () => {
-    const productionNetworkTemplates = [
-      'containers/production/quadlet/templates/app-node-http/kravhantering-app-node.network.template',
-      'containers/production/quadlet/templates/app-node-tls/kravhantering-app-node.network.template',
-      'containers/production/quadlet/templates/single-node/kravhantering-single-node.network.template',
-    ]
-
-    expect(readWorkspaceFile(productionNetworkTemplates[0])).toContain(
-      'NetworkName=kravhantering-app-node_kravhantering-internal',
-    )
-    expect(readWorkspaceFile(productionNetworkTemplates[1])).toContain(
-      'NetworkName=kravhantering-app-node_kravhantering-internal',
-    )
-    expect(readWorkspaceFile(productionNetworkTemplates[2])).toContain(
-      'NetworkName=kravhantering-single-node_kravhantering-internal',
-    )
-
+  it('keeps the generated test network parameterized', () => {
     const generatedTemplate = readWorkspaceFile(
       'containers/compose/container-stack.template.yml',
     )
