@@ -1420,6 +1420,10 @@ podman run --rm --network "$STACK_NETWORK" \
   > "$EVIDENCE_DIR/migration-status-after-${VERSION}.json"
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  "$DB_JOB_IMAGE_REF" permission-status \
+  > "$EVIDENCE_DIR/runtime-permissions-${VERSION}.json"
+podman run --rm --network "$STACK_NETWORK" \
+  --env-file /etc/kravhantering/db-job.env \
   "$DB_JOB_IMAGE_REF" seed:required
 
 exit
@@ -1910,6 +1914,7 @@ Keep these files with the deployment record:
 - `migration-status-before-<version>.json`
 - `migration-run-<version>.json`
 - `migration-status-after-<version>.json`
+- `runtime-permissions-<version>.json`
 - SQL backup, volume snapshot or restore-point reference
 - final `/etc/kravhantering/release.env` image refs
 - readiness check results

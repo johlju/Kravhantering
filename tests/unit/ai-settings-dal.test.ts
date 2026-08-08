@@ -309,6 +309,7 @@ describe('AI settings DAL', () => {
 
   it('updates the singleton row and returns full Admin settings', async () => {
     const audit = vi.fn()
+    manager.query.mockResolvedValueOnce([{ id: 1 }])
 
     await expect(
       updateAiGenerationSettings(
@@ -350,6 +351,28 @@ describe('AI settings DAL', () => {
       ],
     )
     expect(audit).toHaveBeenCalledWith(manager)
+  })
+
+  it('fails clearly when the migration-owned singleton row is missing', async () => {
+    manager.query.mockResolvedValueOnce([])
+
+    await expect(
+      updateAiGenerationSettings(db, {
+        aiSafetyForensicLoggingEnabled: true,
+        aiSafetyRuleCacheTtlSeconds: AI_SAFETY_RULE_CACHE_TTL_DEFAULT_SECONDS,
+        mcpImportMaxRows: MCP_IMPORT_MAX_ROWS_DEFAULT,
+        mcpImportValidationTtlMinutes:
+          MCP_IMPORT_VALIDATION_TTL_DEFAULT_MINUTES,
+        mcpMaxRequestBytes: MCP_REQUEST_PAYLOAD_DEFAULT_BYTES,
+        requirementGenerationEnabled: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'service_unavailable',
+      details: { reason: 'ai_settings_database_drift' },
+    })
+    expect(String(manager.query.mock.calls[0]?.[0])).not.toContain(
+      'IDENTITY_INSERT',
+    )
   })
 
   it('rejects invalid MCP request payload limits before writing', async () => {
@@ -414,6 +437,7 @@ describe('AI settings DAL', () => {
         requirementGenerationEnabled: 1,
       },
     ])
+    manager.query.mockResolvedValueOnce([{ id: 1 }])
 
     await expect(
       patchAiGenerationSettings(

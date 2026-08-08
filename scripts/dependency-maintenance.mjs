@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 const IGNORED_DIRECTORY_NAMES = new Set([
   '.git',
   '.next',
+  '.worktrees',
   'coverage',
   'node_modules',
   'out',

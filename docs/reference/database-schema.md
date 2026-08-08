@@ -25,6 +25,7 @@ The developer setup, browse workflow, and CLI reference live in
 7. [Application Action Log Tables](#application-action-log-tables)
 8. [Join / Bridge Tables](#join--bridge-tables)
 9. [Requirement Version Status Workflow](#requirement-version-status-workflow)
+10. [Database Roles](#database-roles)
 
 ---
 
@@ -2906,3 +2907,35 @@ graph LR
 ```
 <!-- markdownlint-enable MD013 -->
 <!-- cSpell:enable -->
+
+## Database Roles
+
+Migration 0054 creates the custom `kravhantering_runtime` database role. The
+release-versioned manifest in
+[`typeorm/runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
+is authoritative for exact object, operation, and update-column grants. Future
+tables receive no implicit access through `kravhantering_runtime`.
+Reconciliation removes unexpected direct permissions from the project role.
+For managed runtime users, it verifies the custom grants and membership. If a
+managed user belongs to `db_datareader` or `db_datawriter`, reconciliation
+removes those broad memberships only after the custom contract verifies. Other
+user roles, direct user grants, and site-owned extension roles remain
+unchanged; effective schema-migration or protected-audit mutation permissions
+inherited from them fail verification. Unexpected custom-role parents also
+fail verification.
+
+Through `kravhantering_runtime`, `dbo.migrations` is `SELECT`-only.
+`action_audit_events` permits `SELECT`, `INSERT`, and `UPDATE` only for
+`actor_hsa_id` and `actor_display_name`, with no `DELETE`; access-review and
+retention evidence tables have similarly explicit workflow/privacy columns and
+no unsupported deletion. Runtime has no DDL, ownership, role-administration,
+or stored-procedure execution grant.
+
+The application runtime and the migration job use separate SQL Server logins.
+The migration login retains `db_owner` so TypeORM can apply versioned schema
+changes. Bootstrap assigns only the custom role to the application login.
+Reconciliation adds any explicitly declared `DB_RUNTIME_USER` principal that
+lacks `kravhantering_runtime` membership and verifies the restricted permission
+contract. If the user belongs to either broad read/write role, reconciliation
+removes that membership after the custom contract verifies. It does not change
+the migration login's `db_owner` privileges.

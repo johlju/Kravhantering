@@ -19,7 +19,7 @@ export default defineConfig({
     include: ['**/*.{spec,test}.{ts,tsx,js,jsx,mjs}'],
 
     // Exclude Playwright integration/release-smoke tests, guide tests, HSA
-    // node:test contract suites, node_modules, and .git.
+    // node:test contract suites, local worktrees, node_modules, and .git.
     exclude: [
       'containers/hsa-directory-mock/test/**',
       'containers/hsa-person-lookup-adapter/test/**',
@@ -27,6 +27,7 @@ export default defineConfig({
       '**/tests/sql-integration/**',
       '**/tests/guide/**',
       '**/tests/release-smoke/**',
+      '**/.worktrees/**',
       '**/node_modules/**',
       '.git/**',
     ],

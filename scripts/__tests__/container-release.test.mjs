@@ -1631,6 +1631,33 @@ describe('trusted container release helpers', () => {
     expect(singleNodeGuide).not.toMatch(/-m 0640 ca\.crt/u)
   })
 
+  it('ships idempotent least-privilege SQL runtime-role provisioning without broad app roles', () => {
+    const template = readWorkspaceFile(
+      'containers/production/sqlserver/dba-provision.sql.template',
+    )
+    const dockerfile = readWorkspaceFile('containers/app/Dockerfile')
+
+    expect(template).toContain("AND [type] <> N'R'")
+    expect(template).toContain(
+      'CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo]',
+    )
+    expect(template).toContain('WITH DEFAULT_SCHEMA = [dbo]')
+    expect(template).toContain(
+      'ALTER USER [<db-job-login>] WITH DEFAULT_SCHEMA = [dbo]',
+    )
+    expect(template).toContain(
+      'ALTER USER [<app-login>] WITH DEFAULT_SCHEMA = [dbo]',
+    )
+    expect(template).not.toContain('GRANT SELECT ON OBJECT::')
+    expect(template).not.toContain('ON SCHEMA::[dbo]')
+    expect(template).not.toContain('ALTER ROLE [db_datareader]')
+    expect(template).not.toContain('ALTER ROLE [db_datawriter]')
+    expect(template).toContain('ALTER ROLE [kravhantering_runtime]')
+    expect(dockerfile).toContain(
+      'typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs',
+    )
+  })
+
   it('ships nginx templates with dynamic upstream DNS resolution', () => {
     const nginxResolverPlaceholder = '$' + '{NGINX_RESOLVER}'
     const templates = [

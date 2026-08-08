@@ -13,6 +13,7 @@ import {
   extractShowPlanXmls,
   formatBaselineComparisonTable,
   formatMissingReferenceRows,
+  getPerformanceSqlServerUrl,
   main,
   parseStatisticsIoMessages,
   selectBaselineThresholds,
@@ -20,6 +21,19 @@ import {
 } from '../../scripts/requirements-list-performance.mjs'
 
 describe('requirements-list-performance.mjs', () => {
+  it('uses the migration identity for fixture and execution-plan operations', () => {
+    expect(
+      getPerformanceSqlServerUrl({
+        DATABASE_URL:
+          'mssql://runtime:Runtime123!@db:1433/kravhantering?encrypt=true',
+        DB_MIGRATION_PASSWORD: 'Migration123!',
+        DB_MIGRATION_USER: 'kravhantering_job',
+      }),
+    ).toBe(
+      'mssql://kravhantering_job:Migration123!@db:1433/kravhantering?encrypt=true',
+    )
+  })
+
   it('builds a dedicated medium fixture without touching canonical seed rows', () => {
     const config = createPerformanceFixtureConfig({ requirementCount: 12 })
     const scenarios = createRequirementListPerformanceScenarios(config)

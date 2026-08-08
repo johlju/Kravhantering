@@ -75,8 +75,10 @@ DB_ENCRYPT=...
 DB_TRUST_SERVER_CERTIFICATE=...
 ```
 
-The write connection defaults to the `sa` login using `MSSQL_SA_PASSWORD`
-unless you explicitly set `DB_USER` / `DB_PASSWORD`.
+The committed development defaults use `kravhantering_app` for the application,
+`kravhantering_job` for migration and required seed, and `sa` only for
+principal/database bootstrap. `db:setup` creates and maps those principals
+idempotently. Password rotation is outside `db:setup`'s scope.
 
 For the read-only login, avoid passwords that contain the login name
 (`readonly`) because SQL Server password policy can reject them even when they
@@ -84,14 +86,39 @@ otherwise look complex.
 
 `DATABASE_URL` and `DATABASE_READONLY_URL` are the canonical explicit
 connection string contract when you need to override the derived local/dev
-settings. The Next.js runtime and admin CLI both use these names.
+settings. The Next.js runtime and admin CLI both use these names. Migration
+connections replace the credentials in `DATABASE_URL` with
+`DB_MIGRATION_USER` and `DB_MIGRATION_PASSWORD`.
 
 The canonical runtime contract is:
 
 ```env
-DATABASE_URL=...
+DATABASE_URL=... # runtime identity
 DATABASE_READONLY_URL=...
+DB_MIGRATION_USER=... # migration identity name
+DB_MIGRATION_PASSWORD=... # migration identity secret
 ```
+
+Application runtime and schema migration use separate SQL Server credentials.
+The release-versioned manifest in
+[`typeorm/runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
+lists exact object/operation grants, including protected column-scoped updates;
+new tables receive nothing implicitly through `kravhantering_runtime`.
+`db:migrate` applies migrations and then reconciles direct grants and verifies
+`DB_RUNTIME_USER` membership. If that user belongs to `db_datareader` or
+`db_datawriter`, reconciliation removes those broad memberships only after the
+custom contract verifies. It does not alter other user roles or direct user
+permissions. Verification fails when those permissions give the runtime user
+effective schema-migration or protected-audit mutation access. Reconciliation,
+broad-role removal, and final effective verification are atomic, and a
+role-only runtime login cannot run TypeORM migrations.
+
+Use `npm run db:permission-status` for secret-free JSON evidence or
+`npm run db:permission-reconcile` for an explicit repair. Both report the
+manifest version/digest, role presence, missing/unexpected grants, managed-user
+presence and membership, broad-role memberships, and unexpected parent roles.
+A compatible report has empty `legacyRoles` and
+`prohibitedEffectivePermissions` arrays for every managed runtime user.
 
 The Next.js runtime builds one shared TypeORM `DataSource` per process. The
 runtime DataSource keeps SQL Server behavior explicit:
