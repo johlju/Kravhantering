@@ -141,6 +141,16 @@ describe('dependency maintenance discovery', () => {
     )
   })
 
+  it('ignores repositories mounted under the local worktree directory', () => {
+    const root = temporaryDirectory()
+    write(root, 'package.json', '{}')
+    write(root, '.worktrees/feature/package.json', '{}')
+    write(root, '.worktrees/feature/Dockerfile', 'FROM node:24\n')
+
+    expect(discoverPackageProjects(root)).toEqual(['.'])
+    expect(discoverDockerfileInputs(root)).toEqual([])
+  })
+
   it('ignores build stages, scratch, variables, examples, and local images', () => {
     const root = temporaryDirectory()
     write(

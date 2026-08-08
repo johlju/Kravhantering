@@ -20,7 +20,9 @@ och medlemskap har verifierats tar avstämningen bort runtime-användarens äldr
 medlemskap i `db_datareader` och `db_datawriter`.
 
 Avstämningen ändrar inte andra användarroller, direkta användarbehörigheter
-eller lokalt ägda tilläggsroller. Extern DBA äger login, användare, lösenord och
+eller lokalt ägda tilläggsroller. Verifieringen misslyckas dock om sådana
+behörigheter ger en runtime-användare faktisk rätt att migrera schemat eller
+ändra skyddad revisionshistorik. Extern DBA äger login, användare, lösenord och
 initialt medlemskap; självförsörjande topologier automatiserar samma
 principalsteg.
 `DB_RUNTIME_USER` är endast ett icke-hemligt verifieringsnamn och ger varken

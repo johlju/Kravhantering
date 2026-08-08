@@ -2919,7 +2919,9 @@ Reconciliation removes unexpected direct permissions from the project role.
 For managed runtime users, it verifies the custom grants and membership before
 removing obsolete `db_datareader` and `db_datawriter` memberships. Other user
 roles, direct user grants, and site-owned extension roles remain unchanged;
-unexpected parent roles fail verification.
+effective schema-migration or protected-audit mutation permissions inherited
+from them fail verification. Unexpected custom-role parents also fail
+verification.
 
 Through `kravhantering_runtime`, `dbo.migrations` is `SELECT`-only.
 `action_audit_events` permits `SELECT`, `INSERT`, and `UPDATE` only for

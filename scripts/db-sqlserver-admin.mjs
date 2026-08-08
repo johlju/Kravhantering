@@ -160,6 +160,15 @@ export const DEFAULT_WAIT_TIMEOUT_MS = 30_000
 const DB_ADMIN_IMAGE_ENV = 'KRAVHANTERING_DB_ADMIN_IMAGE'
 const DB_JOB_IMAGE_KIND = 'db-job'
 const LEGACY_RUNTIME_ROLES = Object.freeze(['db_datareader', 'db_datawriter'])
+const PROHIBITED_EFFECTIVE_RUNTIME_PERMISSIONS = Object.freeze([
+  ['canCreateTable', 'CREATE_TABLE'],
+  ['canAlterDboSchema', 'ALTER_DBO_SCHEMA'],
+  ['canInsertMigrationHistory', 'INSERT_MIGRATION_HISTORY'],
+  ['canUpdateMigrationHistory', 'UPDATE_MIGRATION_HISTORY'],
+  ['canDeleteMigrationHistory', 'DELETE_MIGRATION_HISTORY'],
+  ['canUpdateAuditAction', 'UPDATE_AUDIT_ACTION'],
+  ['canDeleteAuditHistory', 'DELETE_AUDIT_HISTORY'],
+])
 const CORE_COMMANDS = Object.freeze([
   'health',
   'wait',
@@ -1000,6 +1009,54 @@ function permissionRowKey(row) {
   ].join(':')
 }
 
+async function getProhibitedEffectiveRuntimePermissions(queryExecutor, user) {
+  const rows = await queryExecutor.query(
+    `DECLARE @effectivePermissionSql nvarchar(max) =
+       N'EXECUTE AS USER = N' + QUOTENAME(@0, '''') + N';
+         BEGIN TRY
+           SELECT
+             CAST(HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE TABLE'') AS bit) AS canCreateTable,
+             CAST(HAS_PERMS_BY_NAME(N''dbo'', N''SCHEMA'', N''ALTER'') AS bit) AS canAlterDboSchema,
+             CAST(HAS_PERMS_BY_NAME(N''dbo.migrations'', N''OBJECT'', N''INSERT'') AS bit) AS canInsertMigrationHistory,
+             CAST(HAS_PERMS_BY_NAME(N''dbo.migrations.name'', N''COLUMN'', N''UPDATE'') AS bit) AS canUpdateMigrationHistory,
+             CAST(HAS_PERMS_BY_NAME(N''dbo.migrations'', N''OBJECT'', N''DELETE'') AS bit) AS canDeleteMigrationHistory,
+             CAST(HAS_PERMS_BY_NAME(N''dbo.action_audit_events.action'', N''COLUMN'', N''UPDATE'') AS bit) AS canUpdateAuditAction,
+             CAST(HAS_PERMS_BY_NAME(N''dbo.action_audit_events'', N''OBJECT'', N''DELETE'') AS bit) AS canDeleteAuditHistory;
+         END TRY
+         BEGIN CATCH
+           REVERT;
+           THROW;
+         END CATCH;
+         REVERT;'
+     EXEC sys.sp_executesql @effectivePermissionSql`,
+    [user],
+  )
+  const effectivePermissions = rows[0] ?? {}
+  return PROHIBITED_EFFECTIVE_RUNTIME_PERMISSIONS.filter(([property]) =>
+    Boolean(effectivePermissions[property]),
+  ).map(([, permission]) => permission)
+}
+
+function isRuntimePermissionStatusCompatible(
+  status,
+  { allowLegacyRoles = false } = {},
+) {
+  return (
+    status.role.present &&
+    status.missingGrants.length === 0 &&
+    status.unexpectedGrants.length === 0 &&
+    status.unexpectedParentRoles.length === 0 &&
+    status.runtimeUsers.every(
+      user =>
+        user.present &&
+        user.member &&
+        user.defaultSchema === 'dbo' &&
+        (allowLegacyRoles || user.legacyRoles.length === 0) &&
+        (user.prohibitedEffectivePermissions ?? []).length === 0,
+    )
+  )
+}
+
 export async function getSqlServerRuntimePermissionStatus(
   queryExecutor,
   options = {},
@@ -1110,36 +1167,26 @@ export async function getSqlServerRuntimePermissionStatus(
       state: row.stateDesc,
     }))
   const foundRuntimeUsers = new Map(runtimeUserRows.map(row => [row.name, row]))
-  const runtimeUsers = expectedRuntimeUsers.map(name => {
+  const runtimeUsers = []
+  for (const name of expectedRuntimeUsers) {
     const user = foundRuntimeUsers.get(name)
     const legacyRoles = [
       user?.isDataReader ? LEGACY_RUNTIME_ROLES[0] : null,
       user?.isDataWriter ? LEGACY_RUNTIME_ROLES[1] : null,
     ].filter(Boolean)
-    return {
+    runtimeUsers.push({
       defaultSchema: user?.defaultSchema ?? null,
       legacyRoles,
       member: Boolean(user?.isMember),
       name,
       present: Boolean(user),
-    }
-  })
+      prohibitedEffectivePermissions: user
+        ? await getProhibitedEffectiveRuntimePermissions(queryExecutor, name)
+        : [],
+    })
+  }
   const unexpectedParentRoles = parentRoleRows.map(row => row.name).sort()
-  const compatible =
-    rolePresent &&
-    missingGrants.length === 0 &&
-    unexpectedGrants.length === 0 &&
-    unexpectedParentRoles.length === 0 &&
-    runtimeUsers.every(
-      user =>
-        user.present &&
-        user.member &&
-        user.defaultSchema === 'dbo' &&
-        user.legacyRoles.length === 0,
-    )
-
-  return {
-    compatible,
+  const status = {
     manifest: {
       digest: RUNTIME_PERMISSION_MANIFEST_DIGEST,
       version: RUNTIME_PERMISSION_MANIFEST_VERSION,
@@ -1150,10 +1197,14 @@ export async function getSqlServerRuntimePermissionStatus(
     unexpectedGrants,
     unexpectedParentRoles,
   }
+  return {
+    compatible: isRuntimePermissionStatusCompatible(status),
+    ...status,
+  }
 }
 
-export function assertRuntimePermissionStatus(status) {
-  if (status.compatible) return
+export function assertRuntimePermissionStatus(status, options = {}) {
+  if (isRuntimePermissionStatusCompatible(status, options)) return
   const missingUsers = status.runtimeUsers
     .filter(user => !user.present)
     .map(user => user.name)
@@ -1166,6 +1217,11 @@ export function assertRuntimePermissionStatus(status) {
   const obsoleteMemberships = status.runtimeUsers
     .filter(user => user.legacyRoles.length > 0)
     .map(user => `${user.name}=${user.legacyRoles.join(',')}`)
+  const prohibitedEffectivePermissions = status.runtimeUsers
+    .filter(user => (user.prohibitedEffectivePermissions ?? []).length > 0)
+    .map(
+      user => `${user.name}=${user.prohibitedEffectivePermissions.join(',')}`,
+    )
   const details = [
     !status.role.present ? 'runtime role is missing' : null,
     missingUsers.length > 0
@@ -1179,6 +1235,9 @@ export function assertRuntimePermissionStatus(status) {
       : null,
     obsoleteMemberships.length > 0
       ? `obsolete broad runtime role memberships remain: ${obsoleteMemberships.join('; ')}`
+      : null,
+    prohibitedEffectivePermissions.length > 0
+      ? `prohibited effective runtime permissions remain: ${prohibitedEffectivePermissions.join('; ')}`
       : null,
     status.missingGrants.length > 0
       ? `${status.missingGrants.length} manifest grant(s) are missing`
@@ -1195,33 +1254,10 @@ export function assertRuntimePermissionStatus(status) {
   )
 }
 
-function assertRuntimePermissionsReadyForLegacyRemoval(status) {
-  const compatible =
-    status.role.present &&
-    status.missingGrants.length === 0 &&
-    status.unexpectedGrants.length === 0 &&
-    status.unexpectedParentRoles.length === 0 &&
-    status.runtimeUsers.every(
-      user => user.present && user.member && user.defaultSchema === 'dbo',
-    )
-  assertRuntimePermissionStatus({
-    ...status,
-    compatible,
-    runtimeUsers: status.runtimeUsers.map(user => ({
-      ...user,
-      legacyRoles: [],
-    })),
-  })
-}
-
-export async function reconcileSqlServerRuntimePermissions(
+async function reconcileSqlServerRuntimePermissionsInTransaction(
   queryExecutor,
-  options = {},
+  expectedRuntimeUsers,
 ) {
-  const env = options.env ?? process.env
-  const expectedRuntimeUsers =
-    options.expectedRuntimeUsers ?? getExpectedRuntimeUsers(env)
-
   await queryExecutor.query(buildRuntimePermissionReconcileSql())
   const beforeMembership = await getSqlServerRuntimePermissionStatus(
     queryExecutor,
@@ -1246,7 +1282,9 @@ export async function reconcileSqlServerRuntimePermissions(
     queryExecutor,
     { expectedRuntimeUsers },
   )
-  assertRuntimePermissionsReadyForLegacyRemoval(readyForLegacyRemoval)
+  assertRuntimePermissionStatus(readyForLegacyRemoval, {
+    allowLegacyRoles: true,
+  })
   for (const user of readyForLegacyRemoval.runtimeUsers) {
     for (const role of user.legacyRoles) {
       await queryExecutor.query(
@@ -1259,6 +1297,21 @@ export async function reconcileSqlServerRuntimePermissions(
   })
   assertRuntimePermissionStatus(status)
   return status
+}
+
+export async function reconcileSqlServerRuntimePermissions(
+  dataSource,
+  options = {},
+) {
+  const env = options.env ?? process.env
+  const expectedRuntimeUsers =
+    options.expectedRuntimeUsers ?? getExpectedRuntimeUsers(env)
+  return dataSource.transaction(queryExecutor =>
+    reconcileSqlServerRuntimePermissionsInTransaction(
+      queryExecutor,
+      expectedRuntimeUsers,
+    ),
+  )
 }
 
 async function withRuntimePermissionDataSource(

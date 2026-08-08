@@ -674,6 +674,9 @@ describe('db-sqlserver-admin.mjs', () => {
           },
         ]
       }
+      if (sql.includes('HAS_PERMS_BY_NAME')) {
+        return [{ canCreateTable: true, canDeleteAuditHistory: true }]
+      }
       if (sql.includes('member_principal_id = principals.principal_id')) {
         return [
           {
@@ -708,6 +711,10 @@ describe('db-sqlserver-admin.mjs', () => {
           member: false,
           name: 'kravhantering_app',
           present: true,
+          prohibitedEffectivePermissions: [
+            'CREATE_TABLE',
+            'DELETE_AUDIT_HISTORY',
+          ],
         },
       ],
     })
@@ -772,6 +779,7 @@ describe('db-sqlserver-admin.mjs', () => {
           member: true,
           name: 'kravhantering_app',
           present: true,
+          prohibitedEffectivePermissions: [],
         },
       ],
       unexpectedGrants: [],
@@ -812,6 +820,7 @@ describe('db-sqlserver-admin.mjs', () => {
           member: false,
           name: 'missing_user',
           present: false,
+          prohibitedEffectivePermissions: [],
         },
         {
           defaultSchema: null,
@@ -819,6 +828,10 @@ describe('db-sqlserver-admin.mjs', () => {
           member: false,
           name: 'drifting_user',
           present: true,
+          prohibitedEffectivePermissions: [
+            'ALTER_DBO_SCHEMA',
+            'UPDATE_AUDIT_ACTION',
+          ],
         },
       ],
       unexpectedGrants: [{ permissionName: 'DELETE' }],
@@ -826,11 +839,11 @@ describe('db-sqlserver-admin.mjs', () => {
     }
 
     expect(() => assertRuntimePermissionStatus(status)).toThrow(
-      'SQL runtime permission verification failed: runtime role is missing; runtime database user is missing: missing_user; runtime role membership is missing: drifting_user; runtime database user default schema must be dbo: drifting_user=none; obsolete broad runtime role memberships remain: drifting_user=db_datareader,db_datawriter; 1 manifest grant(s) are missing; 1 unexpected direct grant(s) remain; runtime role is nested in: db_owner.',
+      'SQL runtime permission verification failed: runtime role is missing; runtime database user is missing: missing_user; runtime role membership is missing: drifting_user; runtime database user default schema must be dbo: drifting_user=none; obsolete broad runtime role memberships remain: drifting_user=db_datareader,db_datawriter; prohibited effective runtime permissions remain: drifting_user=ALTER_DBO_SCHEMA,UPDATE_AUDIT_ACTION; 1 manifest grant(s) are missing; 1 unexpected direct grant(s) remain; runtime role is nested in: db_owner.',
     )
     expect(() =>
       assertRuntimePermissionStatus({ ...status, compatible: true }),
-    ).not.toThrow()
+    ).toThrow(/runtime role is missing/u)
   })
 
   it('establishes the custom role before removing obsolete broad memberships', async () => {
@@ -846,6 +859,7 @@ describe('db-sqlserver-admin.mjs', () => {
       if (sql.includes('FROM sys.database_permissions')) {
         return grantedRuntimePermissionRows()
       }
+      if (sql.includes('HAS_PERMS_BY_NAME')) return [{}]
       if (sql.includes('member_principal_id = principals.principal_id')) {
         return [
           {
@@ -879,12 +893,14 @@ describe('db-sqlserver-admin.mjs', () => {
       return undefined
     })
 
+    const transaction = vi.fn(async callback => callback({ query }))
     await expect(
       reconcileSqlServerRuntimePermissions(
-        { query },
+        { transaction },
         { env: { DB_RUNTIME_USER: 'runtime]user' } },
       ),
     ).resolves.toMatchObject({ compatible: true })
+    expect(transaction).toHaveBeenCalledTimes(1)
     expect(query).toHaveBeenCalledWith(
       'ALTER ROLE [kravhantering_runtime] ADD MEMBER [runtime]]user]',
     )
@@ -907,6 +923,7 @@ describe('db-sqlserver-admin.mjs', () => {
       if (sql.includes('FROM sys.database_permissions')) {
         return grantedRuntimePermissionRows()
       }
+      if (sql.includes('HAS_PERMS_BY_NAME')) return [{}]
       if (sql.includes('member_principal_id = principals.principal_id')) {
         return []
       }
@@ -917,9 +934,10 @@ describe('db-sqlserver-admin.mjs', () => {
       return undefined
     })
 
+    const transaction = vi.fn(async callback => callback({ query }))
     await expect(
       reconcileSqlServerRuntimePermissions(
-        { query },
+        { transaction },
         { expectedRuntimeUsers: ['missing_user'] },
       ),
     ).rejects.toThrow(
@@ -939,6 +957,7 @@ describe('db-sqlserver-admin.mjs', () => {
       if (sql.includes('FROM sys.database_permissions')) {
         return grantedRuntimePermissionRows()
       }
+      if (sql.includes('HAS_PERMS_BY_NAME')) return [{}]
       if (sql.includes('member_principal_id = principals.principal_id')) {
         return [
           {
@@ -958,6 +977,7 @@ describe('db-sqlserver-admin.mjs', () => {
       destroy = destroy
       initialize = initialize
       query = query
+      transaction = async callback => callback({ query })
     }
     const connectionString =
       'mssql://job:Migration123!@127.0.0.1:1433/kravhantering'

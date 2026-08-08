@@ -107,15 +107,16 @@ new tables receive nothing implicitly through `kravhantering_runtime`.
 `db:migrate` reconciles direct grants after migrations, establishes and verifies
 `DB_RUNTIME_USER` membership, and then removes that user's obsolete
 `db_datareader` and `db_datawriter` memberships. It does not alter other user
-roles or direct user permissions, and a role-only runtime login cannot run
-TypeORM migrations.
+roles or direct user permissions. Verification fails when those permissions
+still give the runtime user effective schema-migration or protected-audit
+mutation access, and a role-only runtime login cannot run TypeORM migrations.
 
 Use `npm run db:permission-status` for secret-free JSON evidence or
 `npm run db:permission-reconcile` for an explicit repair. Both report the
 manifest version/digest, role presence, missing/unexpected grants, managed-user
 presence and membership, obsolete broad memberships, and unexpected parent
-roles. A compatible report has an empty `legacyRoles` array for every managed
-runtime user.
+roles. A compatible report has empty `legacyRoles` and
+`prohibitedEffectivePermissions` arrays for every managed runtime user.
 
 The Next.js runtime builds one shared TypeORM `DataSource` per process. The
 runtime DataSource keeps SQL Server behavior explicit:

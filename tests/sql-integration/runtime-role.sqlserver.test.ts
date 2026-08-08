@@ -168,18 +168,23 @@ describe('least-privilege SQL Server runtime role', () => {
     }
   })
 
-  it('reconciles manifest grants while reporting unexpected custom-role nesting', async () => {
+  it('rejects effective runtime privilege drift before changing legacy memberships', async () => {
     await adminDb.query(`
       GRANT ALTER ON SCHEMA::[dbo] TO [${SQL_SERVER_RUNTIME_ROLE}]
       GRANT IMPERSONATE ON USER::[${MIGRATION_LOGIN}]
         TO [${SQL_SERVER_RUNTIME_ROLE}]
       ALTER ROLE [db_owner] ADD MEMBER [${SQL_SERVER_RUNTIME_ROLE}]
+      ALTER ROLE [db_datareader] ADD MEMBER [${RUNTIME_LOGIN}]
+      ALTER ROLE [db_datawriter] ADD MEMBER [${RUNTIME_LOGIN}]
+      GRANT ALTER ON SCHEMA::[dbo] TO [${RUNTIME_LOGIN}]
+      GRANT DELETE ON OBJECT::[dbo].[action_audit_events]
+        TO [${RUNTIME_LOGIN}]
     `)
     await expect(
       reconcileSqlServerRuntimePermissions(migrationDb, {
         expectedRuntimeUsers: [RUNTIME_LOGIN],
       }),
-    ).rejects.toThrow(/nested in: db_owner/u)
+    ).rejects.toThrow(/prohibited effective runtime permissions/u)
 
     const parentRoles = (await adminDb.query(
       `SELECT roles.name
@@ -190,10 +195,29 @@ describe('least-privilege SQL Server runtime role', () => {
       [SQL_SERVER_RUNTIME_ROLE],
     )) as Array<{ name: string }>
     expect(parentRoles).toEqual([{ name: 'db_owner' }])
+    const unchangedRuntimeMemberships = (await adminDb.query(
+      `SELECT roles.[name]
+       FROM sys.database_role_members AS members
+       INNER JOIN sys.database_principals AS roles
+         ON roles.principal_id = members.role_principal_id
+       INNER JOIN sys.database_principals AS principals
+         ON principals.principal_id = members.member_principal_id
+       WHERE principals.[name] = @0
+       ORDER BY roles.[name]`,
+      [RUNTIME_LOGIN],
+    )) as Array<{ name: string }>
+    expect(unchangedRuntimeMemberships.map(({ name }) => name)).toEqual([
+      'db_datareader',
+      'db_datawriter',
+      SQL_SERVER_RUNTIME_ROLE,
+    ])
 
-    await adminDb.query(
-      `ALTER ROLE [db_owner] DROP MEMBER [${SQL_SERVER_RUNTIME_ROLE}]`,
-    )
+    await adminDb.query(`
+      REVOKE ALTER ON SCHEMA::[dbo] FROM [${RUNTIME_LOGIN}]
+      REVOKE DELETE ON OBJECT::[dbo].[action_audit_events]
+        FROM [${RUNTIME_LOGIN}]
+      ALTER ROLE [db_owner] DROP MEMBER [${SQL_SERVER_RUNTIME_ROLE}]
+    `)
     await expect(
       reconcileSqlServerRuntimePermissions(migrationDb, {
         expectedRuntimeUsers: [RUNTIME_LOGIN],
@@ -529,6 +553,35 @@ describe('least-privilege SQL Server runtime role', () => {
       'db_datareader',
       'db_datawriter',
     ])
+
+    await expect(runtimeDb.query('SELECT 1 AS ok')).resolves.toEqual([
+      { ok: 1 },
+    ])
+    const rollbackArea = await createArea(runtimeDb, {
+      description: 'Runtime role rollback probe',
+      name: 'Runtime rollback probe',
+      ownerHsaId: 'SE5560000001-rollback',
+      ownerPerson: {
+        email: 'runtime.rollback@example.test',
+        givenName: 'Runtime',
+        hsaId: 'SE5560000001-rollback',
+        middleName: null,
+        surname: 'Rollback',
+      },
+      prefix: 'RBP',
+    })
+    expect((await listAreas(runtimeDb)).map(({ id }) => id)).toContain(
+      rollbackArea.id,
+    )
+    await expect(
+      updateArea(runtimeDb, rollbackArea.id, {
+        name: 'Updated runtime rollback probe',
+      }),
+    ).resolves.toMatchObject({
+      id: rollbackArea.id,
+      name: 'Updated runtime rollback probe',
+    })
+    await expect(deleteArea(runtimeDb, rollbackArea.id)).resolves.toBe(1)
 
     await migration.up(migrationDb)
     await reconcileSqlServerRuntimePermissions(migrationDb, {

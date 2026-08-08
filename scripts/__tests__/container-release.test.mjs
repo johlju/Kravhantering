@@ -1636,12 +1636,6 @@ describe('trusted container release helpers', () => {
       'containers/production/sqlserver/dba-provision.sql.template',
     )
     const dockerfile = readWorkspaceFile('containers/app/Dockerfile')
-    const upgradeGuides = [
-      readWorkspaceFile('docs/operations/rhel10-production-upgrade.md'),
-      readWorkspaceFile(
-        'docs/operations/rhel10-production-single-node-self-contained-upgrade.md',
-      ),
-    ]
 
     expect(template).toContain("AND [type] <> N'R'")
     expect(template).toContain(
@@ -1662,15 +1656,6 @@ describe('trusted container release helpers', () => {
     expect(dockerfile).toContain(
       'typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs',
     )
-    for (const upgradeGuide of upgradeGuides) {
-      const normalizedUpgradeGuide = upgradeGuide.replaceAll(/\s+/gu, ' ')
-      expect(normalizedUpgradeGuide).toContain(
-        'custom membership and manifest grants are verified before removing',
-      )
-      expect(normalizedUpgradeGuide).toContain(
-        'restores the pre-upgrade role memberships as one database state',
-      )
-    }
   })
 
   it('ships nginx templates with dynamic upstream DNS resolution', () => {

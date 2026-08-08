@@ -55,7 +55,9 @@ unexpected direct permissions from the project role. For every managed runtime
 user, it establishes and verifies the custom grants and membership before it
 removes obsolete `db_datareader` and `db_datawriter` memberships. It does not
 modify other user roles, direct user grants, or site-owned extension-role
-memberships. Such parent-role drift makes verification fail for an operator to
+memberships. Verification nevertheless fails when those permissions give a
+managed runtime user effective schema-migration or protected-audit mutation
+access. Custom-role parent nesting also fails verification for an operator to
 resolve explicitly. Migrations and required seed continue to use the separate
 db-job login with `db_owner`.
 

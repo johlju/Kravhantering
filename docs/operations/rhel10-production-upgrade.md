@@ -293,9 +293,11 @@ place.
    manifest. The custom membership and manifest grants are verified before
    removing the managed runtime user's obsolete `db_datareader` and
    `db_datawriter` memberships. Other user roles and direct grants remain
-   unchanged; only the db-job identity has migration permission. A successful
-   `permission-status` report has `compatible: true` and an empty `legacyRoles`
-   array for every managed runtime user.
+   unchanged, but verification rejects effective schema-migration or
+   protected-audit mutation access inherited from them. Only the db-job
+   identity has migration permission. A successful `permission-status` report
+   has `compatible: true` and empty `legacyRoles` and
+   `prohibitedEffectivePermissions` arrays for every managed runtime user.
 
    ```bash
    sudo -iu kravhantering
