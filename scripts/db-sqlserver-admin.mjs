@@ -1751,10 +1751,11 @@ export async function main(args, dependencies = {}) {
   }
 
   if (command === 'wait') {
-    const masterConnectionString =
-      createMasterConnectionString(connectionString)
-
     try {
+      const masterConnectionString = createBootstrapAdminConnectionString(
+        connectionString,
+        env,
+      )
       const result = await waitForSqlServer(
         masterConnectionString,
         dependencies,

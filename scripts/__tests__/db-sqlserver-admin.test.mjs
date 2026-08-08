@@ -1835,7 +1835,7 @@ describe('db-sqlserver-admin.mjs', () => {
     expect(bootstrapSqlServerDatabaseImpl).not.toHaveBeenCalled()
   })
 
-  it('waits against master for the CLI wait command', async () => {
+  it('waits against master with the bootstrap administrator', async () => {
     const error = vi.fn()
     const log = vi.fn()
     const healthCheckImpl = vi.fn(async () => ({
@@ -1848,18 +1848,21 @@ describe('db-sqlserver-admin.mjs', () => {
       consoleObj: { error, log },
       env: {
         DATABASE_URL:
-          'mssql://sa:Password123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+          'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+        DB_BOOTSTRAP_ADMIN_PASSWORD: 'Admin123!',
+        DB_BOOTSTRAP_ADMIN_USER: 'sa',
       },
       healthCheckImpl,
     })
 
     expect(exitCode).toBe(0)
     expect(healthCheckImpl).toHaveBeenCalledWith(
-      'mssql://sa:Password123!@127.0.0.1:1433/master?encrypt=true&trustServerCertificate=true',
+      'mssql://sa:Admin123!@127.0.0.1:1433/master?encrypt=true&trustServerCertificate=true',
       expect.objectContaining({
         healthCheckImpl,
       }),
     )
+    expect(error).not.toHaveBeenCalled()
     expect(log).toHaveBeenCalledWith('SQL Server is ready (127.0.0.1/master).')
   })
 
