@@ -12,7 +12,7 @@ import {
 } from '../lib/requirements/status-constants.mjs'
 import {
   createMssqlConfig,
-  getSqlServerDatabaseUrl,
+  getSqlServerMigrationUrl,
   loadEnvironmentFiles,
 } from './db-sqlserver-admin.mjs'
 
@@ -1249,6 +1249,10 @@ async function runSuite(pool, options) {
   return results
 }
 
+export function getPerformanceSqlServerUrl(env = process.env) {
+  return getSqlServerMigrationUrl(env)
+}
+
 async function connectSqlServer(env) {
   const mssqlModule = await import('mssql')
   const connect =
@@ -1256,7 +1260,7 @@ async function connectSqlServer(env) {
   if (typeof connect !== 'function') {
     throw new Error('Unable to load the mssql driver connect() function.')
   }
-  const connectionString = getSqlServerDatabaseUrl(env, { readonly: false })
+  const connectionString = getPerformanceSqlServerUrl(env)
   const config = createMssqlConfig(connectionString, env)
   config.requestTimeout = parsePositiveInteger(
     env.PERF_REQUEST_TIMEOUT_MS,
