@@ -7,19 +7,6 @@ target version.
 
 ## Unreleased
 
-<!-- operator-upgrade:source issue-484 start -->
-### Least-privilege SQL runtime role is provisioned beside legacy roles
-
-Set the non-secret `DB_RUNTIME_USER` to the existing runtime database user
-before running `db-job migrate`; migration 0054 and the post-migration step
-create/reconcile the explicit runtime-permission manifest and fail on grant or
-membership drift. Continue using the separate `db_owner` db-job identity for
-migrations and required seed, while retaining the runtime user's transitional
-`db_datareader` and `db_datawriter` memberships until #485. Retain the
-`runtimePermissions` JSON from `migrate --json` or run `permission-status` for
-equivalent secret-free evidence.
-<!-- operator-upgrade:source issue-484 end -->
-
 <!-- operator-upgrade:source pr-870 start -->
 Provision AZURE_DEV_WORKSTATION_APPROVER_PUBLIC_KEY_PATH on destination workstations through a trusted channel before generating requests. Request and package schema 3 intentionally has no compatibility path with schema 2; regenerate pending requests and responses after upgrade. Existing approval key rotation requires provisioning the replacement public key before creating a new request.
 <!-- operator-upgrade:source pr-870 end -->
