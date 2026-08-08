@@ -359,13 +359,6 @@ export function getSqlServerDatabaseUrl(env = process.env, options = {}) {
 }
 
 export function getSqlServerMigrationUrl(env = process.env) {
-  const explicit = env.DATABASE_MIGRATION_URL?.trim()
-  if (explicit) {
-    if (!isSqlServerUrl(explicit)) {
-      throw new Error('DATABASE_MIGRATION_URL must be an mssql:// URL.')
-    }
-    return explicit
-  }
   const username = env.DB_MIGRATION_USER?.trim()
   const password = env.DB_MIGRATION_PASSWORD
   if (!username && !password) return getSqlServerDatabaseUrl(env)
@@ -898,9 +891,9 @@ export async function bootstrapSqlServerDatabase(
     bootstrapPrincipalFromEnv(env, {
       defaultPassword: parsed.password,
       defaultUsername: parsed.username,
-      passwordEnv: 'DB_PASSWORD',
+      passwordEnv: 'DB_MIGRATION_PASSWORD',
       roles: ['db_owner'],
-      userEnv: 'DB_USER',
+      userEnv: 'DB_MIGRATION_USER',
     }),
     bootstrapPrincipalFromEnv(env, {
       defaultPassword: env.DB_BOOTSTRAP_APP_PASSWORD,
@@ -1001,6 +994,9 @@ export async function getSqlServerRuntimePermissionStatus(
   const env = options.env ?? process.env
   const expectedRuntimeUsers =
     options.expectedRuntimeUsers ?? getExpectedRuntimeUsers(env)
+  const runtimeUserPlaceholders = expectedRuntimeUsers
+    .map((_, index) => `@${index}`)
+    .join(', ')
   const [roleRows, permissionRows, runtimeUserRows, parentRoleRows] =
     await Promise.all([
       queryExecutor.query(
@@ -1039,7 +1035,8 @@ export async function getSqlServerRuntimePermissionStatus(
            ON members.member_principal_id = principals.principal_id
           AND members.role_principal_id =
             DATABASE_PRINCIPAL_ID(N'${SQL_SERVER_RUNTIME_ROLE}')
-         WHERE principals.[name] IN (${expectedRuntimeUsers.length > 0 ? expectedRuntimeUsers.map(user => `N'${escapeSqlServerStringLiteral(user)}'`).join(', ') : 'NULL'})`,
+         WHERE principals.[name] IN (${runtimeUserPlaceholders || 'NULL'})`,
+        expectedRuntimeUsers,
       ),
       queryExecutor.query(
         `SELECT roles.[name]
@@ -1694,6 +1691,19 @@ export async function main(args, dependencies = {}) {
 
   try {
     connectionString = getSqlServerDatabaseUrl(env, { readonly: false })
+    if (
+      [
+        'demo:clear',
+        'migrate',
+        'migration-status',
+        'permission-reconcile',
+        'permission-status',
+        'seed:demo',
+        'seed:required',
+      ].includes(command)
+    ) {
+      connectionString = getSqlServerMigrationUrl(env)
+    }
   } catch (error) {
     consoleObj.error(
       error instanceof Error

@@ -43,5 +43,10 @@ describe('runtime permission manifest', () => {
     expect(sql).not.toContain(
       'GRANT DELETE ON OBJECT::[dbo].[action_audit_events]',
     )
+    expect(sql).toContain("WHEN 4 THEN N'REVOKE '")
+    expect(sql).toContain("ELSE N'USER::'")
+    expect(sql).toContain(
+      "ELSE N'THROW 51023, ''Runtime role contains an unsupported direct permission class.'', 1;'",
+    )
   })
 })

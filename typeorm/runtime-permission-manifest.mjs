@@ -269,9 +269,77 @@ export function buildRuntimePermissionReconcileSql() {
       N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
     WHEN 3 THEN N'REVOKE ' + permissions.permission_name + N' ON SCHEMA::' +
       QUOTENAME(SCHEMA_NAME(permissions.major_id)) + N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
-    ELSE N''
+    WHEN 4 THEN N'REVOKE ' + permissions.permission_name + N' ON ' +
+      CASE principals.[type]
+        WHEN N'R' THEN N'ROLE::'
+        WHEN N'A' THEN N'APPLICATION ROLE::'
+        ELSE N'USER::'
+      END + QUOTENAME(principals.[name]) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 5 THEN N'REVOKE ' + permissions.permission_name + N' ON ASSEMBLY::' +
+      QUOTENAME((SELECT assemblies.[name] FROM sys.assemblies AS assemblies WHERE assemblies.assembly_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 6 THEN N'REVOKE ' + permissions.permission_name + N' ON TYPE::' +
+      QUOTENAME(SCHEMA_NAME(types.schema_id)) + N'.' + QUOTENAME(types.[name]) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 10 THEN N'REVOKE ' + permissions.permission_name +
+      N' ON XML SCHEMA COLLECTION::' + QUOTENAME(SCHEMA_NAME(xml_collections.schema_id)) +
+      N'.' + QUOTENAME(xml_collections.[name]) + N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 15 THEN N'REVOKE ' + permissions.permission_name + N' ON MESSAGE TYPE::' +
+      QUOTENAME((SELECT message_types.[name] FROM sys.service_message_types AS message_types WHERE message_types.message_type_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 16 THEN N'REVOKE ' + permissions.permission_name + N' ON CONTRACT::' +
+      QUOTENAME((SELECT contracts.[name] FROM sys.service_contracts AS contracts WHERE contracts.service_contract_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 17 THEN N'REVOKE ' + permissions.permission_name + N' ON SERVICE::' +
+      QUOTENAME((SELECT services.[name] FROM sys.services AS services WHERE services.service_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 18 THEN N'REVOKE ' + permissions.permission_name +
+      N' ON REMOTE SERVICE BINDING::' +
+      QUOTENAME((SELECT bindings.[name] FROM sys.remote_service_bindings AS bindings WHERE bindings.remote_service_binding_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 19 THEN N'REVOKE ' + permissions.permission_name + N' ON ROUTE::' +
+      QUOTENAME((SELECT routes.[name] FROM sys.routes AS routes WHERE routes.route_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 23 THEN N'REVOKE ' + permissions.permission_name + N' ON FULLTEXT CATALOG::' +
+      QUOTENAME((SELECT catalogs.[name] FROM sys.fulltext_catalogs AS catalogs WHERE catalogs.fulltext_catalog_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 24 THEN N'REVOKE ' + permissions.permission_name + N' ON SYMMETRIC KEY::' +
+      QUOTENAME((SELECT symmetric_keys.[name] FROM sys.symmetric_keys AS symmetric_keys WHERE symmetric_keys.symmetric_key_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 25 THEN N'REVOKE ' + permissions.permission_name + N' ON CERTIFICATE::' +
+      QUOTENAME((SELECT certificates.[name] FROM sys.certificates AS certificates WHERE certificates.certificate_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 26 THEN N'REVOKE ' + permissions.permission_name + N' ON ASYMMETRIC KEY::' +
+      QUOTENAME((SELECT asymmetric_keys.[name] FROM sys.asymmetric_keys AS asymmetric_keys WHERE asymmetric_keys.asymmetric_key_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 29 THEN N'REVOKE ' + permissions.permission_name + N' ON FULLTEXT STOPLIST::' +
+      QUOTENAME((SELECT stoplists.[name] FROM sys.fulltext_stoplists AS stoplists WHERE stoplists.stoplist_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 31 THEN N'REVOKE ' + permissions.permission_name +
+      N' ON SEARCH PROPERTY LIST::' +
+      QUOTENAME((SELECT property_lists.[name] FROM sys.registered_search_property_lists AS property_lists WHERE property_lists.property_list_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 32 THEN N'REVOKE ' + permissions.permission_name +
+      N' ON DATABASE SCOPED CREDENTIAL::' +
+      QUOTENAME((SELECT credentials.[name] FROM sys.database_scoped_credentials AS credentials WHERE credentials.credential_id = permissions.major_id)) +
+      N' FROM [${SQL_SERVER_RUNTIME_ROLE}];'
+    WHEN 34 THEN N'EXEC sp_executesql N''DECLARE @sql nvarchar(max);
+      SELECT @sql = N''''REVOKE ' + permissions.permission_name +
+      N' ON EXTERNAL LANGUAGE::'''' + QUOTENAME([name]) +
+      N'''' FROM [${SQL_SERVER_RUNTIME_ROLE}];''''
+      FROM sys.external_languages WHERE external_language_id = @id;
+      EXEC sp_executesql @sql;'', N''@id int'', @id = ' +
+      CONVERT(nvarchar(11), permissions.major_id) + N';'
+    ELSE N'THROW 51023, ''Runtime role contains an unsupported direct permission class.'', 1;'
   END
   FROM sys.database_permissions AS permissions
+  LEFT JOIN sys.database_principals AS principals
+    ON permissions.class = 4 AND permissions.major_id = principals.principal_id
+  LEFT JOIN sys.types AS types
+    ON permissions.class = 6 AND permissions.major_id = types.user_type_id
+  LEFT JOIN sys.xml_schema_collections AS xml_collections
+    ON permissions.class = 10 AND permissions.major_id = xml_collections.xml_collection_id
   WHERE permissions.grantee_principal_id = DATABASE_PRINCIPAL_ID(N'${SQL_SERVER_RUNTIME_ROLE}');
   EXEC sp_executesql @runtimePermissionSql;
 

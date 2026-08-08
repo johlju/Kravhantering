@@ -86,14 +86,17 @@ otherwise look complex.
 
 `DATABASE_URL` and `DATABASE_READONLY_URL` are the canonical explicit
 connection string contract when you need to override the derived local/dev
-settings. The Next.js runtime and admin CLI both use these names.
+settings. The Next.js runtime and admin CLI both use these names. Migration
+connections replace the credentials in `DATABASE_URL` with
+`DB_MIGRATION_USER` and `DB_MIGRATION_PASSWORD`.
 
 The canonical runtime contract is:
 
 ```env
 DATABASE_URL=... # runtime identity
-DATABASE_MIGRATION_URL=... # migration identity
 DATABASE_READONLY_URL=...
+DB_MIGRATION_USER=... # migration identity name
+DB_MIGRATION_PASSWORD=... # migration identity secret
 ```
 
 Application runtime and schema migration use separate SQL Server credentials.

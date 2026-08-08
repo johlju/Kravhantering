@@ -163,6 +163,8 @@ describe('least-privilege SQL Server runtime role', () => {
   it('reconciles manifest grants without altering site-owned role memberships', async () => {
     await adminDb.query(`
       GRANT ALTER ON SCHEMA::[dbo] TO [${SQL_SERVER_RUNTIME_ROLE}]
+      GRANT IMPERSONATE ON USER::[${MIGRATION_LOGIN}]
+        TO [${SQL_SERVER_RUNTIME_ROLE}]
       ALTER ROLE [db_owner] ADD MEMBER [${SQL_SERVER_RUNTIME_ROLE}]
     `)
     await expect(
@@ -300,6 +302,130 @@ describe('least-privilege SQL Server runtime role', () => {
     ).rejects.toThrow(/permission|denied/u)
     await adminDb.query('DELETE FROM action_audit_events WHERE id = @0', [
       auditId,
+    ])
+
+    const seededRetentionPolicies = (await adminDb.query(
+      `INSERT INTO archiving_retention_policies (
+         policy_key, information_set, action, age_days, status_condition,
+         created_at, updated_at
+       )
+       OUTPUT INSERTED.id AS id
+       VALUES (N'runtime-role-probe', N'Runtime role probe', N'delete', 1,
+         N'probe', SYSUTCDATETIME(), SYSUTCDATETIME())`,
+    )) as Array<{ id: number }>
+    const seededRetentionPolicyId = seededRetentionPolicies[0]?.id
+    const retentionPolicies = (await runtimeDb.query(
+      `SELECT id FROM archiving_retention_policies WHERE id = @0`,
+      [seededRetentionPolicyId],
+    )) as Array<{ id: number }>
+    const retentionPolicyId = retentionPolicies[0]?.id
+    expect(retentionPolicyId).toBeTypeOf('number')
+    await expect(
+      runtimeDb.query(
+        `UPDATE archiving_retention_policies
+         SET last_run_at = last_run_at, updated_at = updated_at
+         WHERE id = @0`,
+        [retentionPolicyId],
+      ),
+    ).resolves.toBeUndefined()
+    await expect(
+      runtimeDb.query(
+        `UPDATE archiving_retention_policies
+         SET is_enabled = is_enabled WHERE id = @0`,
+        [retentionPolicyId],
+      ),
+    ).rejects.toThrow(/permission|denied/u)
+    const retentionRuns = (await runtimeDb.query(
+      `INSERT INTO archiving_retention_runs (
+         policy_id, started_at, completed_at, executed_by_display_name,
+         preview_token
+       )
+       OUTPUT INSERTED.id AS id
+       VALUES (@0, SYSUTCDATETIME(), SYSUTCDATETIME(), N'Runtime Role',
+         N'runtime-role-probe')`,
+      [retentionPolicyId],
+    )) as Array<{ id: number }>
+    const retentionRunId = retentionRuns[0]?.id
+    await expect(
+      runtimeDb.query(
+        `UPDATE archiving_retention_runs SET status = status WHERE id = @0`,
+        [retentionRunId],
+      ),
+    ).rejects.toThrow(/permission|denied/u)
+    await expect(
+      runtimeDb.query('DELETE FROM archiving_retention_runs WHERE id = @0', [
+        retentionRunId,
+      ]),
+    ).rejects.toThrow(/permission|denied/u)
+    await adminDb.query('DELETE FROM archiving_retention_runs WHERE id = @0', [
+      retentionRunId,
+    ])
+    await adminDb.query(
+      'DELETE FROM archiving_retention_policies WHERE id = @0',
+      [retentionPolicyId],
+    )
+
+    const reviewRuns = (await runtimeDb.query(
+      `INSERT INTO access_review_runs (
+         status, period_start, period_end, due_at, created_at, updated_at,
+         created_by_display_name, reviewer_display_name
+       )
+       OUTPUT INSERTED.id AS id
+       VALUES (N'draft', DATEADD(day, -2, SYSUTCDATETIME()),
+         DATEADD(day, -1, SYSUTCDATETIME()), DATEADD(day, 1, SYSUTCDATETIME()),
+         SYSUTCDATETIME(), SYSUTCDATETIME(), N'Runtime Role', N'Reviewer')`,
+    )) as Array<{ id: number }>
+    const reviewRunId = reviewRuns[0]?.id
+    await expect(
+      runtimeDb.query(
+        `UPDATE access_review_runs SET status = N'in_review',
+         updated_at = SYSUTCDATETIME() WHERE id = @0`,
+        [reviewRunId],
+      ),
+    ).resolves.toBeUndefined()
+    await expect(
+      runtimeDb.query(
+        `UPDATE access_review_runs SET period_start = period_start
+         WHERE id = @0`,
+        [reviewRunId],
+      ),
+    ).rejects.toThrow(/permission|denied/u)
+    const reviewItems = (await runtimeDb.query(
+      `INSERT INTO access_review_items (
+         run_id, source_key, source_table, principal_display_name, scope_type,
+         scope_key, scope_label, permission_type, created_at
+       )
+       OUTPUT INSERTED.id AS id
+       VALUES (@0, N'runtime-role-probe', N'probe', N'Runtime Role', N'area',
+         N'probe', N'Probe', N'read', SYSUTCDATETIME())`,
+      [reviewRunId],
+    )) as Array<{ id: number }>
+    const reviewItemId = reviewItems[0]?.id
+    await expect(
+      runtimeDb.query(
+        `UPDATE access_review_items SET decision = N'approved',
+         decided_at = SYSUTCDATETIME() WHERE id = @0`,
+        [reviewItemId],
+      ),
+    ).resolves.toBeUndefined()
+    await expect(
+      runtimeDb.query(
+        `UPDATE access_review_items SET source_key = source_key WHERE id = @0`,
+        [reviewItemId],
+      ),
+    ).rejects.toThrow(/permission|denied/u)
+    await expect(
+      runtimeDb.query('DELETE FROM access_review_items WHERE id = @0', [
+        reviewItemId,
+      ]),
+    ).rejects.toThrow(/permission|denied/u)
+    await expect(
+      runtimeDb.query('DELETE FROM access_review_runs WHERE id = @0', [
+        reviewRunId,
+      ]),
+    ).rejects.toThrow(/permission|denied/u)
+    await adminDb.query('DELETE FROM access_review_runs WHERE id = @0', [
+      reviewRunId,
     ])
   })
 

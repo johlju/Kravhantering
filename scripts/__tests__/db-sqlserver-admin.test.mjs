@@ -380,12 +380,14 @@ describe('db-sqlserver-admin.mjs', () => {
       DB_BOOTSTRAP_ADMIN_USER: 'sa',
       DB_BOOTSTRAP_APP_PASSWORD: 'AppPassword1!',
       DB_BOOTSTRAP_APP_USER: 'kravhantering_app',
-      DB_PASSWORD: 'JobPassword1!',
-      DB_USER: 'kravhantering_job',
+      DB_MIGRATION_PASSWORD: 'JobPassword1!',
+      DB_MIGRATION_USER: 'kravhantering_job',
+      DB_PASSWORD: 'AppPassword1!',
+      DB_USER: 'kravhantering_app',
     }
 
     const result = await bootstrapSqlServerDatabase(
-      'mssql://kravhantering_job:JobPassword1!@sqlserver:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+      'mssql://kravhantering_app:AppPassword1!@sqlserver:1433/kravhantering?encrypt=true&trustServerCertificate=true',
       { connectImpl, env },
     )
 
@@ -542,6 +544,10 @@ describe('db-sqlserver-admin.mjs', () => {
     })
     expect(result.missingGrants.length).toBeGreaterThan(50)
     expect(JSON.stringify(result)).not.toContain('password')
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE principals.[name] IN (@0)'),
+      ['kravhantering_app'],
+    )
   })
 
   it.each(['permission-status', 'permission-reconcile'])(
@@ -560,7 +566,9 @@ describe('db-sqlserver-admin.mjs', () => {
         consoleObj: { error, log },
         env: {
           DATABASE_URL:
-            'mssql://job:Password123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+            'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+          DB_MIGRATION_PASSWORD: 'Migration123!',
+          DB_MIGRATION_USER: 'job',
           DB_RUNTIME_USER: 'kravhantering_app',
         },
         getRuntimePermissionStatusImpl: statusImpl,
@@ -572,7 +580,10 @@ describe('db-sqlserver-admin.mjs', () => {
       expect(JSON.parse(log.mock.calls[0][0])).toEqual(result)
       expect(
         command === 'permission-status' ? statusImpl : reconcileImpl,
-      ).toHaveBeenCalledOnce()
+      ).toHaveBeenCalledWith(
+        'mssql://job:Migration123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+        expect.any(Object),
+      )
     },
   )
 
