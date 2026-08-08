@@ -512,9 +512,9 @@ describe('development environment contract', () => {
       'scripts/azure-dev/AzureDev.Validation.psm1',
     )
 
-    expect(devcontainerEnv).toContain('DB_USER=kravhantering_app')
-    expect(devcontainerEnv).toContain('DB_RUNTIME_USER=kravhantering_app')
-    expect(devcontainerEnv).toContain('DB_MIGRATION_USER=kravhantering_job')
+    expect(devcontainerEnv).toMatch(/^DB_USER=kravhantering_app$/mu)
+    expect(devcontainerEnv).toMatch(/^DB_RUNTIME_USER=kravhantering_app$/mu)
+    expect(devcontainerEnv).toMatch(/^DB_MIGRATION_USER=kravhantering_job$/mu)
     expect(devcontainerEnv).toContain('DB_BOOTSTRAP_ADMIN_USER=sa')
     expect(defaultProfile).toContain('npm run db:setup')
     expect(elevatedProfile).toContain('npm run db:setup')
@@ -524,6 +524,25 @@ describe('development environment contract', () => {
     expect(azureBootstrap).toContain(
       "printf 'DB_RUNTIME_USER=kravhantering_app\\n'",
     )
+    expect(azureBootstrap).toContain('generate_sql_password()')
+    expect(azureBootstrap).toContain(
+      'printf \'DB_BOOTSTRAP_APP_PASSWORD=%s\\n\' "${app_password}"',
+    )
+    expect(azureBootstrap).toContain(
+      'printf \'DB_MIGRATION_PASSWORD=%s\\n\' "${migration_password}"',
+    )
+    expect(azureBootstrap).toContain(
+      'printf \'DB_PASSWORD=%s\\n\' "${app_password}"',
+    )
+    expect(azureBootstrap).toContain(
+      'while [ "${migration_password}" = "${app_password}" ]; do',
+    )
+    expect(azureBootstrap).toContain(
+      'SQL Server environment file is missing or unreadable:',
+    )
+    expect(azureBootstrap).toContain('MSSQL_SA_PASSWORD is missing or empty in')
+    expect(azureBootstrap).not.toContain('RuntimeOnly!Passw0rd7')
+    expect(azureBootstrap).not.toContain('MigrationOnly!Passw0rd7')
     expect(azureValidation).toContain('npm run db:permission-status')
   })
 

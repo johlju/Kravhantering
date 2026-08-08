@@ -471,6 +471,12 @@ describe('db-sqlserver-admin.mjs', () => {
     expect(queries[0]).not.toContain('ALTER LOGIN')
     expect(queries[1]).toContain('CREATE ROLE [kravhantering_runtime]')
     expect(queries[1]).toContain('WITH DEFAULT_SCHEMA = [dbo]')
+    expect(queries[1]).toContain(
+      'ALTER USER [kravhantering_job] WITH DEFAULT_SCHEMA = [dbo]',
+    )
+    expect(queries[1]).toContain(
+      'ALTER USER [kravhantering_app] WITH DEFAULT_SCHEMA = [dbo]',
+    )
     expect(queries[1]).not.toContain('GRANT SELECT ON OBJECT::')
     expect(queries[1]).toContain('ALTER ROLE [db_owner]')
     expect(queries[1]).toContain('ALTER ROLE [db_datareader]')
@@ -481,6 +487,59 @@ describe('db-sqlserver-admin.mjs', () => {
       jobUser: 'kravhantering_job',
       server: 'sqlserver',
     })
+  })
+
+  it.each([
+    {
+      connectionString:
+        'mssql://runtime:RuntimePassword1!@sqlserver:1433/kravhantering?encrypt=true',
+      env: {
+        DB_BOOTSTRAP_ADMIN_PASSWORD: 'AdminPassword1!',
+        DB_BOOTSTRAP_APP_PASSWORD: 'AppPassword1!',
+        DB_BOOTSTRAP_APP_USER: 'kravhantering_app',
+        DB_MIGRATION_PASSWORD: 'JobPassword1!',
+        DB_MIGRATION_USER: 'KRAVHANTERING_APP',
+      },
+      runtimeUser: 'kravhantering_app',
+      source: 'configured migration user',
+    },
+    {
+      connectionString:
+        'mssql://kravhantering_app:RuntimePassword1!@sqlserver:1433/kravhantering?encrypt=true',
+      env: {
+        DB_BOOTSTRAP_ADMIN_PASSWORD: 'AdminPassword1!',
+        DB_BOOTSTRAP_APP_PASSWORD: 'AppPassword1!',
+        DB_BOOTSTRAP_APP_USER: 'kravhantering_app',
+      },
+      runtimeUser: 'kravhantering_app',
+      source: 'connection-string fallback',
+    },
+    {
+      connectionString:
+        'mssql://runtime:RuntimePassword1!@sqlserver:1433/kravhantering?encrypt=true',
+      env: {
+        DB_BOOTSTRAP_ADMIN_PASSWORD: 'AdminPassword1!',
+        DB_BOOTSTRAP_APP_PASSWORD: 'AppPassword1!',
+        DB_BOOTSTRAP_APP_USER: 'kravhantering_app',
+        DB_MIGRATION_PASSWORD: 'JobPassword1!',
+        DB_MIGRATION_USER: 'site_worker',
+        DB_RUNTIME_USER: 'site_worker',
+      },
+      runtimeUser: 'site_worker',
+      source: 'managed runtime user',
+    },
+  ])('rejects a $source that equals the runtime user', async testCase => {
+    const connectImpl = vi.fn()
+
+    await expect(
+      bootstrapSqlServerDatabase(testCase.connectionString, {
+        connectImpl,
+        env: testCase.env,
+      }),
+    ).rejects.toThrow(
+      `SQL Server bootstrap requires distinct migration and runtime users; DB_MIGRATION_USER resolves to the application runtime user "${testCase.runtimeUser}".`,
+    )
+    expect(connectImpl).not.toHaveBeenCalled()
   })
 
   it('runs registered TypeORM migrations through an injected DataSource', async () => {
@@ -629,6 +688,33 @@ describe('db-sqlserver-admin.mjs', () => {
       )
     },
   )
+
+  it('fails permission status when DB_RUNTIME_USER is missing', async () => {
+    const error = vi.fn()
+    const log = vi.fn()
+    const statusImpl = vi.fn()
+    vi.spyOn(process, 'cwd').mockReturnValue(
+      '/tmp/kravhantering-test-without-env-files',
+    )
+
+    const exitCode = await main(['permission-status'], {
+      consoleObj: { error, log },
+      env: {
+        DATABASE_URL:
+          'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+        DB_MIGRATION_PASSWORD: 'Migration123!',
+        DB_MIGRATION_USER: 'job',
+      },
+      getRuntimePermissionStatusImpl: statusImpl,
+    })
+
+    expect(exitCode).toBe(1)
+    expect(error).toHaveBeenCalledWith(
+      'DB_RUNTIME_USER is required to verify the managed runtime database user.',
+    )
+    expect(log).not.toHaveBeenCalled()
+    expect(statusImpl).not.toHaveBeenCalled()
+  })
 
   it('reports migration status with pending migrations as compatible', async () => {
     class InitialSchema1713720000000 {
@@ -1317,6 +1403,33 @@ describe('db-sqlserver-admin.mjs', () => {
     expect(log).toHaveBeenCalledWith(
       'SQL Server setup completed (5 required seed rows, 11 demo seed rows).',
     )
+  })
+
+  it('reports setup precondition failures through the setup catch path', async () => {
+    const error = vi.fn()
+    const log = vi.fn()
+    const bootstrapSqlServerDatabaseImpl = vi.fn()
+    vi.spyOn(process, 'cwd').mockReturnValue(
+      '/tmp/kravhantering-test-without-env-files',
+    )
+
+    await expect(
+      main(['setup'], {
+        bootstrapSqlServerDatabaseImpl,
+        consoleObj: { error, log },
+        env: {
+          DATABASE_URL:
+            'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+          DB_BOOTSTRAP_ADMIN_PASSWORD: 'Admin123!',
+        },
+      }),
+    ).resolves.toBe(1)
+
+    expect(error).toHaveBeenCalledWith(
+      'DB_RUNTIME_USER is required to verify the managed runtime database user.',
+    )
+    expect(log).not.toHaveBeenCalled()
+    expect(bootstrapSqlServerDatabaseImpl).not.toHaveBeenCalled()
   })
 
   it('waits against master for the CLI wait command', async () => {

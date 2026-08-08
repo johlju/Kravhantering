@@ -103,11 +103,12 @@ Application runtime and schema migration use separate SQL Server credentials.
 The release-versioned manifest in
 [`typeorm/runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
 lists exact object/operation grants, including protected column-scoped updates;
-new tables receive nothing implicitly. `db:migrate` reconciles direct grants
-after migrations and verifies `DB_RUNTIME_USER` membership. It does not alter
-other roles or direct user permissions, and a role-only runtime login cannot
-run TypeORM migrations. Existing `db_datareader` and `db_datawriter`
-memberships remain available until #485.
+new tables receive nothing implicitly through `kravhantering_runtime`.
+Transitional `db_datareader` and `db_datawriter` memberships still provide
+fixed-role access until #485. `db:migrate` reconciles direct grants after
+migrations and verifies `DB_RUNTIME_USER` membership. It does not alter other
+roles or direct user permissions, and a role-only runtime login cannot run
+TypeORM migrations.
 
 Use `npm run db:permission-status` for secret-free JSON evidence or
 `npm run db:permission-reconcile` for an explicit repair. Both report the

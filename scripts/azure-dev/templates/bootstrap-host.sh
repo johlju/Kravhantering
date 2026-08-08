@@ -905,14 +905,84 @@ run_repository_setup() {
   run_as_vscode "cd '${WORKSPACE_DIR}' && bash .devcontainer/trust-container-ca.sh"
 }
 
+generate_sql_password() {
+  python3 - <<'PY'
+import secrets
+import string
+
+alphabet = string.ascii_letters + string.digits + "!@^_-"
+characters = [
+    secrets.choice(string.ascii_lowercase),
+    secrets.choice(string.ascii_uppercase),
+    secrets.choice(string.digits),
+    secrets.choice("!@^_-"),
+]
+characters.extend(secrets.choice(alphabet) for _ in range(28))
+secrets.SystemRandom().shuffle(characters)
+print("".join(characters))
+PY
+}
+
+read_managed_env_value() {
+  local file="$1"
+  local start="$2"
+  local end="$3"
+  local key="$4"
+
+  if [ ! -r "${file}" ]; then
+    return
+  fi
+
+  awk -v start="${start}" -v end="${end}" -v key="${key}" '
+    $0 == start { managed = 1; next }
+    $0 == end { managed = 0; next }
+    managed == 1 && index($0, key "=") == 1 {
+      print substr($0, length(key) + 2)
+      exit
+    }
+  ' "${file}"
+}
+
 write_vm_env_override() {
   local file="${WORKSPACE_DIR}/.env.development.local"
   local start="# >>> kravhantering azure vm managed"
   local end="# <<< kravhantering azure vm managed"
   local tmp
   local sa_password
+  local app_password
+  local migration_password
+  local sqlserver_env="${KRAV_CONFIG_DIR}/sqlserver.env"
+
+  if [ ! -r "${sqlserver_env}" ]; then
+    log "SQL Server environment file is missing or unreadable: ${sqlserver_env}"
+    return 1
+  fi
+
+  sa_password="$(sed -n 's/^MSSQL_SA_PASSWORD=//p' "${sqlserver_env}")"
+  if [ -z "${sa_password}" ]; then
+    log "MSSQL_SA_PASSWORD is missing or empty in ${sqlserver_env}"
+    return 1
+  fi
+
+  app_password="$(
+    read_managed_env_value "${file}" "${start}" "${end}" \
+      DB_BOOTSTRAP_APP_PASSWORD
+  )"
+  migration_password="$(
+    read_managed_env_value "${file}" "${start}" "${end}" \
+      DB_MIGRATION_PASSWORD
+  )"
+  if [ -z "${app_password}" ]; then
+    app_password="$(generate_sql_password)"
+  fi
+  if [ -z "${migration_password}" ]; then
+    migration_password="$(generate_sql_password)"
+  fi
+  while [ "${migration_password}" = "${app_password}" ]; do
+    migration_password="$(generate_sql_password)"
+  done
+
   tmp="$(mktemp)"
-  sa_password="$(sed -n 's/^MSSQL_SA_PASSWORD=//p' "${KRAV_CONFIG_DIR}/sqlserver.env")"
 
   if [ -f "${file}" ]; then
     awk -v start="${start}" -v end="${end}" '
@@ -926,12 +996,12 @@ write_vm_env_override() {
     printf '%s\n' "${start}"
     printf 'DB_BOOTSTRAP_ADMIN_PASSWORD=%s\n' "${sa_password}"
     printf 'DB_BOOTSTRAP_ADMIN_USER=sa\n'
-    printf 'DB_BOOTSTRAP_APP_PASSWORD=RuntimeOnly!Passw0rd7\n'
+    printf 'DB_BOOTSTRAP_APP_PASSWORD=%s\n' "${app_password}"
     printf 'DB_BOOTSTRAP_APP_USER=kravhantering_app\n'
     printf 'DB_HOST=127.0.0.1\n'
-    printf 'DB_MIGRATION_PASSWORD=MigrationOnly!Passw0rd7\n'
+    printf 'DB_MIGRATION_PASSWORD=%s\n' "${migration_password}"
     printf 'DB_MIGRATION_USER=kravhantering_job\n'
-    printf 'DB_PASSWORD=RuntimeOnly!Passw0rd7\n'
+    printf 'DB_PASSWORD=%s\n' "${app_password}"
     printf 'DB_RUNTIME_USER=kravhantering_app\n'
     printf 'DB_USER=kravhantering_app\n'
     printf 'MSSQL_SA_PASSWORD=%s\n' "${sa_password}"

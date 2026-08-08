@@ -42,6 +42,7 @@ BEGIN
   CREATE USER [<db-job-login>] FOR LOGIN [<db-job-login>]
     WITH DEFAULT_SCHEMA = [dbo];
 END
+ALTER USER [<db-job-login>] WITH DEFAULT_SCHEMA = [dbo];
 GO
 
 IF DATABASE_PRINCIPAL_ID(N'<app-login>') IS NULL
@@ -49,6 +50,7 @@ BEGIN
   CREATE USER [<app-login>] FOR LOGIN [<app-login>]
     WITH DEFAULT_SCHEMA = [dbo];
 END
+ALTER USER [<app-login>] WITH DEFAULT_SCHEMA = [dbo];
 GO
 
 IF EXISTS (

@@ -1141,7 +1141,7 @@ podman run --rm --env-file /etc/kravhantering/db-job.env \
 exit
 ```
 
-Then run bootstrap, migration and required seed:
+Then run bootstrap, migration, permission verification and required seed:
 
 ```bash
 sudo -iu kravhantering
@@ -1149,11 +1149,16 @@ cd /opt/kravhantering/current
 set -a
 . /etc/kravhantering/release.env
 set +a
+EVIDENCE_DIR="/var/tmp/kravhantering-deploy-${VERSION}-evidence"
+mkdir -p "$EVIDENCE_DIR"
 
 podman run --rm --env-file /etc/kravhantering/db-job.env \
   "$DB_JOB_IMAGE_REF" bootstrap
 podman run --rm --env-file /etc/kravhantering/db-job.env \
   "$DB_JOB_IMAGE_REF" migrate
+podman run --rm --env-file /etc/kravhantering/db-job.env \
+  "$DB_JOB_IMAGE_REF" permission-status \
+  > "$EVIDENCE_DIR/runtime-permissions-${VERSION}.json"
 podman run --rm --env-file /etc/kravhantering/db-job.env \
   "$DB_JOB_IMAGE_REF" seed:required
 

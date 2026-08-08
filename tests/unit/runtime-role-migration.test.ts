@@ -15,6 +15,8 @@ describe('runtime role migration', () => {
     expect(sql).toContain('GRANT SELECT ON OBJECT::[dbo].[migrations]')
     expect(sql).toContain('GRANT UPDATE ([actor_hsa_id], [actor_display_name])')
     expect(sql).not.toContain('ON SCHEMA::[dbo]')
+    expect(sql).not.toContain('ADD MEMBER')
+    expect(sql).not.toContain('DROP MEMBER')
     expect(sql).not.toContain('DROP ROLE [kravhantering_runtime]')
   })
 
@@ -28,5 +30,11 @@ describe('runtime role migration', () => {
     expect(sql).toContain('ALTER ROLE [kravhantering_runtime] DROP MEMBER')
     expect(sql).toContain('DROP MEMBER [kravhantering_runtime]')
     expect(sql).toContain('DROP ROLE [kravhantering_runtime]')
+    const membershipRemovalIndex = sql.indexOf(
+      'ALTER ROLE [kravhantering_runtime] DROP MEMBER',
+    )
+    const dropRoleIndex = sql.indexOf('DROP ROLE [kravhantering_runtime]')
+    expect(membershipRemovalIndex).toBeGreaterThanOrEqual(0)
+    expect(dropRoleIndex).toBeGreaterThan(membershipRemovalIndex)
   })
 })

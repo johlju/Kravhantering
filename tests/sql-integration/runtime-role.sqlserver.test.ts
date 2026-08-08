@@ -127,6 +127,9 @@ describe('least-privilege SQL Server runtime role', () => {
     `)
     await runtimeDb.initialize()
     await migrationDb.initialize()
+    await reconcileSqlServerRuntimePermissions(migrationDb, {
+      expectedRuntimeUsers: [RUNTIME_LOGIN],
+    })
   })
 
   afterAll(async () => {
@@ -210,12 +213,11 @@ describe('least-privilege SQL Server runtime role', () => {
       `SELECT schemas.[name] + N'.' + tables.[name] AS objectName
        FROM sys.tables AS tables
        INNER JOIN sys.schemas AS schemas ON tables.schema_id = schemas.schema_id
-       WHERE schemas.[name] = N'dbo' AND tables.is_ms_shipped = 0
-       ORDER BY objectName`,
+       WHERE schemas.[name] = N'dbo' AND tables.is_ms_shipped = 0`,
     )) as Array<{ objectName: string }>
     expect(
       RUNTIME_PERMISSION_MANIFEST.map(entry => entry.object).sort(),
-    ).toEqual(currentTables.map(row => row.objectName))
+    ).toEqual(currentTables.map(row => row.objectName).sort())
 
     await migrationDb.query(
       'CREATE TABLE [runtime_future_table_probe] ([id] int NOT NULL)',

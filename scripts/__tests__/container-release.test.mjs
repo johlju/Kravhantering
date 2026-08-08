@@ -1642,6 +1642,12 @@ describe('trusted container release helpers', () => {
       'CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo]',
     )
     expect(template).toContain('WITH DEFAULT_SCHEMA = [dbo]')
+    expect(template).toContain(
+      'ALTER USER [<db-job-login>] WITH DEFAULT_SCHEMA = [dbo]',
+    )
+    expect(template).toContain(
+      'ALTER USER [<app-login>] WITH DEFAULT_SCHEMA = [dbo]',
+    )
     expect(template).not.toContain('GRANT SELECT ON OBJECT::')
     expect(template).not.toContain('ON SCHEMA::[dbo]')
     expect(template).toContain('ALTER ROLE [db_datareader]')

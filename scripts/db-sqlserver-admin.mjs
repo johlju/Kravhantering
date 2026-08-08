@@ -861,6 +861,7 @@ function buildBootstrapUserSql(principals) {
         CREATE USER ${escapedUserName} FOR LOGIN ${escapedUserName}
           WITH DEFAULT_SCHEMA = [dbo]
       END
+      ALTER USER ${escapedUserName} WITH DEFAULT_SCHEMA = [dbo]
 ${roleSql}`
     })
     .join('\n')
@@ -885,6 +886,19 @@ export async function bootstrapSqlServerDatabase(
     env,
     { database: parsed.database },
   )
+  const migrationUsername = env.DB_MIGRATION_USER?.trim() || parsed.username
+  const configuredRuntimeUsernames = [
+    env.DB_BOOTSTRAP_APP_USER?.trim(),
+    ...getExpectedRuntimeUsers(env),
+  ].filter(Boolean)
+  const matchingRuntimeUsername = configuredRuntimeUsernames.find(
+    username => username.toLowerCase() === migrationUsername.toLowerCase(),
+  )
+  if (matchingRuntimeUsername) {
+    throw new Error(
+      `SQL Server bootstrap requires distinct migration and runtime users; DB_MIGRATION_USER resolves to the application runtime user "${matchingRuntimeUsername}".`,
+    )
+  }
   const principals = [
     bootstrapPrincipalFromEnv(env, {
       defaultPassword: parsed.password,
@@ -1921,25 +1935,24 @@ export async function main(args, dependencies = {}) {
   }
 
   if (command === 'setup') {
-    const migrationConnectionString = getSqlServerMigrationUrl(env)
-    const parsed = parseSqlServerConnectionString(
-      migrationConnectionString,
-      env,
-    )
-    const adminMasterConnectionString = createBootstrapAdminConnectionString(
-      migrationConnectionString,
-      env,
-    )
-    const adminDatabaseConnectionString = createBootstrapAdminConnectionString(
-      migrationConnectionString,
-      env,
-      { database: parsed.database },
-    )
-    const expectedRuntimeUsers = getExpectedRuntimeUsers(env, {
-      required: true,
-    })
-
     try {
+      const migrationConnectionString = getSqlServerMigrationUrl(env)
+      const parsed = parseSqlServerConnectionString(
+        migrationConnectionString,
+        env,
+      )
+      const adminMasterConnectionString = createBootstrapAdminConnectionString(
+        migrationConnectionString,
+        env,
+      )
+      const adminDatabaseConnectionString =
+        createBootstrapAdminConnectionString(migrationConnectionString, env, {
+          database: parsed.database,
+        })
+      const expectedRuntimeUsers = getExpectedRuntimeUsers(env, {
+        required: true,
+      })
+
       consoleObj.log(
         'Step 1/7: waiting for SQL Server to accept connections...',
       )

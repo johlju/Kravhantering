@@ -47,13 +47,15 @@ seed, archiving-retention demo seed, tests, and documentation.
 
 [`runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
 is the release-versioned authority for exact object, operation, and
-column-scoped grants. New objects receive no runtime access until added there.
-The runtime can read but not write `dbo.migrations`; protected audit and review
-tables have narrower insert, update-column, and delete boundaries. The
-reconciler removes unexpected direct permissions from the project role but
-does not modify other roles, direct user grants, or site-owned extension-role
-memberships. Such parent-role drift makes verification fail for an operator to
-resolve explicitly.
+column-scoped grants. New objects require manifest inclusion for access through
+the custom `kravhantering_runtime` role; transitional `db_datareader` and
+`db_datawriter` memberships can still provide access inherited from those
+fixed roles. Within the custom role, the runtime can read but not write
+`dbo.migrations`; protected audit and review tables have narrower insert,
+update-column, and delete boundaries. The reconciler removes unexpected direct
+permissions from the project role but does not modify other roles, direct user
+grants, or site-owned extension-role memberships. Such parent-role drift makes
+verification fail for an operator to resolve explicitly.
 
 Existing app membership in `db_datareader` and `db_datawriter` remains during
 the transition to #485. Migrations and required seed continue to use the
