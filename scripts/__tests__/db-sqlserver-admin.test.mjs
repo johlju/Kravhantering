@@ -678,6 +678,7 @@ describe('db-sqlserver-admin.mjs', () => {
         return [
           {
             canAlterSchemaObject: true,
+            canImpersonateDatabaseUser: true,
             canUpdateProtectedAuditHistory: true,
           },
         ]
@@ -718,6 +719,7 @@ describe('db-sqlserver-admin.mjs', () => {
           present: true,
           prohibitedEffectivePermissions: [
             'ALTER_SCHEMA_OBJECT',
+            'IMPERSONATE_DATABASE_USER',
             'UPDATE_PROTECTED_AUDIT_HISTORY',
           ],
         },

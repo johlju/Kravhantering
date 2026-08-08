@@ -171,6 +171,7 @@ const PROHIBITED_EFFECTIVE_RUNTIME_PERMISSIONS = Object.freeze([
   ['canCreateSchemaObject', 'CREATE_SCHEMA_OBJECT'],
   ['canAlterSchema', 'ALTER_SCHEMA'],
   ['canAlterSchemaObject', 'ALTER_SCHEMA_OBJECT'],
+  ['canImpersonateDatabaseUser', 'IMPERSONATE_DATABASE_USER'],
   ['canInsertMigrationHistory', 'INSERT_MIGRATION_HISTORY'],
   ['canUpdateMigrationHistory', 'UPDATE_MIGRATION_HISTORY'],
   ['canDeleteMigrationHistory', 'DELETE_MIGRATION_HISTORY'],
@@ -1060,8 +1061,20 @@ async function getProhibitedEffectiveRuntimePermissions(queryExecutor, user) {
                    N''OBJECT'', N''ALTER''
                  ) = 1
              ) THEN 1 ELSE 0 END AS bit) AS canAlterSchemaObject,
+             CAST(CASE WHEN EXISTS (
+               SELECT 1
+               FROM sys.database_principals AS principals
+               WHERE principals.[type] IN (N''S'', N''U'', N''G'', N''E'', N''X'')
+                 AND principals.principal_id <>
+                   DATABASE_PRINCIPAL_ID(USER_NAME())
+                 AND HAS_PERMS_BY_NAME(
+                   QUOTENAME(principals.[name]), N''USER'', N''IMPERSONATE''
+                 ) = 1
+             ) THEN 1 ELSE 0 END AS bit) AS canImpersonateDatabaseUser,
              CAST(HAS_PERMS_BY_NAME(N''dbo.migrations'', N''OBJECT'', N''INSERT'') AS bit) AS canInsertMigrationHistory,
-             CAST(HAS_PERMS_BY_NAME(N''dbo.migrations.name'', N''COLUMN'', N''UPDATE'') AS bit) AS canUpdateMigrationHistory,
+             CAST(HAS_PERMS_BY_NAME(
+               N''dbo.migrations'', N''OBJECT'', N''UPDATE'', N''name'', N''COLUMN''
+             ) AS bit) AS canUpdateMigrationHistory,
              CAST(HAS_PERMS_BY_NAME(N''dbo.migrations'', N''OBJECT'', N''DELETE'') AS bit) AS canDeleteMigrationHistory,
              CAST(CASE WHEN EXISTS (
                SELECT 1
@@ -1069,8 +1082,8 @@ async function getProhibitedEffectiveRuntimePermissions(queryExecutor, user) {
                WHERE columns.object_id = OBJECT_ID(N''${PROTECTED_AUDIT_OBJECT}'')
                  ${protectedAuditUpdateColumnFilter}
                  AND HAS_PERMS_BY_NAME(
-                   N''[dbo].[action_audit_events].'' + QUOTENAME(columns.[name]),
-                   N''COLUMN'', N''UPDATE''
+                   N''dbo.action_audit_events'', N''OBJECT'', N''UPDATE'',
+                   columns.[name], N''COLUMN''
                  ) = 1
              ) THEN 1 ELSE 0 END AS bit) AS canUpdateProtectedAuditHistory,
              CAST(HAS_PERMS_BY_NAME(N''dbo.action_audit_events'', N''OBJECT'', N''DELETE'') AS bit) AS canDeleteAuditHistory;
