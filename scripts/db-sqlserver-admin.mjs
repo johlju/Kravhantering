@@ -807,6 +807,76 @@ function buildBootstrapLoginSql(principals) {
     .join('\n')
 }
 
+function buildRuntimeRoleSql() {
+  const escapedRuntimeRole = quoteSqlServerIdentifier(SQL_SERVER_RUNTIME_ROLE)
+  const escapedRuntimeRoleLiteral = `N'${escapeSqlServerStringLiteral(SQL_SERVER_RUNTIME_ROLE)}'`
+
+  return `
+      IF EXISTS (
+        SELECT 1
+        FROM sys.database_principals
+        WHERE [name] = ${escapedRuntimeRoleLiteral}
+          AND [type] <> N'R'
+      )
+        THROW 51021, 'Cannot provision ${SQL_SERVER_RUNTIME_ROLE}: a non-role database principal uses that name.', 1
+
+      DECLARE @runtimeRoleMembers TABLE ([name] sysname NOT NULL)
+      DECLARE @runtimeRoleSql nvarchar(max) = N''
+
+      IF DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral}) IS NOT NULL
+      BEGIN
+        INSERT INTO @runtimeRoleMembers ([name])
+        SELECT principals.[name]
+        FROM sys.database_role_members AS members
+        INNER JOIN sys.database_principals AS principals
+          ON members.member_principal_id = principals.principal_id
+        WHERE members.role_principal_id = DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral})
+
+        SELECT @runtimeRoleSql +=
+          N'ALTER ROLE ${escapedRuntimeRole} DROP MEMBER ' + QUOTENAME([name]) + N';'
+        FROM @runtimeRoleMembers
+        EXEC sp_executesql @runtimeRoleSql
+
+        SET @runtimeRoleSql = N''
+        SELECT @runtimeRoleSql +=
+          N'ALTER ROLE ' + QUOTENAME(roles.[name]) +
+          N' DROP MEMBER ${escapedRuntimeRole};'
+        FROM sys.database_role_members AS members
+        INNER JOIN sys.database_principals AS roles
+          ON members.role_principal_id = roles.principal_id
+        WHERE members.member_principal_id = DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral})
+        EXEC sp_executesql @runtimeRoleSql
+
+        DROP ROLE ${escapedRuntimeRole}
+      END
+
+      CREATE ROLE ${escapedRuntimeRole} AUTHORIZATION [dbo]
+
+      SET @runtimeRoleSql = N''
+      SELECT @runtimeRoleSql +=
+        N'ALTER ROLE ${escapedRuntimeRole} ADD MEMBER ' + QUOTENAME([name]) + N';'
+      FROM @runtimeRoleMembers
+      EXEC sp_executesql @runtimeRoleSql
+
+      SET @runtimeRoleSql = N''
+      SELECT @runtimeRoleSql +=
+        CASE
+          WHEN tables.[name] = N'migrations' THEN
+            N'GRANT SELECT ON OBJECT::' + QUOTENAME(schemas.[name]) + N'.' +
+            QUOTENAME(tables.[name]) + N' TO ${escapedRuntimeRole};'
+          ELSE
+            N'GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::' +
+            QUOTENAME(schemas.[name]) + N'.' + QUOTENAME(tables.[name]) +
+            N' TO ${escapedRuntimeRole};'
+        END
+      FROM sys.tables AS tables
+      INNER JOIN sys.schemas AS schemas
+        ON tables.schema_id = schemas.schema_id
+      WHERE schemas.[name] = N'dbo'
+        AND tables.is_ms_shipped = 0
+      EXEC sp_executesql @runtimeRoleSql`
+}
+
 function buildBootstrapUserSql(principals) {
   const principalSql = principals
     .map(principal => {
@@ -842,16 +912,7 @@ ${roleSql}`
     })
     .join('\n')
 
-  const escapedRuntimeRole = quoteSqlServerIdentifier(SQL_SERVER_RUNTIME_ROLE)
-  const escapedRuntimeRoleLiteral = `N'${escapeSqlServerStringLiteral(SQL_SERVER_RUNTIME_ROLE)}'`
-
-  return `
-      IF DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral}) IS NULL
-      BEGIN
-        CREATE ROLE ${escapedRuntimeRole} AUTHORIZATION [dbo]
-      END
-
-      GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO ${escapedRuntimeRole}
+  return `${buildRuntimeRoleSql()}
 ${principalSql}`
 }
 

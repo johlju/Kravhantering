@@ -2911,8 +2911,11 @@ graph LR
 ## Database Roles
 
 Migration 0054 creates the custom `kravhantering_runtime` database role. The
-role receives only `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the `dbo`
-schema. It does not receive schema-definition or migration permissions.
+role receives `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on each current
+application table in `dbo`, but only `SELECT` on the TypeORM `migrations`
+history table. Future tables receive no implicit access. Reconciliation
+removes unexpected direct permissions and membership in parent roles while
+preserving identities assigned to the custom role.
 
 The application runtime and the migration job use separate SQL Server logins.
 The migration login retains `db_owner` so TypeORM can apply versioned schema

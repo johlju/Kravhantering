@@ -487,8 +487,8 @@ database platform tooling must provide:
 - database name, normally `kravhantering`
 - app runtime login/user with `db_datareader` and `db_datawriter`
 - db-job login/user with `db_owner`
-- custom `kravhantering_runtime` role with `SELECT`, `INSERT`, `UPDATE`, and
-  `DELETE` on the `dbo` schema
+- custom `kravhantering_runtime` role with runtime DML on each current
+  application table in `dbo` and read-only TypeORM migration history
 - encrypted connection settings and trust configuration
 - backup and restore procedure approved for the release window
 
@@ -500,6 +500,11 @@ The custom role is provisioned beside the existing broad app memberships for
 this transition. Do not remove `db_datareader` or `db_datawriter` yet. The
 runtime role intentionally has no DDL permission; only the separate db-job
 identity may apply TypeORM migrations.
+
+Role reconciliation preserves assigned identities but removes unexpected
+direct permissions and membership in broader parent roles. Future tables do
+not inherit runtime access; the migration that introduces a new runtime table
+must reconcile its required permissions explicitly.
 
 Set `/etc/kravhantering/app.env` with the app runtime user:
 

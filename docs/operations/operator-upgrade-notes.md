@@ -11,11 +11,13 @@ target version.
 ### Least-privilege SQL runtime role is provisioned beside legacy roles
 
 Migration 0054 idempotently creates or reconciles the
-`kravhantering_runtime` database role with `SELECT`, `INSERT`, `UPDATE`, and
-`DELETE` on the `dbo` schema. It does not change application login membership,
-so existing `db_datareader` and `db_datawriter` assignments remain available
-during the transition. Continue to run migrations with the separate db-job
-identity; a runtime-role-only identity cannot alter the schema.
+`kravhantering_runtime` database role. It grants runtime DML on each current
+application table in `dbo`, read-only access to the TypeORM `migrations`
+history table, and no implicit access to future tables. Reconciliation removes
+unexpected direct permissions and parent-role membership while preserving the
+identities assigned to the custom role. Existing `db_datareader` and
+`db_datawriter` assignments remain available during the transition. Continue
+to run migrations with the separate db-job identity.
 <!-- operator-upgrade:source issue-484 end -->
 
 <!-- operator-upgrade:source pr-870 start -->

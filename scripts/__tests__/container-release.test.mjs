@@ -1636,15 +1636,16 @@ describe('trusted container release helpers', () => {
       'containers/production/sqlserver/dba-provision.sql.template',
     )
 
-    expect(template).toContain(
-      "IF DATABASE_PRINCIPAL_ID(N'kravhantering_runtime') IS NULL",
-    )
+    expect(template).toContain("AND [type] <> N'R'")
     expect(template).toContain(
       'CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo]',
     )
+    expect(template).toContain('DROP ROLE [kravhantering_runtime]')
     expect(template).toContain(
-      'GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [kravhantering_runtime]',
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::',
     )
+    expect(template).toContain('GRANT SELECT ON OBJECT::')
+    expect(template).not.toContain('ON SCHEMA::[dbo]')
     expect(template).toContain('ALTER ROLE [db_datareader]')
     expect(template).toContain('ALTER ROLE [db_datawriter]')
   })

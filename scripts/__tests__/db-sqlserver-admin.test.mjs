@@ -403,9 +403,12 @@ describe('db-sqlserver-admin.mjs', () => {
     expect(queries[0]).toContain('CREATE LOGIN [kravhantering_job]')
     expect(queries[0]).toContain('CREATE LOGIN [kravhantering_app]')
     expect(queries[1]).toContain('CREATE ROLE [kravhantering_runtime]')
+    expect(queries[1]).toContain("WHEN tables.[name] = N'migrations' THEN")
+    expect(queries[1]).toContain('GRANT SELECT ON OBJECT::')
     expect(queries[1]).toContain(
-      'GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [kravhantering_runtime]',
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON OBJECT::',
     )
+    expect(queries[1]).toContain('DROP ROLE [kravhantering_runtime]')
     expect(queries[1]).toContain('ALTER ROLE [db_owner]')
     expect(queries[1]).toContain('ALTER ROLE [db_datareader]')
     expect(queries[1]).toContain('ALTER ROLE [db_datawriter]')

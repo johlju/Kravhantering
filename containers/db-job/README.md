@@ -40,10 +40,13 @@ A production-like empty database is bootstrap, migration, and
 its required seed helper modules, and excludes `typeorm/seed.mjs`, dogfood
 seed, archiving-retention demo seed, tests, and documentation.
 
-The runtime role grants only `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the
-`dbo` schema. Existing app membership in `db_datareader` and `db_datawriter`
-remains available during the transition. The role does not grant schema
-migration permissions; migrations continue to use the separate db-job login.
+The runtime role grants `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on each
+current application table in `dbo`. The TypeORM `migrations` history table is
+read-only for runtime readiness checks, and future tables receive no implicit
+access. Reconciliation removes permission and parent-role drift while
+preserving identities already assigned to the custom role. Existing app
+membership in `db_datareader` and `db_datawriter` remains available during the
+transition. Migrations continue to use the separate db-job login.
 
 The image installs only the dependency subset needed by the one-shot job:
 `mssql`, `typeorm`, and `reflect-metadata`. It deliberately does not include
