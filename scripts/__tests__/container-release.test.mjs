@@ -1640,6 +1640,51 @@ describe('trusted container release helpers', () => {
     expect(singleNodeGuide).not.toMatch(/-m 0640 ca\.crt/u)
   })
 
+  it('labels every release-owned nginx bind mount for SELinux', () => {
+    const guides = [
+      'docs/operations/rhel10-production-deploy.md',
+      'docs/operations/rhel10-production-disconnected.md',
+      'docs/operations/rhel10-production-upgrade.md',
+      'docs/operations/rhel10-production-single-node-self-contained-deploy.md',
+      'docs/operations/rhel10-production-single-node-self-contained-disconnected.md',
+      'docs/operations/rhel10-production-single-node-self-contained-upgrade.md',
+    ]
+
+    for (const guide of guides) {
+      const content = readWorkspaceFile(guide)
+      const labelingCommands = content.match(
+        /sudo chcon -R -t container_file_t \\\n(?:\s+"\/opt\/kravhantering\/releases\/\$\{VERSION\}\/[^\n]+"(?: \\\n)?)+/gu,
+      )
+      const nginxLabelingCommands = (labelingCommands ?? []).filter(command =>
+        command.includes('/nginx'),
+      )
+
+      expect(labelingCommands).not.toBeNull()
+      expect(nginxLabelingCommands.length).toBeGreaterThan(0)
+      for (const command of nginxLabelingCommands) {
+        expect(command).toContain(
+          ['"/opt/kravhantering/releases/', '$', '{VERSION}/api-docs"'].join(
+            '',
+          ),
+        )
+      }
+    }
+  })
+
+  it('requires the single-node Quadlet network for temporary containers', () => {
+    const singleNodeGuide = readWorkspaceFile(
+      'docs/operations/rhel10-production-single-node-self-contained-deploy.md',
+    )
+
+    expect(singleNodeGuide).toContain(
+      'NETWORK_UNIT=kravhantering-single-node-network.service',
+    )
+    expect(singleNodeGuide).toContain('systemctl --user start "$NETWORK_UNIT"')
+    expect(singleNodeGuide).not.toContain(
+      'podman network create "$STACK_NETWORK"',
+    )
+  })
+
   it('ships idempotent least-privilege SQL runtime-role provisioning without broad app roles', () => {
     const template = readWorkspaceFile(
       'containers/production/sqlserver/dba-provision.sql.template',

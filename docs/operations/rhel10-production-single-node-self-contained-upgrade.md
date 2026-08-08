@@ -109,7 +109,8 @@ configuration change.
      -C "/opt/kravhantering/releases/${VERSION}" \
      --strip-components=1
    sudo chcon -R -t container_file_t \
-     "/opt/kravhantering/releases/${VERSION}/nginx"
+     "/opt/kravhantering/releases/${VERSION}/nginx" \
+     "/opt/kravhantering/releases/${VERSION}/api-docs"
    ```
 
    Review the release manifest and lock file before switching `current`:

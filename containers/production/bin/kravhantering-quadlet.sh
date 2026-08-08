@@ -107,6 +107,22 @@ remove_managed_units() {
   done < <(managed_unit_names)
 }
 
+remove_stale_managed_units() {
+  local destination="$1" unit expected_unit keep
+  shift
+
+  while IFS= read -r unit; do
+    keep=false
+    for expected_unit in "$@"; do
+      if [[ "$unit" == "$expected_unit" ]]; then
+        keep=true
+        break
+      fi
+    done
+    [[ "$keep" == true ]] || rm -f -- "$destination/$unit"
+  done < <(managed_unit_names)
+}
+
 render_template() {
   local source="$1" destination="$2" content key value
   content="$(<"$source")"
@@ -142,20 +158,49 @@ render_units() {
 }
 
 install_units() {
-  local temporary_dir file destination
+  local temporary_dir quadlet_stage='' systemd_stage=''
+  local cleanup_command file staging_dir
+  local -a quadlet_files=() systemd_files=()
   temporary_dir="$(mktemp -d)"
-  trap 'rm -rf -- "$temporary_dir"' RETURN
+  printf -v cleanup_command 'rm -rf -- %q' "$temporary_dir"
+  trap "$cleanup_command" EXIT
   render_units "$temporary_dir"
 
   mkdir -p -- "$QUADLET_DIR" "$SYSTEMD_USER_DIR"
-  remove_managed_units "$QUADLET_DIR"
-  remove_managed_units "$SYSTEMD_USER_DIR"
+  quadlet_stage="$(mktemp -d -- "$QUADLET_DIR/.kravhantering-stage.XXXXXX")"
+  printf -v cleanup_command 'rm -rf -- %q %q' \
+    "$temporary_dir" "$quadlet_stage"
+  trap "$cleanup_command" EXIT
+  systemd_stage="$(mktemp -d -- "$SYSTEMD_USER_DIR/.kravhantering-stage.XXXXXX")"
+  printf -v cleanup_command 'rm -rf -- %q %q %q' \
+    "$temporary_dir" "$quadlet_stage" "$systemd_stage"
+  trap "$cleanup_command" EXIT
+
   while IFS= read -r file; do
-    destination="$QUADLET_DIR"
-    [[ "$file" == *.target ]] && destination="$SYSTEMD_USER_DIR"
-    cp -- "$temporary_dir/$file" "$destination/$file"
-    chmod 0644 "$destination/$file"
+    staging_dir="$quadlet_stage"
+    if [[ "$file" == *.target ]]; then
+      staging_dir="$systemd_stage"
+      systemd_files+=("$file")
+    else
+      quadlet_files+=("$file")
+    fi
+    cp -- "$temporary_dir/$file" "$staging_dir/$file"
+    chmod 0644 "$staging_dir/$file"
+    cmp -s -- "$temporary_dir/$file" "$staging_dir/$file" || \
+      fail "staged unit does not match rendered unit: $file"
   done < <(find "$temporary_dir" -maxdepth 1 -type f -printf '%f\n' | sort)
+
+  for file in "${quadlet_files[@]}"; do
+    mv -f -- "$quadlet_stage/$file" "$QUADLET_DIR/$file"
+  done
+  for file in "${systemd_files[@]}"; do
+    mv -f -- "$systemd_stage/$file" "$SYSTEMD_USER_DIR/$file"
+  done
+  remove_stale_managed_units "$QUADLET_DIR" "${quadlet_files[@]}"
+  remove_stale_managed_units "$SYSTEMD_USER_DIR" "${systemd_files[@]}"
+
+  rm -rf -- "$temporary_dir" "$quadlet_stage" "$systemd_stage"
+  trap - EXIT
 }
 
 COMMAND="${1-}"
@@ -209,11 +254,15 @@ case "$COMMAND" in
     ;;
   remove)
     [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
+    target="$(topology_target "$TOPOLOGY")"
+    systemctl --user stop "$target"
+    systemctl --user disable "$target"
     remove_managed_units "$QUADLET_DIR"
     remove_managed_units "$SYSTEMD_USER_DIR"
+    systemctl --user daemon-reload
     printf 'Removed managed unit files from %s and %s; named volumes remain.\n' \
       "$QUADLET_DIR" "$SYSTEMD_USER_DIR"
-    printf '%s\n' 'Run: systemctl --user daemon-reload'
+    printf '%s\n' 'Reloaded the user systemd manager.'
     ;;
   print-network)
     [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'

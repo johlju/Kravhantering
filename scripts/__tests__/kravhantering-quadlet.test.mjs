@@ -16,7 +16,7 @@ function createFixture(releaseEnv) {
   const releaseEnvPath = path.join(root, 'release.env')
   const outputDir = path.join(root, 'rendered')
   fs.writeFileSync(releaseEnvPath, releaseEnv)
-  return { outputDir, releaseEnvPath }
+  return { outputDir, releaseEnvPath, root }
 }
 
 function releaseEnv(overrides = {}) {
@@ -176,6 +176,24 @@ describe('kravhantering Quadlet helper', () => {
     const fixture = createFixture(releaseEnv())
     const quadletDir = path.join(fixture.outputDir, 'containers')
     const systemdDir = path.join(fixture.outputDir, 'systemd')
+    fs.mkdirSync(quadletDir, { recursive: true })
+    fs.mkdirSync(systemdDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(quadletDir, 'kravhantering-sqlserver.container'),
+      'stale topology unit\n',
+    )
+    fs.writeFileSync(
+      path.join(systemdDir, 'kravhantering-single-node.target'),
+      'stale topology target\n',
+    )
+    fs.writeFileSync(
+      path.join(quadletDir, 'operator-owned.container'),
+      'unmanaged\n',
+    )
+    fs.writeFileSync(
+      path.join(systemdDir, 'operator-owned.target'),
+      'unmanaged\n',
+    )
     const result = runHelper(
       ['install', '--topology', 'app-node-tls'],
       fixture,
@@ -190,9 +208,128 @@ describe('kravhantering Quadlet helper', () => {
       'kravhantering-app-node.network',
       'kravhantering-app-runtime.container',
       'kravhantering-nginx.container',
+      'operator-owned.container',
+    ])
+    expect(fs.readdirSync(systemdDir).sort()).toEqual([
+      'kravhantering-app-node.target',
+      'operator-owned.target',
+    ])
+    expect(
+      fs.statSync(path.join(quadletDir, 'kravhantering-nginx.container')).mode &
+        0o777,
+    ).toBe(0o644)
+  })
+
+  it('leaves active units unchanged when replacement staging fails', () => {
+    const fixture = createFixture(releaseEnv())
+    const quadletDir = path.join(fixture.outputDir, 'containers')
+    const systemdDir = path.join(fixture.outputDir, 'systemd')
+    const mockBin = path.join(fixture.root, 'bin')
+    fs.mkdirSync(quadletDir, { recursive: true })
+    fs.mkdirSync(systemdDir, { recursive: true })
+    fs.mkdirSync(mockBin)
+    fs.writeFileSync(
+      path.join(quadletDir, 'kravhantering-nginx.container'),
+      'active nginx unit\n',
+    )
+    fs.writeFileSync(
+      path.join(systemdDir, 'kravhantering-app-node.target'),
+      'active target\n',
+    )
+    fs.writeFileSync(
+      path.join(mockBin, 'cp'),
+      [
+        '#!/usr/bin/env bash',
+        'case "$2" in',
+        '  */kravhantering-nginx.container) exit 42 ;;',
+        '  *) exec /bin/cp "$@" ;;',
+        'esac',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    )
+
+    const result = runHelper(
+      ['install', '--topology', 'app-node-tls'],
+      fixture,
+      {
+        KRAVHANTERING_QUADLET_DIR: quadletDir,
+        KRAVHANTERING_SYSTEMD_USER_DIR: systemdDir,
+        PATH: `${mockBin}:${process.env.PATH}`,
+      },
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(
+      fs.readFileSync(
+        path.join(quadletDir, 'kravhantering-nginx.container'),
+        'utf8',
+      ),
+    ).toBe('active nginx unit\n')
+    expect(
+      fs.readFileSync(
+        path.join(systemdDir, 'kravhantering-app-node.target'),
+        'utf8',
+      ),
+    ).toBe('active target\n')
+    expect(fs.readdirSync(quadletDir)).toEqual([
+      'kravhantering-nginx.container',
     ])
     expect(fs.readdirSync(systemdDir)).toEqual([
       'kravhantering-app-node.target',
     ])
+  })
+
+  it('stops and disables a topology before removal, then reloads systemd', () => {
+    const fixture = createFixture(releaseEnv())
+    const quadletDir = path.join(fixture.outputDir, 'containers')
+    const systemdDir = path.join(fixture.outputDir, 'systemd')
+    const mockBin = path.join(fixture.root, 'bin')
+    const systemctlLog = path.join(fixture.root, 'systemctl.log')
+    fs.mkdirSync(quadletDir, { recursive: true })
+    fs.mkdirSync(systemdDir, { recursive: true })
+    fs.mkdirSync(mockBin)
+    fs.writeFileSync(
+      path.join(quadletDir, 'kravhantering-nginx.container'),
+      'managed\n',
+    )
+    fs.writeFileSync(
+      path.join(systemdDir, 'kravhantering-single-node.target'),
+      'managed\n',
+    )
+    fs.writeFileSync(
+      path.join(mockBin, 'systemctl'),
+      [
+        '#!/usr/bin/env bash',
+        'printf \'%s\\n\' "$*" >>"$SYSTEMCTL_LOG"',
+        'if [[ "$*" == "--user daemon-reload" ]]; then',
+        '  [[ ! -e "$KRAVHANTERING_QUADLET_DIR/kravhantering-nginx.container" ]]',
+        '  [[ ! -e "$KRAVHANTERING_SYSTEMD_USER_DIR/kravhantering-single-node.target" ]]',
+        'fi',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    )
+
+    const result = runHelper(['remove', '--topology', 'single-node'], fixture, {
+      KRAVHANTERING_QUADLET_DIR: quadletDir,
+      KRAVHANTERING_SYSTEMD_USER_DIR: systemdDir,
+      PATH: `${mockBin}:${process.env.PATH}`,
+      SYSTEMCTL_LOG: systemctlLog,
+    })
+
+    expect(result.status).toBe(0)
+    expect(fs.readFileSync(systemctlLog, 'utf8')).toBe(
+      [
+        '--user stop kravhantering-single-node.target',
+        '--user disable kravhantering-single-node.target',
+        '--user daemon-reload',
+        '',
+      ].join('\n'),
+    )
+    expect(result.stdout).toContain(
+      `Removed managed unit files from ${quadletDir} and ${systemdDir}; named volumes remain.`,
+    )
+    expect(result.stdout).toContain('Reloaded the user systemd manager.')
   })
 })

@@ -393,7 +393,8 @@ sudo tar -xzf "kravhantering-production-deploy-${VERSION}.tar.gz" \
   -C "/opt/kravhantering/releases/${VERSION}" \
   --strip-components=1
 sudo chcon -R -t container_file_t \
-  "/opt/kravhantering/releases/${VERSION}/nginx"
+  "/opt/kravhantering/releases/${VERSION}/nginx" \
+  "/opt/kravhantering/releases/${VERSION}/api-docs"
 ```
 
 ### Activate the Release
@@ -1222,13 +1223,26 @@ set +a
 STACK_NETWORK="$(
   bin/kravhantering-quadlet.sh print-network --topology single-node
 )"
+NETWORK_UNIT=kravhantering-single-node-network.service
 DEMO_USERS_FILE=$PWD/keycloak/demo-users.not-for-production.json
 DEMO_USERS_CONTAINER_FILE=/tmp/demo-users.not-for-production.json
 SCRIPT_FILE=$PWD/scripts/keycloak-demo-users.mjs
 SCRIPT_CONTAINER_FILE=/tmp/keycloak-demo-users.mjs
 
-podman network exists "$STACK_NETWORK" || \
-  podman network create "$STACK_NETWORK"
+if ! systemctl --user cat "$NETWORK_UNIT" >/dev/null; then
+  echo "Required Quadlet network unit is missing: $NETWORK_UNIT" >&2
+  exit 1
+fi
+if ! systemctl --user is-active --quiet "$NETWORK_UNIT"; then
+  systemctl --user start "$NETWORK_UNIT" || {
+    echo "Could not start Quadlet network unit: $NETWORK_UNIT" >&2
+    exit 1
+  }
+fi
+if ! podman network exists "$STACK_NETWORK"; then
+  echo "Quadlet network is unavailable after starting $NETWORK_UNIT" >&2
+  exit 1
+fi
 
 podman run --rm --pull=never --network "$STACK_NETWORK" \
   --entrypoint node --user 0:0 \

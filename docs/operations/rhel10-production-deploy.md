@@ -269,7 +269,8 @@ sudo tar -xzf "kravhantering-production-deploy-${VERSION}.tar.gz" \
   -C "/opt/kravhantering/releases/${VERSION}" \
   --strip-components=1
 sudo chcon -R -t container_file_t \
-  "/opt/kravhantering/releases/${VERSION}/nginx"
+  "/opt/kravhantering/releases/${VERSION}/nginx" \
+  "/opt/kravhantering/releases/${VERSION}/api-docs"
 ```
 
 ### Activate the Release
