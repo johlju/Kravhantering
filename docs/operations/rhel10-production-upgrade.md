@@ -290,9 +290,12 @@ place.
    release's Operator Upgrade Notes before running `db-job migrate`.
 
    Migration 0054 and the post-migration reconciler apply the explicit runtime
-   manifest and verify the `DB_RUNTIME_USER` membership without changing other
-   roles or direct user grants. Keep transitional `db_datareader` and
-   `db_datawriter`; only the db-job identity has migration permission.
+   manifest. The custom membership and manifest grants are verified before
+   removing the managed runtime user's obsolete `db_datareader` and
+   `db_datawriter` memberships. Other user roles and direct grants remain
+   unchanged; only the db-job identity has migration permission. A successful
+   `permission-status` report has `compatible: true` and an empty `legacyRoles`
+   array for every managed runtime user.
 
    ```bash
    sudo -iu kravhantering
@@ -526,10 +529,10 @@ point taken before the upgrade. Use the captured migration evidence to confirm
 which database head was observed before and after the failed upgrade. The
 supported sequence is:
 
-Migration 0054's down path removes only the custom role, its grants, and its
-memberships; runtime/migration users and legacy fixed-role memberships remain.
-The supported production rollback remains restoration of the pre-upgrade
-database state as described below.
+Do not run migration 0054's down path against the restricted runtime identity:
+after this upgrade there are no broad memberships to preserve application
+access. The supported production rollback restores the pre-upgrade role
+memberships as one database state with the schema and data, as described below.
 
 1. Disable traffic to all app nodes.
 

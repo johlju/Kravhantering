@@ -113,6 +113,11 @@ describe('least-privilege SQL Server runtime role', () => {
       )
         ALTER ROLE [${SQL_SERVER_RUNTIME_ROLE}] ADD MEMBER [${RUNTIME_LOGIN}]
 
+      IF IS_ROLEMEMBER(N'db_datareader', N'${RUNTIME_LOGIN}') <> 1
+        ALTER ROLE [db_datareader] ADD MEMBER [${RUNTIME_LOGIN}]
+      IF IS_ROLEMEMBER(N'db_datawriter', N'${RUNTIME_LOGIN}') <> 1
+        ALTER ROLE [db_datawriter] ADD MEMBER [${RUNTIME_LOGIN}]
+
       IF NOT EXISTS (
         SELECT 1
         FROM sys.database_role_members AS members
@@ -163,7 +168,7 @@ describe('least-privilege SQL Server runtime role', () => {
     }
   })
 
-  it('reconciles manifest grants without altering site-owned role memberships', async () => {
+  it('reconciles manifest grants while reporting unexpected custom-role nesting', async () => {
     await adminDb.query(`
       GRANT ALTER ON SCHEMA::[dbo] TO [${SQL_SERVER_RUNTIME_ROLE}]
       GRANT IMPERSONATE ON USER::[${MIGRATION_LOGIN}]
@@ -493,7 +498,7 @@ describe('least-privilege SQL Server runtime role', () => {
     ).rejects.toThrow(/permission|denied/u)
   })
 
-  it('rolls back only the custom role while retaining users and legacy memberships', async () => {
+  it('retains restored legacy memberships when rolling back the custom role', async () => {
     await adminDb.query(`
       ALTER ROLE [db_datareader] ADD MEMBER [${RUNTIME_LOGIN}]
       ALTER ROLE [db_datawriter] ADD MEMBER [${RUNTIME_LOGIN}]

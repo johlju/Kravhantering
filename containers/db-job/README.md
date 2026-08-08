@@ -25,8 +25,8 @@ The image entrypoint is `node scripts/db-sqlserver-admin.mjs`, so Compose or
 manual runs pass the admin command as arguments:
 
 - `bootstrap` creates the database plus distinct app and job SQL principals,
-  their `dbo` default schema, transitional memberships, and the
-  `kravhantering_runtime` role membership. It does not rotate existing logins.
+  their `dbo` default schema, and the `kravhantering_runtime` role membership.
+  It does not rotate existing logins.
 - `migration-status` prints JSON evidence with expected, observed, pending and
   unknown TypeORM migrations without modifying the database.
 - `migrate` applies TypeORM migrations, reconciles the runtime permission
@@ -48,18 +48,16 @@ seed, archiving-retention demo seed, tests, and documentation.
 [`runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
 is the release-versioned authority for exact object, operation, and
 column-scoped grants. New objects require manifest inclusion for access through
-the custom `kravhantering_runtime` role; transitional `db_datareader` and
-`db_datawriter` memberships can still provide access inherited from those
-fixed roles. Within the custom role, the runtime can read but not write
-`dbo.migrations`; protected audit and review tables have narrower insert,
-update-column, and delete boundaries. The reconciler removes unexpected direct
-permissions from the project role but does not modify other roles, direct user
-grants, or site-owned extension-role memberships. Such parent-role drift makes
-verification fail for an operator to resolve explicitly.
-
-Existing app membership in `db_datareader` and `db_datawriter` remains during
-the transition to #485. Migrations and required seed continue to use the
-separate db-job login with `db_owner`.
+the custom `kravhantering_runtime` role. Within the custom role, the runtime can
+read but not write `dbo.migrations`; protected audit and review tables have
+narrower insert, update-column, and delete boundaries. The reconciler removes
+unexpected direct permissions from the project role. For every managed runtime
+user, it establishes and verifies the custom grants and membership before it
+removes obsolete `db_datareader` and `db_datawriter` memberships. It does not
+modify other user roles, direct user grants, or site-owned extension-role
+memberships. Such parent-role drift makes verification fail for an operator to
+resolve explicitly. Migrations and required seed continue to use the separate
+db-job login with `db_owner`.
 
 The image installs only the dependency subset needed by the one-shot job:
 `mssql`, `typeorm`, and `reflect-metadata`. It deliberately does not include

@@ -104,16 +104,18 @@ The release-versioned manifest in
 [`typeorm/runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
 lists exact object/operation grants, including protected column-scoped updates;
 new tables receive nothing implicitly through `kravhantering_runtime`.
-Transitional `db_datareader` and `db_datawriter` memberships still provide
-fixed-role access until #485. `db:migrate` reconciles direct grants after
-migrations and verifies `DB_RUNTIME_USER` membership. It does not alter other
+`db:migrate` reconciles direct grants after migrations, establishes and verifies
+`DB_RUNTIME_USER` membership, and then removes that user's obsolete
+`db_datareader` and `db_datawriter` memberships. It does not alter other user
 roles or direct user permissions, and a role-only runtime login cannot run
 TypeORM migrations.
 
 Use `npm run db:permission-status` for secret-free JSON evidence or
 `npm run db:permission-reconcile` for an explicit repair. Both report the
 manifest version/digest, role presence, missing/unexpected grants, managed-user
-presence and membership, and unexpected parent roles.
+presence and membership, obsolete broad memberships, and unexpected parent
+roles. A compatible report has an empty `legacyRoles` array for every managed
+runtime user.
 
 The Next.js runtime builds one shared TypeORM `DataSource` per process. The
 runtime DataSource keeps SQL Server behavior explicit:

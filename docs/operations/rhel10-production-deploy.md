@@ -485,7 +485,7 @@ The preferred production path is DBA-pre-provisioned SQL Server. The DBA or
 database platform tooling must provide:
 
 - database name, normally `kravhantering`
-- app runtime login/user with `db_datareader` and `db_datawriter`
+- app runtime login/user with only the custom `kravhantering_runtime` role
 - db-job login/user with `db_owner`
 - custom `kravhantering_runtime` role and app-user membership; db-job applies
   the release-versioned object/operation/column permission manifest
@@ -496,13 +496,14 @@ The bundle includes `sqlserver/dba-provision.sql.template` for sites that want
 a T-SQL starting point. Sites using provisioning tools can implement the same
 contract without running the template.
 
-The custom role is provisioned beside the existing broad app memberships for
-this transition. Do not remove `db_datareader` or `db_datawriter` yet. The
+The app runtime must not be a member of `db_datareader` or `db_datawriter`. The
 runtime role intentionally has no DDL permission; only the separate db-job
 identity may apply TypeORM migrations.
 
 Role reconciliation removes unexpected direct permissions from the custom role
-without changing other roles, direct user grants, or site extensions. An
+and migrates managed runtime users off those two broad roles. Custom membership
+and manifest grants are verified before removing the obsolete memberships.
+Other user roles, direct user grants, and site extensions remain unchanged. An
 unexpected parent role is reported as incompatible for explicit DBA handling.
 Future tables do not inherit access; their required operations must first be
 added to the release manifest.

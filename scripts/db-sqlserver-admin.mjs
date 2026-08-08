@@ -159,6 +159,7 @@ export const DEFAULT_WAIT_RETRY_MS = 1_000
 export const DEFAULT_WAIT_TIMEOUT_MS = 30_000
 const DB_ADMIN_IMAGE_ENV = 'KRAVHANTERING_DB_ADMIN_IMAGE'
 const DB_JOB_IMAGE_KIND = 'db-job'
+const LEGACY_RUNTIME_ROLES = Object.freeze(['db_datareader', 'db_datawriter'])
 const CORE_COMMANDS = Object.freeze([
   'health',
   'wait',
@@ -911,7 +912,7 @@ export async function bootstrapSqlServerDatabase(
       defaultPassword: env.DB_BOOTSTRAP_APP_PASSWORD,
       defaultUsername: env.DB_BOOTSTRAP_APP_USER,
       passwordEnv: 'DB_BOOTSTRAP_APP_PASSWORD',
-      roles: ['db_datareader', 'db_datawriter', SQL_SERVER_RUNTIME_ROLE],
+      roles: [SQL_SERVER_RUNTIME_ROLE],
       userEnv: 'DB_BOOTSTRAP_APP_USER',
     }),
   ]
@@ -1041,7 +1042,23 @@ export async function getSqlServerRuntimePermissionStatus(
         `SELECT
            principals.[name],
            principals.default_schema_name AS defaultSchema,
-           CAST(CASE WHEN members.member_principal_id IS NULL THEN 0 ELSE 1 END AS bit) AS isMember
+           CAST(CASE WHEN members.member_principal_id IS NULL THEN 0 ELSE 1 END AS bit) AS isMember,
+           CAST(CASE WHEN EXISTS (
+             SELECT 1
+             FROM sys.database_role_members AS reader_members
+             INNER JOIN sys.database_principals AS reader_roles
+               ON reader_roles.principal_id = reader_members.role_principal_id
+             WHERE reader_members.member_principal_id = principals.principal_id
+               AND reader_roles.[name] = N'db_datareader'
+           ) THEN 1 ELSE 0 END AS bit) AS isDataReader,
+           CAST(CASE WHEN EXISTS (
+             SELECT 1
+             FROM sys.database_role_members AS writer_members
+             INNER JOIN sys.database_principals AS writer_roles
+               ON writer_roles.principal_id = writer_members.role_principal_id
+             WHERE writer_members.member_principal_id = principals.principal_id
+               AND writer_roles.[name] = N'db_datawriter'
+           ) THEN 1 ELSE 0 END AS bit) AS isDataWriter
          FROM sys.database_principals AS principals
          LEFT JOIN sys.database_role_members AS members
            ON members.member_principal_id = principals.principal_id
@@ -1095,8 +1112,13 @@ export async function getSqlServerRuntimePermissionStatus(
   const foundRuntimeUsers = new Map(runtimeUserRows.map(row => [row.name, row]))
   const runtimeUsers = expectedRuntimeUsers.map(name => {
     const user = foundRuntimeUsers.get(name)
+    const legacyRoles = [
+      user?.isDataReader ? LEGACY_RUNTIME_ROLES[0] : null,
+      user?.isDataWriter ? LEGACY_RUNTIME_ROLES[1] : null,
+    ].filter(Boolean)
     return {
       defaultSchema: user?.defaultSchema ?? null,
+      legacyRoles,
       member: Boolean(user?.isMember),
       name,
       present: Boolean(user),
@@ -1109,7 +1131,11 @@ export async function getSqlServerRuntimePermissionStatus(
     unexpectedGrants.length === 0 &&
     unexpectedParentRoles.length === 0 &&
     runtimeUsers.every(
-      user => user.present && user.member && user.defaultSchema === 'dbo',
+      user =>
+        user.present &&
+        user.member &&
+        user.defaultSchema === 'dbo' &&
+        user.legacyRoles.length === 0,
     )
 
   return {
@@ -1137,6 +1163,9 @@ export function assertRuntimePermissionStatus(status) {
   const invalidDefaultSchemas = status.runtimeUsers
     .filter(user => user.present && user.defaultSchema !== 'dbo')
     .map(user => `${user.name}=${user.defaultSchema ?? 'none'}`)
+  const obsoleteMemberships = status.runtimeUsers
+    .filter(user => user.legacyRoles.length > 0)
+    .map(user => `${user.name}=${user.legacyRoles.join(',')}`)
   const details = [
     !status.role.present ? 'runtime role is missing' : null,
     missingUsers.length > 0
@@ -1147,6 +1176,9 @@ export function assertRuntimePermissionStatus(status) {
       : null,
     invalidDefaultSchemas.length > 0
       ? `runtime database user default schema must be dbo: ${invalidDefaultSchemas.join(', ')}`
+      : null,
+    obsoleteMemberships.length > 0
+      ? `obsolete broad runtime role memberships remain: ${obsoleteMemberships.join('; ')}`
       : null,
     status.missingGrants.length > 0
       ? `${status.missingGrants.length} manifest grant(s) are missing`
@@ -1161,6 +1193,25 @@ export function assertRuntimePermissionStatus(status) {
   throw new Error(
     `SQL runtime permission verification failed: ${details.join('; ')}.`,
   )
+}
+
+function assertRuntimePermissionsReadyForLegacyRemoval(status) {
+  const compatible =
+    status.role.present &&
+    status.missingGrants.length === 0 &&
+    status.unexpectedGrants.length === 0 &&
+    status.unexpectedParentRoles.length === 0 &&
+    status.runtimeUsers.every(
+      user => user.present && user.member && user.defaultSchema === 'dbo',
+    )
+  assertRuntimePermissionStatus({
+    ...status,
+    compatible,
+    runtimeUsers: status.runtimeUsers.map(user => ({
+      ...user,
+      legacyRoles: [],
+    })),
+  })
 }
 
 export async function reconcileSqlServerRuntimePermissions(
@@ -1190,6 +1241,18 @@ export async function reconcileSqlServerRuntimePermissions(
     await queryExecutor.query(
       `ALTER ROLE [${SQL_SERVER_RUNTIME_ROLE}] ADD MEMBER ${quoteSqlServerIdentifier(user.name)}`,
     )
+  }
+  const readyForLegacyRemoval = await getSqlServerRuntimePermissionStatus(
+    queryExecutor,
+    { expectedRuntimeUsers },
+  )
+  assertRuntimePermissionsReadyForLegacyRemoval(readyForLegacyRemoval)
+  for (const user of readyForLegacyRemoval.runtimeUsers) {
+    for (const role of user.legacyRoles) {
+      await queryExecutor.query(
+        `ALTER ROLE ${quoteSqlServerIdentifier(role)} DROP MEMBER ${quoteSqlServerIdentifier(user.name)}`,
+      )
+    }
   }
   const status = await getSqlServerRuntimePermissionStatus(queryExecutor, {
     expectedRuntimeUsers,

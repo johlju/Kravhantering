@@ -1,14 +1,11 @@
 /*
-  cSpell:words datawriter
-
   SQL Server pre-provisioning template for the external database path.
 
   Replace every value in angle brackets before running. The migration/job
   principal needs db_owner because TypeORM migrations create and alter schema.
   The custom runtime role's release-versioned grants are reconciled by db-job
   after migrations; this template owns principals and initial membership only.
-  The app principal keeps the broad read/write data roles during the transition
-  to the custom role.
+  The app principal receives only the custom runtime role.
 */
 
 USE [master];
@@ -76,34 +73,6 @@ IF NOT EXISTS (
 )
 BEGIN
   ALTER ROLE [db_owner] ADD MEMBER [<db-job-login>];
-END
-
-IF NOT EXISTS (
-  SELECT 1
-  FROM sys.database_role_members AS members
-  INNER JOIN sys.database_principals AS roles
-    ON members.role_principal_id = roles.principal_id
-  INNER JOIN sys.database_principals AS principals
-    ON members.member_principal_id = principals.principal_id
-  WHERE roles.name = N'db_datareader'
-    AND principals.name = N'<app-login>'
-)
-BEGIN
-  ALTER ROLE [db_datareader] ADD MEMBER [<app-login>];
-END
-
-IF NOT EXISTS (
-  SELECT 1
-  FROM sys.database_role_members AS members
-  INNER JOIN sys.database_principals AS roles
-    ON members.role_principal_id = roles.principal_id
-  INNER JOIN sys.database_principals AS principals
-    ON members.member_principal_id = principals.principal_id
-  WHERE roles.name = N'db_datawriter'
-    AND principals.name = N'<app-login>'
-)
-BEGIN
-  ALTER ROLE [db_datawriter] ADD MEMBER [<app-login>];
 END
 
 IF NOT EXISTS (

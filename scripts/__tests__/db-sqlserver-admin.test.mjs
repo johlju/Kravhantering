@@ -522,8 +522,9 @@ describe('db-sqlserver-admin.mjs', () => {
     )
     expect(queries[1]).not.toContain('GRANT SELECT ON OBJECT::')
     expect(queries[1]).toContain('ALTER ROLE [db_owner]')
-    expect(queries[1]).toContain('ALTER ROLE [db_datareader]')
-    expect(queries[1]).toContain('ALTER ROLE [db_datawriter]')
+    expect(queries[1]).not.toContain('ALTER ROLE [db_datareader]')
+    expect(queries[1]).not.toContain('ALTER ROLE [db_datawriter]')
+    expect(queries[1]).toContain('ALTER ROLE [kravhantering_runtime]')
     expect(result).toEqual({
       appUser: 'kravhantering_app',
       database: 'kravhantering',
@@ -677,6 +678,8 @@ describe('db-sqlserver-admin.mjs', () => {
         return [
           {
             defaultSchema: 'dbo',
+            isDataReader: true,
+            isDataWriter: false,
             isMember: false,
             name: 'kravhantering_app',
           },
@@ -701,6 +704,7 @@ describe('db-sqlserver-admin.mjs', () => {
       runtimeUsers: [
         {
           defaultSchema: 'dbo',
+          legacyRoles: ['db_datareader'],
           member: false,
           name: 'kravhantering_app',
           present: true,
@@ -742,6 +746,8 @@ describe('db-sqlserver-admin.mjs', () => {
         return [
           {
             defaultSchema: 'dbo',
+            isDataReader: false,
+            isDataWriter: false,
             isMember: true,
             name: 'kravhantering_app',
           },
@@ -762,6 +768,7 @@ describe('db-sqlserver-admin.mjs', () => {
       runtimeUsers: [
         {
           defaultSchema: 'dbo',
+          legacyRoles: [],
           member: true,
           name: 'kravhantering_app',
           present: true,
@@ -801,12 +808,14 @@ describe('db-sqlserver-admin.mjs', () => {
       runtimeUsers: [
         {
           defaultSchema: null,
+          legacyRoles: [],
           member: false,
           name: 'missing_user',
           present: false,
         },
         {
           defaultSchema: null,
+          legacyRoles: ['db_datareader', 'db_datawriter'],
           member: false,
           name: 'drifting_user',
           present: true,
@@ -817,16 +826,23 @@ describe('db-sqlserver-admin.mjs', () => {
     }
 
     expect(() => assertRuntimePermissionStatus(status)).toThrow(
-      'SQL runtime permission verification failed: runtime role is missing; runtime database user is missing: missing_user; runtime role membership is missing: drifting_user; runtime database user default schema must be dbo: drifting_user=none; 1 manifest grant(s) are missing; 1 unexpected direct grant(s) remain; runtime role is nested in: db_owner.',
+      'SQL runtime permission verification failed: runtime role is missing; runtime database user is missing: missing_user; runtime role membership is missing: drifting_user; runtime database user default schema must be dbo: drifting_user=none; obsolete broad runtime role memberships remain: drifting_user=db_datareader,db_datawriter; 1 manifest grant(s) are missing; 1 unexpected direct grant(s) remain; runtime role is nested in: db_owner.',
     )
     expect(() =>
       assertRuntimePermissionStatus({ ...status, compatible: true }),
     ).not.toThrow()
   })
 
-  it('adds missing runtime role membership before verifying compatibility', async () => {
+  it('establishes the custom role before removing obsolete broad memberships', async () => {
+    const events = []
     let member = false
+    let reader = true
+    let writer = true
     const query = vi.fn(async sql => {
+      if (sql.includes('DECLARE @runtimePermissionSql')) {
+        events.push('grants')
+        return undefined
+      }
       if (sql.includes('FROM sys.database_permissions')) {
         return grantedRuntimePermissionRows()
       }
@@ -834,6 +850,8 @@ describe('db-sqlserver-admin.mjs', () => {
         return [
           {
             defaultSchema: 'dbo',
+            isDataReader: reader,
+            isDataWriter: writer,
             isMember: member,
             name: 'runtime]user',
           },
@@ -841,7 +859,18 @@ describe('db-sqlserver-admin.mjs', () => {
       }
       if (sql.includes('SELECT roles.[name]')) return []
       if (sql.includes('ALTER ROLE [kravhantering_runtime] ADD MEMBER')) {
+        events.push('add-runtime')
         member = true
+        return undefined
+      }
+      if (sql.includes('ALTER ROLE [db_datareader] DROP MEMBER')) {
+        events.push('drop-reader')
+        reader = false
+        return undefined
+      }
+      if (sql.includes('ALTER ROLE [db_datawriter] DROP MEMBER')) {
+        events.push('drop-writer')
+        writer = false
         return undefined
       }
       if (sql.includes('SELECT [name], [type]')) {
@@ -859,6 +888,18 @@ describe('db-sqlserver-admin.mjs', () => {
     expect(query).toHaveBeenCalledWith(
       'ALTER ROLE [kravhantering_runtime] ADD MEMBER [runtime]]user]',
     )
+    expect(query).toHaveBeenCalledWith(
+      'ALTER ROLE [db_datareader] DROP MEMBER [runtime]]user]',
+    )
+    expect(query).toHaveBeenCalledWith(
+      'ALTER ROLE [db_datawriter] DROP MEMBER [runtime]]user]',
+    )
+    expect(events).toEqual([
+      'grants',
+      'add-runtime',
+      'drop-reader',
+      'drop-writer',
+    ])
   })
 
   it('stops reconciliation when the managed runtime user is missing', async () => {

@@ -1631,11 +1631,17 @@ describe('trusted container release helpers', () => {
     expect(singleNodeGuide).not.toMatch(/-m 0640 ca\.crt/u)
   })
 
-  it('ships idempotent least-privilege SQL runtime-role provisioning beside legacy roles', () => {
+  it('ships idempotent least-privilege SQL runtime-role provisioning without broad app roles', () => {
     const template = readWorkspaceFile(
       'containers/production/sqlserver/dba-provision.sql.template',
     )
     const dockerfile = readWorkspaceFile('containers/app/Dockerfile')
+    const upgradeGuides = [
+      readWorkspaceFile('docs/operations/rhel10-production-upgrade.md'),
+      readWorkspaceFile(
+        'docs/operations/rhel10-production-single-node-self-contained-upgrade.md',
+      ),
+    ]
 
     expect(template).toContain("AND [type] <> N'R'")
     expect(template).toContain(
@@ -1650,12 +1656,21 @@ describe('trusted container release helpers', () => {
     )
     expect(template).not.toContain('GRANT SELECT ON OBJECT::')
     expect(template).not.toContain('ON SCHEMA::[dbo]')
-    expect(template).toContain('ALTER ROLE [db_datareader]')
-    expect(template).toContain('ALTER ROLE [db_datawriter]')
+    expect(template).not.toContain('ALTER ROLE [db_datareader]')
+    expect(template).not.toContain('ALTER ROLE [db_datawriter]')
     expect(template).toContain('ALTER ROLE [kravhantering_runtime]')
     expect(dockerfile).toContain(
       'typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs',
     )
+    for (const upgradeGuide of upgradeGuides) {
+      const normalizedUpgradeGuide = upgradeGuide.replaceAll(/\s+/gu, ' ')
+      expect(normalizedUpgradeGuide).toContain(
+        'custom membership and manifest grants are verified before removing',
+      )
+      expect(normalizedUpgradeGuide).toContain(
+        'restores the pre-upgrade role memberships as one database state',
+      )
+    }
   })
 
   it('ships nginx templates with dynamic upstream DNS resolution', () => {

@@ -2914,11 +2914,12 @@ Migration 0054 creates the custom `kravhantering_runtime` database role. The
 release-versioned manifest in
 [`typeorm/runtime-permission-manifest.mjs`](../../typeorm/runtime-permission-manifest.mjs)
 is authoritative for exact object, operation, and update-column grants. Future
-tables receive no implicit access through `kravhantering_runtime`, although
-transitional `db_datareader` and `db_datawriter` memberships still provide
-fixed-role access. Reconciliation removes unexpected direct permissions from
-the project role without changing other roles, user grants, or site-owned
-extension roles; unexpected parent roles fail verification.
+tables receive no implicit access through `kravhantering_runtime`.
+Reconciliation removes unexpected direct permissions from the project role.
+For managed runtime users, it verifies the custom grants and membership before
+removing obsolete `db_datareader` and `db_datawriter` memberships. Other user
+roles, direct user grants, and site-owned extension roles remain unchanged;
+unexpected parent roles fail verification.
 
 Through `kravhantering_runtime`, `dbo.migrations` is `SELECT`-only.
 `action_audit_events` permits `SELECT`, `INSERT`, and `UPDATE` only for
@@ -2929,9 +2930,8 @@ or stored-procedure execution grant.
 
 The application runtime and the migration job use separate SQL Server logins.
 The migration login retains `db_owner` so TypeORM can apply versioned schema
-changes. Existing application-login membership in `db_datareader` and
-`db_datawriter` remains during the transition to the custom role. Bootstrap
-assigns the custom and transitional memberships. During ordinary upgrades,
-reconciliation adds any explicitly declared `DB_RUNTIME_USER` principal that
-lacks `kravhantering_runtime` membership and then verifies membership. It does
-not change the migration login's `db_owner` privileges.
+changes. Bootstrap assigns only the custom role to the application login.
+During ordinary upgrades, reconciliation adds any explicitly declared
+`DB_RUNTIME_USER` principal that lacks `kravhantering_runtime` membership,
+verifies the restricted permission contract, and removes its obsolete broad
+memberships. It does not change the migration login's `db_owner` privileges.
