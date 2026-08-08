@@ -140,6 +140,19 @@ describe('db-sqlserver-admin.mjs', () => {
     )
   })
 
+  it('replaces only credentials in an explicit runtime URL for migrations', () => {
+    expect(
+      getSqlServerMigrationUrl({
+        DATABASE_URL:
+          'mssql://runtime:Runtime123!@external-db:1444/site_database?encrypt=true&trustServerCertificate=false',
+        DB_MIGRATION_PASSWORD: 'Migration123!',
+        DB_MIGRATION_USER: 'job',
+      }),
+    ).toBe(
+      'mssql://job:Migration123!@external-db:1444/site_database?encrypt=true&trustServerCertificate=false',
+    )
+  })
+
   it('parses SQL Server connection strings into stable config fields', () => {
     expect(
       parseSqlServerConnectionString(
@@ -361,6 +374,36 @@ describe('db-sqlserver-admin.mjs', () => {
       database: 'kravhantering',
       server: '127.0.0.1',
     })
+  })
+
+  it('routes the reset CLI command through the bootstrap administrator', async () => {
+    const connectImpl = vi.fn(async () => ({
+      close: vi.fn(async () => undefined),
+      request: vi.fn(() => ({
+        input: vi.fn().mockReturnThis(),
+        query: vi.fn(async () => undefined),
+      })),
+    }))
+
+    const exitCode = await main(['reset'], {
+      connectImpl,
+      consoleObj: { error: vi.fn(), log: vi.fn() },
+      env: {
+        DATABASE_URL:
+          'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering?encrypt=true&trustServerCertificate=true',
+        DB_BOOTSTRAP_ADMIN_PASSWORD: 'Admin123!',
+        DB_BOOTSTRAP_ADMIN_USER: 'sa',
+      },
+    })
+
+    expect(exitCode).toBe(0)
+    expect(connectImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        database: 'master',
+        password: 'Admin123!',
+        user: 'sa',
+      }),
+    )
   })
 
   it('bootstraps the database and runtime principals with the admin login', async () => {

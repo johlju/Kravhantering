@@ -367,12 +367,10 @@ export function getSqlServerMigrationUrl(env = process.env) {
       'DB_MIGRATION_USER and DB_MIGRATION_PASSWORD must be configured together.',
     )
   }
-  return buildSqlServerDatabaseUrlFromParts({
-    ...env,
-    DB_PASSWORD: password,
-    DB_USER: username,
-    DATABASE_URL: undefined,
-  })
+  const url = new URL(getSqlServerDatabaseUrl(env))
+  url.username = username
+  url.password = password
+  return url.toString()
 }
 
 export function parseSqlServerConnectionString(
@@ -1703,6 +1701,14 @@ export async function main(args, dependencies = {}) {
       ].includes(command)
     ) {
       connectionString = getSqlServerMigrationUrl(env)
+    }
+    if (command === 'reset') {
+      const parsed = parseSqlServerConnectionString(connectionString, env)
+      connectionString = createBootstrapAdminConnectionString(
+        connectionString,
+        env,
+        { database: parsed.database },
+      )
     }
   } catch (error) {
     consoleObj.error(
