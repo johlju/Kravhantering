@@ -59,7 +59,9 @@ memberships. Verification nevertheless fails when those permissions give a
 managed runtime user effective schema-migration or protected-audit mutation
 access. Custom-role parent nesting also fails verification for an operator to
 resolve explicitly. Migrations and required seed continue to use the separate
-db-job login with `db_owner`.
+db-job login with `db_owner`. Reconciliation, legacy-role removal, and final
+effective-permission verification commit as one transaction; a final failure
+restores the pre-reconciliation membership state.
 
 The image installs only the dependency subset needed by the one-shot job:
 `mssql`, `typeorm`, and `reflect-metadata`. It deliberately does not include

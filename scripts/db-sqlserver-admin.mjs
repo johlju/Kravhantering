@@ -160,13 +160,21 @@ export const DEFAULT_WAIT_TIMEOUT_MS = 30_000
 const DB_ADMIN_IMAGE_ENV = 'KRAVHANTERING_DB_ADMIN_IMAGE'
 const DB_JOB_IMAGE_KIND = 'db-job'
 const LEGACY_RUNTIME_ROLES = Object.freeze(['db_datareader', 'db_datawriter'])
+const PROTECTED_AUDIT_OBJECT = 'dbo.action_audit_events'
+const PROTECTED_AUDIT_UPDATE_COLUMNS = Object.freeze(
+  RUNTIME_PERMISSION_MANIFEST.find(
+    entry => entry.object === PROTECTED_AUDIT_OBJECT,
+  )?.updateColumns ?? [],
+)
 const PROHIBITED_EFFECTIVE_RUNTIME_PERMISSIONS = Object.freeze([
-  ['canCreateTable', 'CREATE_TABLE'],
-  ['canAlterDboSchema', 'ALTER_DBO_SCHEMA'],
+  ['canCreateSchema', 'CREATE_SCHEMA'],
+  ['canCreateSchemaObject', 'CREATE_SCHEMA_OBJECT'],
+  ['canAlterSchema', 'ALTER_SCHEMA'],
+  ['canAlterSchemaObject', 'ALTER_SCHEMA_OBJECT'],
   ['canInsertMigrationHistory', 'INSERT_MIGRATION_HISTORY'],
   ['canUpdateMigrationHistory', 'UPDATE_MIGRATION_HISTORY'],
   ['canDeleteMigrationHistory', 'DELETE_MIGRATION_HISTORY'],
-  ['canUpdateAuditAction', 'UPDATE_AUDIT_ACTION'],
+  ['canUpdateProtectedAuditHistory', 'UPDATE_PROTECTED_AUDIT_HISTORY'],
   ['canDeleteAuditHistory', 'DELETE_AUDIT_HISTORY'],
 ])
 const CORE_COMMANDS = Object.freeze([
@@ -1010,17 +1018,61 @@ function permissionRowKey(row) {
 }
 
 async function getProhibitedEffectiveRuntimePermissions(queryExecutor, user) {
+  const allowedAuditUpdateColumns = PROTECTED_AUDIT_UPDATE_COLUMNS.map(
+    column => `N''${escapeSqlServerStringLiteral(column)}''`,
+  ).join(', ')
+  const protectedAuditUpdateColumnFilter = allowedAuditUpdateColumns
+    ? `AND columns.[name] NOT IN (${allowedAuditUpdateColumns})`
+    : ''
   const rows = await queryExecutor.query(
     `DECLARE @effectivePermissionSql nvarchar(max) =
        N'EXECUTE AS USER = N' + QUOTENAME(@0, '''') + N';
          BEGIN TRY
            SELECT
-             CAST(HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE TABLE'') AS bit) AS canCreateTable,
-             CAST(HAS_PERMS_BY_NAME(N''dbo'', N''SCHEMA'', N''ALTER'') AS bit) AS canAlterDboSchema,
+             CAST(HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE SCHEMA'') AS bit) AS canCreateSchema,
+             CAST(CASE WHEN
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE TABLE'') = 1 OR
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE VIEW'') = 1 OR
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE PROCEDURE'') = 1 OR
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE FUNCTION'') = 1 OR
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE TYPE'') = 1 OR
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE SYNONYM'') = 1 OR
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE SEQUENCE'') = 1 OR
+               HAS_PERMS_BY_NAME(DB_NAME(), N''DATABASE'', N''CREATE XML SCHEMA COLLECTION'') = 1
+             THEN 1 ELSE 0 END AS bit) AS canCreateSchemaObject,
+             CAST(CASE WHEN EXISTS (
+               SELECT 1
+               FROM sys.schemas AS schemas
+               WHERE schemas.[name] NOT IN (N''sys'', N''INFORMATION_SCHEMA'')
+                 AND HAS_PERMS_BY_NAME(
+                   QUOTENAME(schemas.[name]), N''SCHEMA'', N''ALTER''
+                 ) = 1
+             ) THEN 1 ELSE 0 END AS bit) AS canAlterSchema,
+             CAST(CASE WHEN EXISTS (
+               SELECT 1
+               FROM sys.objects AS objects
+               INNER JOIN sys.schemas AS schemas
+                 ON schemas.schema_id = objects.schema_id
+               WHERE objects.is_ms_shipped = 0
+                 AND schemas.[name] NOT IN (N''sys'', N''INFORMATION_SCHEMA'')
+                 AND HAS_PERMS_BY_NAME(
+                   QUOTENAME(schemas.[name]) + N''.'' + QUOTENAME(objects.[name]),
+                   N''OBJECT'', N''ALTER''
+                 ) = 1
+             ) THEN 1 ELSE 0 END AS bit) AS canAlterSchemaObject,
              CAST(HAS_PERMS_BY_NAME(N''dbo.migrations'', N''OBJECT'', N''INSERT'') AS bit) AS canInsertMigrationHistory,
              CAST(HAS_PERMS_BY_NAME(N''dbo.migrations.name'', N''COLUMN'', N''UPDATE'') AS bit) AS canUpdateMigrationHistory,
              CAST(HAS_PERMS_BY_NAME(N''dbo.migrations'', N''OBJECT'', N''DELETE'') AS bit) AS canDeleteMigrationHistory,
-             CAST(HAS_PERMS_BY_NAME(N''dbo.action_audit_events.action'', N''COLUMN'', N''UPDATE'') AS bit) AS canUpdateAuditAction,
+             CAST(CASE WHEN EXISTS (
+               SELECT 1
+               FROM sys.columns AS columns
+               WHERE columns.object_id = OBJECT_ID(N''${PROTECTED_AUDIT_OBJECT}'')
+                 ${protectedAuditUpdateColumnFilter}
+                 AND HAS_PERMS_BY_NAME(
+                   N''[dbo].[action_audit_events].'' + QUOTENAME(columns.[name]),
+                   N''COLUMN'', N''UPDATE''
+                 ) = 1
+             ) THEN 1 ELSE 0 END AS bit) AS canUpdateProtectedAuditHistory,
              CAST(HAS_PERMS_BY_NAME(N''dbo.action_audit_events'', N''OBJECT'', N''DELETE'') AS bit) AS canDeleteAuditHistory;
          END TRY
          BEGIN CATCH
@@ -1039,7 +1091,10 @@ async function getProhibitedEffectiveRuntimePermissions(queryExecutor, user) {
 
 function isRuntimePermissionStatusCompatible(
   status,
-  { allowLegacyRoles = false } = {},
+  {
+    allowLegacyRoles = false,
+    allowProhibitedEffectivePermissions = false,
+  } = {},
 ) {
   return (
     status.role.present &&
@@ -1052,7 +1107,8 @@ function isRuntimePermissionStatusCompatible(
         user.member &&
         user.defaultSchema === 'dbo' &&
         (allowLegacyRoles || user.legacyRoles.length === 0) &&
-        (user.prohibitedEffectivePermissions ?? []).length === 0,
+        (allowProhibitedEffectivePermissions ||
+          (user.prohibitedEffectivePermissions ?? []).length === 0),
     )
   )
 }
@@ -1284,6 +1340,7 @@ async function reconcileSqlServerRuntimePermissionsInTransaction(
   )
   assertRuntimePermissionStatus(readyForLegacyRemoval, {
     allowLegacyRoles: true,
+    allowProhibitedEffectivePermissions: true,
   })
   for (const user of readyForLegacyRemoval.runtimeUsers) {
     for (const role of user.legacyRoles) {

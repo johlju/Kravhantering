@@ -176,8 +176,8 @@ describe('least-privilege SQL Server runtime role', () => {
       ALTER ROLE [db_owner] ADD MEMBER [${SQL_SERVER_RUNTIME_ROLE}]
       ALTER ROLE [db_datareader] ADD MEMBER [${RUNTIME_LOGIN}]
       ALTER ROLE [db_datawriter] ADD MEMBER [${RUNTIME_LOGIN}]
-      GRANT ALTER ON SCHEMA::[dbo] TO [${RUNTIME_LOGIN}]
-      GRANT DELETE ON OBJECT::[dbo].[action_audit_events]
+      GRANT ALTER ON OBJECT::[dbo].[requirements] TO [${RUNTIME_LOGIN}]
+      GRANT UPDATE ([decision]) ON OBJECT::[dbo].[action_audit_events]
         TO [${RUNTIME_LOGIN}]
     `)
     await expect(
@@ -213,8 +213,8 @@ describe('least-privilege SQL Server runtime role', () => {
     ])
 
     await adminDb.query(`
-      REVOKE ALTER ON SCHEMA::[dbo] FROM [${RUNTIME_LOGIN}]
-      REVOKE DELETE ON OBJECT::[dbo].[action_audit_events]
+      REVOKE ALTER ON OBJECT::[dbo].[requirements] FROM [${RUNTIME_LOGIN}]
+      REVOKE UPDATE ([decision]) ON OBJECT::[dbo].[action_audit_events]
         FROM [${RUNTIME_LOGIN}]
       ALTER ROLE [db_owner] DROP MEMBER [${SQL_SERVER_RUNTIME_ROLE}]
     `)

@@ -7,19 +7,6 @@ target version.
 
 ## Unreleased
 
-### Runtime SQL users move off broad database roles
-
-Before running `db-job migrate`, confirm that `DB_RUNTIME_USER` names the
-application runtime database user and that the pre-upgrade database backup or
-restore point includes its current role memberships. Migration reconciliation
-verifies the custom `kravhantering_runtime` grants and membership before it
-removes that user's `db_datareader` and `db_datawriter` memberships. Retain the
-resulting `permission-status` JSON. Both `legacyRoles` and
-`prohibitedEffectivePermissions` must be empty; other roles or direct grants
-that confer schema-migration or protected-audit mutation access require DBA
-remediation. Rollback requires restoring the complete pre-upgrade database
-state, including role memberships.
-
 <!-- operator-upgrade:source pr-870 start -->
 Provision AZURE_DEV_WORKSTATION_APPROVER_PUBLIC_KEY_PATH on destination workstations through a trusted channel before generating requests. Request and package schema 3 intentionally has no compatibility path with schema 2; regenerate pending requests and responses after upgrade. Existing approval key rotation requires provisioning the replacement public key before creating a new request.
 <!-- operator-upgrade:source pr-870 end -->

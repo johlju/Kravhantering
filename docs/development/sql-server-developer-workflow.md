@@ -109,7 +109,9 @@ new tables receive nothing implicitly through `kravhantering_runtime`.
 `db_datareader` and `db_datawriter` memberships. It does not alter other user
 roles or direct user permissions. Verification fails when those permissions
 still give the runtime user effective schema-migration or protected-audit
-mutation access, and a role-only runtime login cannot run TypeORM migrations.
+mutation access. Reconciliation, legacy-role removal, and final effective
+verification are atomic, and a role-only runtime login cannot run TypeORM
+migrations.
 
 Use `npm run db:permission-status` for secret-free JSON evidence or
 `npm run db:permission-reconcile` for an explicit repair. Both report the
