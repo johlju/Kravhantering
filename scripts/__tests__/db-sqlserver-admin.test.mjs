@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
+import { RUNTIME_PERMISSION_MANIFEST } from '../../typeorm/runtime-permission-manifest.mjs'
 import {
+  assertRuntimePermissionStatus,
   bootstrapSqlServerDatabase,
   buildReadonlyBrowseConfig,
   clearDemoSqlServerData,
@@ -14,6 +15,7 @@ import {
   getSqlServerMigrationStatus,
   getSqlServerMigrationUrl,
   getSqlServerRuntimePermissionStatus,
+  getSqlServerRuntimePermissionStatusForConnection,
   healthCheckSqlServer,
   listMigrationFilenames,
   loadMigrationClasses,
@@ -22,6 +24,8 @@ import {
   MIGRATIONS_DIR,
   main,
   parseSqlServerConnectionString,
+  reconcileSqlServerRuntimePermissions,
+  reconcileSqlServerRuntimePermissionsForConnection,
   resetDemoSqlServerData,
   resetSqlServerDatabase,
   runSqlServerMigrations,
@@ -29,6 +33,30 @@ import {
   stripWrappingQuotes,
   waitForSqlServer,
 } from '../db-sqlserver-admin.mjs'
+
+function grantedRuntimePermissionRows() {
+  return RUNTIME_PERMISSION_MANIFEST.flatMap(entry => {
+    const [schemaName, objectName] = entry.object.split('.')
+    return [
+      ...entry.permissions.map(permissionName => ({
+        classDesc: 'OBJECT_OR_COLUMN',
+        columnName: null,
+        objectName,
+        permissionName,
+        schemaName,
+        stateDesc: 'GRANT',
+      })),
+      ...(entry.updateColumns ?? []).map(columnName => ({
+        classDesc: 'OBJECT_OR_COLUMN',
+        columnName,
+        objectName,
+        permissionName: 'UPDATE',
+        schemaName,
+        stateDesc: 'GRANT',
+      })),
+    ]
+  })
+}
 
 function newestMigrationDescriptor(descriptors) {
   return [...descriptors]
@@ -150,6 +178,21 @@ describe('db-sqlserver-admin.mjs', () => {
       }),
     ).toBe(
       'mssql://job:Migration123!@external-db:1444/site_database?encrypt=true&trustServerCertificate=false',
+    )
+  })
+
+  it.each([
+    { DB_MIGRATION_USER: 'job' },
+    { DB_MIGRATION_PASSWORD: 'Migration123!' },
+  ])('rejects incomplete migration credentials', migrationCredentials => {
+    expect(() =>
+      getSqlServerMigrationUrl({
+        DATABASE_URL:
+          'mssql://runtime:Runtime123!@external-db:1444/site_database',
+        ...migrationCredentials,
+      }),
+    ).toThrow(
+      'DB_MIGRATION_USER and DB_MIGRATION_PASSWORD must be configured together.',
     )
   })
 
@@ -609,7 +652,27 @@ describe('db-sqlserver-admin.mjs', () => {
 
   it('reports secret-free runtime permission and membership drift', async () => {
     const query = vi.fn(async sql => {
-      if (sql.includes('FROM sys.database_permissions')) return []
+      if (sql.includes('FROM sys.database_permissions')) {
+        return [
+          grantedRuntimePermissionRows()[0],
+          {
+            classDesc: 'OBJECT_OR_COLUMN',
+            columnName: null,
+            objectName: 'requirements',
+            permissionName: 'DELETE',
+            schemaName: 'dbo',
+            stateDesc: 'DENY',
+          },
+          {
+            classDesc: 'DATABASE',
+            columnName: null,
+            objectName: null,
+            permissionName: 'CONNECT',
+            schemaName: null,
+            stateDesc: 'GRANT',
+          },
+        ]
+      }
       if (sql.includes('member_principal_id = principals.principal_id')) {
         return [
           {
@@ -650,6 +713,245 @@ describe('db-sqlserver-admin.mjs', () => {
       expect.stringContaining('WHERE principals.[name] IN (@0)'),
       ['kravhantering_app'],
     )
+    expect(result.unexpectedGrants).toEqual([
+      {
+        class: 'OBJECT_OR_COLUMN',
+        columnName: null,
+        objectName: 'requirements',
+        permissionName: 'DELETE',
+        schemaName: 'dbo',
+        state: 'DENY',
+      },
+      {
+        class: 'DATABASE',
+        columnName: null,
+        objectName: null,
+        permissionName: 'CONNECT',
+        schemaName: null,
+        state: 'GRANT',
+      },
+    ])
+  })
+
+  it('accepts the complete runtime permission manifest and membership', async () => {
+    const query = vi.fn(async sql => {
+      if (sql.includes('FROM sys.database_permissions')) {
+        return grantedRuntimePermissionRows()
+      }
+      if (sql.includes('member_principal_id = principals.principal_id')) {
+        return [
+          {
+            defaultSchema: 'dbo',
+            isMember: true,
+            name: 'kravhantering_app',
+          },
+        ]
+      }
+      if (sql.includes('SELECT roles.[name]')) return []
+      return [{ name: 'kravhantering_runtime', type: 'R' }]
+    })
+
+    await expect(
+      getSqlServerRuntimePermissionStatus(
+        { query },
+        { env: { DB_RUNTIME_USER: 'kravhantering_app' } },
+      ),
+    ).resolves.toMatchObject({
+      compatible: true,
+      missingGrants: [],
+      runtimeUsers: [
+        {
+          defaultSchema: 'dbo',
+          member: true,
+          name: 'kravhantering_app',
+          present: true,
+        },
+      ],
+      unexpectedGrants: [],
+      unexpectedParentRoles: [],
+    })
+
+    const roleOnlyQuery = vi.fn(async sql => {
+      if (sql.includes('FROM sys.database_permissions')) {
+        return grantedRuntimePermissionRows()
+      }
+      if (sql.includes('member_principal_id = principals.principal_id')) {
+        return []
+      }
+      if (sql.includes('SELECT roles.[name]')) return []
+      return [{ name: 'kravhantering_runtime', type: 'R' }]
+    })
+    await expect(
+      getSqlServerRuntimePermissionStatus(
+        { query: roleOnlyQuery },
+        { expectedRuntimeUsers: [] },
+      ),
+    ).resolves.toMatchObject({ compatible: true, runtimeUsers: [] })
+    expect(roleOnlyQuery).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE principals.[name] IN (NULL)'),
+      [],
+    )
+  })
+
+  it('explains every incompatible runtime permission condition', () => {
+    const status = {
+      compatible: false,
+      missingGrants: [{ permissionName: 'SELECT' }],
+      role: { name: 'kravhantering_runtime', present: false },
+      runtimeUsers: [
+        {
+          defaultSchema: null,
+          member: false,
+          name: 'missing_user',
+          present: false,
+        },
+        {
+          defaultSchema: null,
+          member: false,
+          name: 'drifting_user',
+          present: true,
+        },
+      ],
+      unexpectedGrants: [{ permissionName: 'DELETE' }],
+      unexpectedParentRoles: ['db_owner'],
+    }
+
+    expect(() => assertRuntimePermissionStatus(status)).toThrow(
+      'SQL runtime permission verification failed: runtime role is missing; runtime database user is missing: missing_user; runtime role membership is missing: drifting_user; runtime database user default schema must be dbo: drifting_user=none; 1 manifest grant(s) are missing; 1 unexpected direct grant(s) remain; runtime role is nested in: db_owner.',
+    )
+    expect(() =>
+      assertRuntimePermissionStatus({ ...status, compatible: true }),
+    ).not.toThrow()
+  })
+
+  it('adds missing runtime role membership before verifying compatibility', async () => {
+    let member = false
+    const query = vi.fn(async sql => {
+      if (sql.includes('FROM sys.database_permissions')) {
+        return grantedRuntimePermissionRows()
+      }
+      if (sql.includes('member_principal_id = principals.principal_id')) {
+        return [
+          {
+            defaultSchema: 'dbo',
+            isMember: member,
+            name: 'runtime]user',
+          },
+        ]
+      }
+      if (sql.includes('SELECT roles.[name]')) return []
+      if (sql.includes('ALTER ROLE [kravhantering_runtime] ADD MEMBER')) {
+        member = true
+        return undefined
+      }
+      if (sql.includes('SELECT [name], [type]')) {
+        return [{ name: 'kravhantering_runtime', type: 'R' }]
+      }
+      return undefined
+    })
+
+    await expect(
+      reconcileSqlServerRuntimePermissions(
+        { query },
+        { env: { DB_RUNTIME_USER: 'runtime]user' } },
+      ),
+    ).resolves.toMatchObject({ compatible: true })
+    expect(query).toHaveBeenCalledWith(
+      'ALTER ROLE [kravhantering_runtime] ADD MEMBER [runtime]]user]',
+    )
+  })
+
+  it('stops reconciliation when the managed runtime user is missing', async () => {
+    const query = vi.fn(async sql => {
+      if (sql.includes('FROM sys.database_permissions')) {
+        return grantedRuntimePermissionRows()
+      }
+      if (sql.includes('member_principal_id = principals.principal_id')) {
+        return []
+      }
+      if (sql.includes('SELECT roles.[name]')) return []
+      if (sql.includes('SELECT [name], [type]')) {
+        return [{ name: 'kravhantering_runtime', type: 'R' }]
+      }
+      return undefined
+    })
+
+    await expect(
+      reconcileSqlServerRuntimePermissions(
+        { query },
+        { expectedRuntimeUsers: ['missing_user'] },
+      ),
+    ).rejects.toThrow(
+      'SQL runtime permission verification failed: runtime database user is missing: missing_user.',
+    )
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('ALTER ROLE [kravhantering_runtime] ADD MEMBER'),
+      ),
+    ).toBe(false)
+  })
+
+  it('manages the DataSource lifecycle for runtime permission connections', async () => {
+    const destroy = vi.fn(async () => undefined)
+    const initialize = vi.fn(async () => undefined)
+    const query = vi.fn(async sql => {
+      if (sql.includes('FROM sys.database_permissions')) {
+        return grantedRuntimePermissionRows()
+      }
+      if (sql.includes('member_principal_id = principals.principal_id')) {
+        return [
+          {
+            defaultSchema: 'dbo',
+            isMember: true,
+            name: 'kravhantering_app',
+          },
+        ]
+      }
+      if (sql.includes('SELECT roles.[name]')) return []
+      if (sql.includes('SELECT [name], [type]')) {
+        return [{ name: 'kravhantering_runtime', type: 'R' }]
+      }
+      return undefined
+    })
+    class FakeDataSource {
+      destroy = destroy
+      initialize = initialize
+      query = query
+    }
+    const connectionString =
+      'mssql://job:Migration123!@127.0.0.1:1433/kravhantering'
+    const options = {
+      dataSourceCtor: FakeDataSource,
+      expectedRuntimeUsers: ['kravhantering_app'],
+    }
+
+    await expect(
+      getSqlServerRuntimePermissionStatusForConnection(
+        connectionString,
+        options,
+      ),
+    ).resolves.toMatchObject({ compatible: true })
+    await expect(
+      reconcileSqlServerRuntimePermissionsForConnection(
+        connectionString,
+        options,
+      ),
+    ).resolves.toMatchObject({ compatible: true })
+    expect(initialize).toHaveBeenCalledTimes(2)
+    expect(destroy).toHaveBeenCalledTimes(2)
+
+    const initializeWithoutDestroy = vi.fn(async () => undefined)
+    class FakeDataSourceWithoutDestroy {
+      initialize = initializeWithoutDestroy
+      query = query
+    }
+    await expect(
+      getSqlServerRuntimePermissionStatusForConnection(connectionString, {
+        ...options,
+        dataSourceCtor: FakeDataSourceWithoutDestroy,
+      }),
+    ).resolves.toMatchObject({ compatible: true })
+    expect(initializeWithoutDestroy).toHaveBeenCalled()
   })
 
   it.each(['permission-status', 'permission-reconcile'])(
@@ -689,6 +991,39 @@ describe('db-sqlserver-admin.mjs', () => {
     },
   )
 
+  it('returns drift and unexpected failures from permission-status', async () => {
+    const error = vi.fn()
+    const log = vi.fn()
+    const env = {
+      DATABASE_URL: 'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering',
+      DB_MIGRATION_PASSWORD: 'Migration123!',
+      DB_MIGRATION_USER: 'job',
+      DB_RUNTIME_USER: 'kravhantering_app',
+    }
+
+    await expect(
+      main(['permission-status'], {
+        consoleObj: { error, log },
+        env,
+        getRuntimePermissionStatusImpl: vi.fn(async () => ({
+          compatible: false,
+        })),
+      }),
+    ).resolves.toBe(1)
+    await expect(
+      main(['permission-status'], {
+        consoleObj: { error, log },
+        env,
+        getRuntimePermissionStatusImpl: vi.fn(async () => {
+          throw 'query failed'
+        }),
+      }),
+    ).resolves.toBe(1)
+
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({ compatible: false })
+    expect(error).toHaveBeenCalledWith('SQL Server permission-status failed.')
+  })
+
   it('fails permission status when DB_RUNTIME_USER is missing', async () => {
     const error = vi.fn()
     const log = vi.fn()
@@ -714,6 +1049,74 @@ describe('db-sqlserver-admin.mjs', () => {
     )
     expect(log).not.toHaveBeenCalled()
     expect(statusImpl).not.toHaveBeenCalled()
+  })
+
+  it('runs migrate with managed runtime permissions and JSON evidence', async () => {
+    const destroy = vi.fn(async () => undefined)
+    const initialize = vi.fn(async () => undefined)
+    const runMigrations = vi.fn(async () => [])
+    const reconcileRuntimePermissionsImpl = vi.fn(async () => ({
+      compatible: true,
+    }))
+    const migrationExecutorCtor = await createTargetHeadMigrationExecutor()
+    class FakeDataSource {
+      destroy = destroy
+      initialize = initialize
+      runMigrations = runMigrations
+    }
+    const error = vi.fn()
+    const log = vi.fn()
+
+    const exitCode = await main(['migrate', '--json'], {
+      consoleObj: { error, log },
+      dataSourceCtor: FakeDataSource,
+      env: {
+        DATABASE_URL:
+          'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering',
+        DB_MIGRATION_PASSWORD: 'Migration123!',
+        DB_MIGRATION_USER: 'job',
+        DB_RUNTIME_USER: 'kravhantering_app',
+      },
+      migrationExecutorCtor,
+      reconcileRuntimePermissionsImpl,
+    })
+
+    expect(exitCode).toBe(0)
+    expect(error).not.toHaveBeenCalled()
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+      database: 'kravhantering',
+      migrationsApplied: 0,
+      runtimePermissions: { compatible: true },
+    })
+    expect(reconcileRuntimePermissionsImpl).toHaveBeenCalledWith(
+      expect.any(FakeDataSource),
+      expect.objectContaining({
+        expectedRuntimeUsers: ['kravhantering_app'],
+      }),
+    )
+    expect(destroy).toHaveBeenCalled()
+  })
+
+  it('reports migrate precondition failures', async () => {
+    const error = vi.fn()
+    vi.spyOn(process, 'cwd').mockReturnValue(
+      '/tmp/kravhantering-test-without-env-files',
+    )
+
+    await expect(
+      main(['migrate'], {
+        consoleObj: { error, log: vi.fn() },
+        env: {
+          DATABASE_URL:
+            'mssql://runtime:Runtime123!@127.0.0.1:1433/kravhantering',
+          DB_MIGRATION_PASSWORD: 'Migration123!',
+          DB_MIGRATION_USER: 'job',
+        },
+      }),
+    ).resolves.toBe(1)
+    expect(error).toHaveBeenCalledWith(
+      'DB_RUNTIME_USER is required to verify the managed runtime database user.',
+    )
   })
 
   it('reports migration status with pending migrations as compatible', async () => {
