@@ -82,9 +82,7 @@ configuration change.
    browser traffic reaches `PUBLIC_HOSTNAME`. Keep administrative access to the
    host available for the remaining steps.
 
-4. Stop the current stack. This step is the explicit Compose-to-Quadlet
-   migration boundary for the first Quadlet release. For an existing Quadlet
-   deployment, stop the target:
+4. Stop the current stack by stopping its Quadlet target:
 
    ```bash
    sudo -iu kravhantering
@@ -92,20 +90,8 @@ configuration change.
    exit
    ```
 
-   When the current release predates Quadlet, use its retained Compose file
-   exactly once to stop all long-running containers cleanly:
-
-   ```bash
-   sudo -iu kravhantering
-   cd /opt/kravhantering/current
-   podman compose --env-file /etc/kravhantering/release.env \
-     -f compose/single-node.compose.yml down
-   exit
-   ```
-
-   This preserves the named `kravhantering-sqlserver-data` and
-   `kravhantering-keycloak-data` volumes. New release bundles do not contain
-   the Compose file, so keep the previous release directory for rollback.
+   Stopping the target preserves the named `kravhantering-sqlserver-data` and
+   `kravhantering-keycloak-data` volumes.
 
 5. Install the new release bundle under `/opt/kravhantering/releases`.
    Extract the verified bundle and label the release-owned nginx files:
@@ -600,8 +586,8 @@ configuration change.
 
 Choose the rollback boundary that matches the failed step:
 
-- Before the previous Compose deployment is stopped, no runtime migration has
-  occurred. Leave the previous release active and end the change window.
+- Before the current Quadlet target is stopped, no runtime migration has
+  occurred. Leave the current release active and end the change window.
 - After the previous deployment is stopped but before database migration,
   remove the new Quadlet units and start the previous release without a
   database restore.
@@ -619,11 +605,9 @@ For either rollback that follows a failed Quadlet start:
    the boundary.
 3. Point `/opt/kravhantering/current` back to the previous release directory
    and restore its `/etc/kravhantering/release.env` image refs.
-4. If the previous release uses Quadlet, install its `single-node` topology
-   and enable `kravhantering-single-node.target`. For the first
-   Compose-to-Quadlet transition, remove the failed Quadlet files, run
-   `systemctl --user daemon-reload`, then use the retained previous release's
-   `compose/single-node.compose.yml` with `podman compose up -d`.
+4. Install the previous release's `single-node` topology, run
+   `systemctl --user daemon-reload`, and enable
+   `kravhantering-single-node.target`.
 5. Verify `/api/health`, `/api/ready` and sign-in before enabling traffic.
 
 Do not rely on app-only image rollback after schema migration unless the

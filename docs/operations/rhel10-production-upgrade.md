@@ -82,32 +82,14 @@ place.
    browser traffic reaches the app nodes. Keep administrative access to the
    hosts available for the remaining steps.
 
-4. Stop `nginx` and `app-runtime` on every app node. This step is the explicit
-   Compose-to-Quadlet migration boundary for the first Quadlet release.
-   For an existing Quadlet deployment, stop the target:
+4. Stop `nginx` and `app-runtime` on every app node by stopping the current
+   Quadlet target:
 
    ```bash
    sudo -iu kravhantering
    systemctl --user stop kravhantering-app-node.target
    exit
    ```
-
-   When the current release predates Quadlet, use its retained Compose file
-   exactly once to stop and remove the previous long-running containers. Use
-   the TLS file unless the node is behind a TLS-terminating load balancer:
-
-   ```bash
-   sudo -iu kravhantering
-   cd /opt/kravhantering/current
-   COMPOSE_FILE=compose/app-node-tls.compose.yml
-   # COMPOSE_FILE=compose/app-node-http.compose.yml
-   podman compose --env-file /etc/kravhantering/release.env \
-     -f "$COMPOSE_FILE" down
-   exit
-   ```
-
-   New release bundles do not contain these Compose files. Keep the previous
-   release directory until rollback is no longer required.
 
 5. Install the new release bundle under `/opt/kravhantering/releases` on every
    app node.
@@ -507,8 +489,8 @@ place.
 
 Choose the rollback boundary that matches the failed step:
 
-- Before the previous Compose deployment is stopped, no runtime migration has
-  occurred. Leave the previous release active and end the change window.
+- Before the current Quadlet target is stopped, no runtime migration has
+  occurred. Leave the current release active and end the change window.
 - After the previous deployment is stopped but before database migration,
   remove the new Quadlet units and start the previous release without a
   database restore.
@@ -546,31 +528,17 @@ For either rollback that follows a failed Quadlet start:
    Use the release evidence record or rerun the image-reference update with
    the previous release's `container-stack.lock.json`.
 
-5. Remove the failed release's Quadlet files, reload systemd, and start the
-   previous app nodes. If the previous release also uses Quadlet, install its
-   topology and start its target. For the Compose-to-Quadlet transition, use
-   the retained previous release's Compose file:
+5. Install the previous release's Quadlet topology, reload systemd, and start
+   the previous app nodes:
 
    ```bash
    sudo -iu kravhantering
    cd /opt/kravhantering/current
-   if [ -x bin/kravhantering-quadlet.sh ]; then
-     TOPOLOGY=app-node-tls
-     # TOPOLOGY=app-node-http
-     bin/kravhantering-quadlet.sh install --topology "$TOPOLOGY"
-     systemctl --user daemon-reload
-     systemctl --user enable --now kravhantering-app-node.target
-     exit
-   fi
-
-   rm -f ~/.config/containers/systemd/kravhantering-*.container \
-     ~/.config/containers/systemd/kravhantering-*.network \
-     ~/.config/systemd/user/kravhantering-app-node.target
+   TOPOLOGY=app-node-tls
+   # TOPOLOGY=app-node-http
+   bin/kravhantering-quadlet.sh install --topology "$TOPOLOGY"
    systemctl --user daemon-reload
-   COMPOSE_FILE=compose/app-node-tls.compose.yml
-   # COMPOSE_FILE=compose/app-node-http.compose.yml
-   podman compose --env-file /etc/kravhantering/release.env \
-     -f "$COMPOSE_FILE" up -d
+   systemctl --user enable --now kravhantering-app-node.target
    exit
    ```
 
