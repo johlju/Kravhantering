@@ -147,6 +147,7 @@ export const DEFAULT_PORT = 1433
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 export const DEFAULT_WAIT_RETRY_MS = 1_000
 export const DEFAULT_WAIT_TIMEOUT_MS = 30_000
+export const SQL_SERVER_RUNTIME_ROLE = 'kravhantering_runtime'
 const DB_ADMIN_IMAGE_ENV = 'KRAVHANTERING_DB_ADMIN_IMAGE'
 const DB_JOB_IMAGE_KIND = 'db-job'
 const CORE_COMMANDS = Object.freeze([
@@ -807,7 +808,7 @@ function buildBootstrapLoginSql(principals) {
 }
 
 function buildBootstrapUserSql(principals) {
-  return principals
+  const principalSql = principals
     .map(principal => {
       const escapedUserName = quoteSqlServerIdentifier(principal.username)
       const escapedUserNameLiteral = `N'${escapeSqlServerStringLiteral(principal.username)}'`
@@ -840,6 +841,18 @@ function buildBootstrapUserSql(principals) {
 ${roleSql}`
     })
     .join('\n')
+
+  const escapedRuntimeRole = quoteSqlServerIdentifier(SQL_SERVER_RUNTIME_ROLE)
+  const escapedRuntimeRoleLiteral = `N'${escapeSqlServerStringLiteral(SQL_SERVER_RUNTIME_ROLE)}'`
+
+  return `
+      IF DATABASE_PRINCIPAL_ID(${escapedRuntimeRoleLiteral}) IS NULL
+      BEGIN
+        CREATE ROLE ${escapedRuntimeRole} AUTHORIZATION [dbo]
+      END
+
+      GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO ${escapedRuntimeRole}
+${principalSql}`
 }
 
 export async function bootstrapSqlServerDatabase(

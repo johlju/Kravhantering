@@ -7,6 +7,17 @@ target version.
 
 ## Unreleased
 
+<!-- operator-upgrade:source issue-484 start -->
+### Least-privilege SQL runtime role is provisioned beside legacy roles
+
+Migration 0054 idempotently creates or reconciles the
+`kravhantering_runtime` database role with `SELECT`, `INSERT`, `UPDATE`, and
+`DELETE` on the `dbo` schema. It does not change application login membership,
+so existing `db_datareader` and `db_datawriter` assignments remain available
+during the transition. Continue to run migrations with the separate db-job
+identity; a runtime-role-only identity cannot alter the schema.
+<!-- operator-upgrade:source issue-484 end -->
+
 <!-- operator-upgrade:source pr-870 start -->
 Provision AZURE_DEV_WORKSTATION_APPROVER_PUBLIC_KEY_PATH on destination workstations through a trusted channel before generating requests. Request and package schema 3 intentionally has no compatibility path with schema 2; regenerate pending requests and responses after upgrade. Existing approval key rotation requires provisioning the replacement public key before creating a new request.
 <!-- operator-upgrade:source pr-870 end -->

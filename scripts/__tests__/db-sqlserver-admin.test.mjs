@@ -402,6 +402,10 @@ describe('db-sqlserver-admin.mjs', () => {
     expect(queries[0]).toContain('CREATE DATABASE')
     expect(queries[0]).toContain('CREATE LOGIN [kravhantering_job]')
     expect(queries[0]).toContain('CREATE LOGIN [kravhantering_app]')
+    expect(queries[1]).toContain('CREATE ROLE [kravhantering_runtime]')
+    expect(queries[1]).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [kravhantering_runtime]',
+    )
     expect(queries[1]).toContain('ALTER ROLE [db_owner]')
     expect(queries[1]).toContain('ALTER ROLE [db_datareader]')
     expect(queries[1]).toContain('ALTER ROLE [db_datawriter]')

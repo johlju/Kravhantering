@@ -93,6 +93,13 @@ DATABASE_URL=...
 DATABASE_READONLY_URL=...
 ```
 
+Application runtime and schema migration use separate SQL Server credentials.
+Migration 0054 idempotently reconciles the `kravhantering_runtime` database
+role with `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the `dbo` schema. The
+role has no schema-definition permission, so a role-only runtime login cannot
+run TypeORM migrations. Existing `db_datareader` and `db_datawriter`
+memberships remain available during the migration period.
+
 The Next.js runtime builds one shared TypeORM `DataSource` per process. The
 runtime DataSource keeps SQL Server behavior explicit:
 

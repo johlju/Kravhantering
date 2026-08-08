@@ -289,6 +289,11 @@ place.
    the optional `kravhantering-demo-seed` image in production. Review the target
    release's Operator Upgrade Notes before running `db-job migrate`.
 
+   Migration 0054 reconciles the `kravhantering_runtime` role without changing
+   the existing `db_datareader` or `db_datawriter` memberships. Keep the
+   migration and runtime credentials separate; only the db-job identity has
+   schema migration permission.
+
    ```bash
    sudo -iu kravhantering
    cd /opt/kravhantering/current

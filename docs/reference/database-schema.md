@@ -25,6 +25,7 @@ The developer setup, browse workflow, and CLI reference live in
 7. [Application Action Log Tables](#application-action-log-tables)
 8. [Join / Bridge Tables](#join--bridge-tables)
 9. [Requirement Version Status Workflow](#requirement-version-status-workflow)
+10. [Database Roles](#database-roles)
 
 ---
 
@@ -2906,3 +2907,15 @@ graph LR
 ```
 <!-- markdownlint-enable MD013 -->
 <!-- cSpell:enable -->
+
+## Database Roles
+
+Migration 0054 creates the custom `kravhantering_runtime` database role. The
+role receives only `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the `dbo`
+schema. It does not receive schema-definition or migration permissions.
+
+The application runtime and the migration job use separate SQL Server logins.
+The migration login retains `db_owner` so TypeORM can apply versioned schema
+changes. Existing application-login membership in `db_datareader` and
+`db_datawriter` remains during the transition to the custom role; migration
+0054 does not add or remove login memberships.

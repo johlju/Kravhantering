@@ -1631,6 +1631,24 @@ describe('trusted container release helpers', () => {
     expect(singleNodeGuide).not.toMatch(/-m 0640 ca\.crt/u)
   })
 
+  it('ships idempotent least-privilege SQL runtime-role provisioning beside legacy roles', () => {
+    const template = readWorkspaceFile(
+      'containers/production/sqlserver/dba-provision.sql.template',
+    )
+
+    expect(template).toContain(
+      "IF DATABASE_PRINCIPAL_ID(N'kravhantering_runtime') IS NULL",
+    )
+    expect(template).toContain(
+      'CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo]',
+    )
+    expect(template).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [kravhantering_runtime]',
+    )
+    expect(template).toContain('ALTER ROLE [db_datareader]')
+    expect(template).toContain('ALTER ROLE [db_datawriter]')
+  })
+
   it('ships nginx templates with dynamic upstream DNS resolution', () => {
     const nginxResolverPlaceholder = '$' + '{NGINX_RESOLVER}'
     const templates = [

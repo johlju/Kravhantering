@@ -487,12 +487,19 @@ database platform tooling must provide:
 - database name, normally `kravhantering`
 - app runtime login/user with `db_datareader` and `db_datawriter`
 - db-job login/user with `db_owner`
+- custom `kravhantering_runtime` role with `SELECT`, `INSERT`, `UPDATE`, and
+  `DELETE` on the `dbo` schema
 - encrypted connection settings and trust configuration
 - backup and restore procedure approved for the release window
 
 The bundle includes `sqlserver/dba-provision.sql.template` for sites that want
 a T-SQL starting point. Sites using provisioning tools can implement the same
 contract without running the template.
+
+The custom role is provisioned beside the existing broad app memberships for
+this transition. Do not remove `db_datareader` or `db_datawriter` yet. The
+runtime role intentionally has no DDL permission; only the separate db-job
+identity may apply TypeORM migrations.
 
 Set `/etc/kravhantering/app.env` with the app runtime user:
 

@@ -5,7 +5,9 @@
 
   Replace every value in angle brackets before running. The migration/job
   principal needs db_owner because TypeORM migrations create and alter schema.
-  The app principal needs read/write data roles for normal runtime traffic.
+  The custom runtime role contains only normal application DML permissions.
+  The app principal keeps the broad read/write data roles during the transition
+  to the custom role.
 */
 
 USE [master];
@@ -45,6 +47,13 @@ BEGIN
   CREATE USER [<app-login>] FOR LOGIN [<app-login>];
 END
 GO
+
+IF DATABASE_PRINCIPAL_ID(N'kravhantering_runtime') IS NULL
+BEGIN
+  CREATE ROLE [kravhantering_runtime] AUTHORIZATION [dbo];
+END
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [kravhantering_runtime];
 
 IF NOT EXISTS (
   SELECT 1

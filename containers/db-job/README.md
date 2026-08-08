@@ -24,7 +24,8 @@ npm run container:build:db-job
 The image entrypoint is `node scripts/db-sqlserver-admin.mjs`, so Compose or
 manual runs pass the admin command as arguments:
 
-- `bootstrap` creates the database plus the app and job SQL principals.
+- `bootstrap` creates the database plus the app and job SQL principals and
+  reconciles the least-privilege `kravhantering_runtime` database role.
 - `migration-status` prints JSON evidence with expected, observed, pending and
   unknown TypeORM migrations without modifying the database.
 - `migrate` applies TypeORM migrations.
@@ -38,6 +39,11 @@ A production-like empty database is bootstrap, migration, and
 `seed:required`. The image intentionally includes `typeorm/seed-required.mjs`,
 its required seed helper modules, and excludes `typeorm/seed.mjs`, dogfood
 seed, archiving-retention demo seed, tests, and documentation.
+
+The runtime role grants only `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the
+`dbo` schema. Existing app membership in `db_datareader` and `db_datawriter`
+remains available during the transition. The role does not grant schema
+migration permissions; migrations continue to use the separate db-job login.
 
 The image installs only the dependency subset needed by the one-shot job:
 `mssql`, `typeorm`, and `reflect-metadata`. It deliberately does not include
