@@ -74,9 +74,9 @@ function stackLock() {
   }
 }
 
-describe('container Compose generation', () => {
-  it('uses local tags for project images in PR mode and manifest digests for vendors', () => {
-    const values = buildComposeValues(stackLock(), { mode: 'pr' })
+describe('local test Compose generation', () => {
+  it('uses local tags for project images and manifest digests for vendors', () => {
+    const values = buildComposeValues(stackLock(), { mode: 'test' })
 
     expect(values.appRuntimeImage).toBe(
       'localhost/kravhantering/app-runtime:pr-12-99-deadbeef',
@@ -99,31 +99,13 @@ describe('container Compose generation', () => {
     expect(values.networkName).toBe(DEFAULT_INTERNAL_NETWORK_NAME)
   })
 
-  it('uses manifest digest references for project images in release mode', () => {
-    const values = buildComposeValues(stackLock(), {
-      demoSeedImage: 'ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo',
-      mode: 'release',
-    })
-
-    expect(values.appRuntimeImage).toBe(
-      'localhost/kravhantering/app-runtime@sha256:app-manifest',
-    )
-    expect(values.dbJobImage).toBe(
-      'localhost/kravhantering/db-job@sha256:dbjob-manifest',
-    )
-    expect(values.demoSeedImage).toBe(
-      'ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo',
-    )
-  })
-
   it('renders the source-controlled template without leaking env values', () => {
     const template = fs.readFileSync(
       path.join(process.cwd(), DEFAULT_TEMPLATE_PATH),
       'utf8',
     )
     const compose = generateCompose(template, stackLock(), {
-      mode: 'release',
-      demoSeedImage: 'ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo',
+      mode: 'test',
       projectName: 'kravhantering-test-run',
       sqlServerHostPort: '127.0.0.1:15433',
       sqlServerVolumeName: 'kravhantering-test-sqlserver-data',
@@ -132,13 +114,10 @@ describe('container Compose generation', () => {
 
     expect(compose).toContain('name: "kravhantering-test-run"')
     expect(compose).toContain(
-      'image: "localhost/kravhantering/app-runtime@sha256:app-manifest"',
+      'image: "localhost/kravhantering/app-runtime:pr-12-99-deadbeef"',
     )
     expect(compose).toContain(
-      'image: "localhost/kravhantering/db-job@sha256:dbjob-manifest"',
-    )
-    expect(compose).toContain(
-      'image: "ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo"',
+      'image: "localhost/kravhantering/db-job:pr-12-99-deadbeef"',
     )
     expect(compose).toContain(
       'image: "docker.io/library/nginx@sha256:nginx-manifest"',
@@ -169,7 +148,7 @@ describe('container Compose generation', () => {
       'utf8',
     )
     const compose = generateCompose(template, stackLock(), {
-      mode: 'release',
+      mode: 'test',
       networkName: 'kravhantering-custom-internal',
     })
 

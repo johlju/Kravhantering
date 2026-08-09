@@ -391,7 +391,7 @@ place.
    the create/write/remove check, but capacity planning remains an operator
    check.
 
-   Confirm the nginx resolver from inside the same Quadlet network. Resolve
+   Confirm the nginx resolver from inside the edge Quadlet network. Resolve
    its stable Podman name through the helper.
 
    ```bash
@@ -404,7 +404,8 @@ place.
    TOPOLOGY=app-node-tls
    # TOPOLOGY=app-node-http
    APP_NODE_NETWORK="$(
-     bin/kravhantering-quadlet.sh print-network --topology "$TOPOLOGY"
+     bin/kravhantering-quadlet.sh print-network \
+       --topology "$TOPOLOGY" --purpose edge
    )"
 
    RESOLVER_IP="$(
@@ -472,8 +473,8 @@ place.
       https://kravhantering.example.internal/api/health
     ```
 
-    The Quadlet network retains the established
-    `kravhantering-app-node_kravhantering-internal` name.
+    The Quadlet networks retain the established
+    `kravhantering-app-node_edge` and `kravhantering-app-node_egress` names.
 
 11. Re-enable traffic.
     Put the app nodes back into the load balancer, reverse proxy or firewall

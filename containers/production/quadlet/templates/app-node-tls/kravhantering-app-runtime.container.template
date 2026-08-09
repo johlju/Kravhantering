@@ -1,17 +1,34 @@
 [Unit]
 Description=Kravhantering application runtime
 PartOf=kravhantering-app-node.target
-Requires=kravhantering-app-node-network.service
-After=kravhantering-app-node-network.service
+Requires=kravhantering-app-node-edge-network.service kravhantering-app-node-egress-network.service
+After=kravhantering-app-node-edge-network.service kravhantering-app-node-egress-network.service
 
 [Container]
 ContainerName=kravhantering-app-runtime
 Image=@@APP_RUNTIME_IMAGE_REF@@
 EnvironmentFile=/etc/kravhantering/app.env
-Network=kravhantering-app-node.network
+DropCapability=all
+NoNewPrivileges=true
+ReadOnly=true
+ReadOnlyTmpfs=false
+PidsLimit=@@APP_RUNTIME_PIDS_LIMIT@@
+LogDriver=journald
+Environment=KRAVHANTERING_EXPORT_TEMP_DIR=/run/kravhantering/export
+Network=kravhantering-app-node-edge.network
+Network=kravhantering-app-node-egress.network
 NetworkAlias=app-runtime
+@@APP_RUNTIME_EXPORT_MOUNT@@
+Tmpfs=/tmp:rw,size=64M,mode=1777,nosuid,nodev,noexec
 
 [Service]
 Restart=always
 TimeoutStartSec=180
 TimeoutStopSec=90
+MemoryMax=@@APP_RUNTIME_MEMORY_LIMIT_MIB@@M
+CPUQuota=@@APP_RUNTIME_CPU_QUOTA_PERCENT@@%
+TasksMax=@@APP_RUNTIME_TASKS_MAX@@
+LogRateLimitIntervalSec=@@APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS@@s
+LogRateLimitBurst=@@APP_RUNTIME_LOG_RATE_BURST@@
+StandardOutput=journal
+StandardError=journal

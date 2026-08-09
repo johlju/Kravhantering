@@ -1,0 +1,7 @@
+[Unit]
+Description=Kravhantering CI-only HSA support services
+Requires=kravhantering-ci-kong.service
+After=kravhantering-ci-kong.service
+
+[Install]
+WantedBy=default.target

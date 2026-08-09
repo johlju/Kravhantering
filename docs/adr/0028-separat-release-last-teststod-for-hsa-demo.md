@@ -1,6 +1,6 @@
 # Separat release-låst teststöd för HSA-demo
 
-Status: Antagen 2026-06-12. Uppdaterad 2026-06-14 av ADR 0029.
+Status: Ersatt 2026-08-09 av ADR 0047. Uppdaterad 2026-06-14 av ADR 0029.
 
 Kravhantering publicerar och låser teststödet för HSA-demo separat från
 containerstacken för produktion. Produktionslåset

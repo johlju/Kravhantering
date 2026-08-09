@@ -13,7 +13,12 @@
 This guide describes how to install and operate Kravhantering on one clean
 Red Hat Enterprise Linux 10 host from released artifacts only, with nginx,
 `app-runtime`, SQL Server and Keycloak as rootless Podman Quadlet services.
-`db-job` runs explicitly on the same Quadlet network for release operations.
+`db-job` runs explicitly on the database Quadlet network for release
+operations.
+
+Apply the shared containment defaults, validated override ranges, network
+ownership, and host preflight in
+[Production Quadlet Containment](production-quadlet-containment.md).
 
 Use this topology when the production site must run without external SQL Server
 or external IdP dependencies at runtime. For the enterprise topology with
@@ -773,9 +778,9 @@ check below and update `NGINX_RESOLVER` in
 `/etc/kravhantering/release.env` to the printed resolver IP if it differs.
 
 SQL Server is only available internally on the
-`kravhantering-single-node_kravhantering-internal` Podman network. Connect to
-it as `sqlserver:1433` from `app-runtime`, `db-job` or temporary
-administration containers attached to that network.
+`kravhantering-single-node_database` Podman network. Connect to it as
+`sqlserver:1433` from `app-runtime`, `db-job` or temporary administration
+containers attached to that network.
 
 ### `/etc/kravhantering/sqlserver.env`
 
@@ -1221,9 +1226,10 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose identity
 )"
-NETWORK_UNIT=kravhantering-single-node-network.service
+NETWORK_UNIT=kravhantering-single-node-identity-network.service
 DEMO_USERS_FILE=$PWD/keycloak/demo-users.not-for-production.json
 DEMO_USERS_CONTAINER_FILE=/tmp/demo-users.not-for-production.json
 SCRIPT_FILE=$PWD/scripts/keycloak-demo-users.mjs
@@ -1339,7 +1345,7 @@ The `STACK_NETWORK` variable is for temporary `podman run` containers that
 need internal service-name DNS such as `keycloak` or `sqlserver`. Resolve the
 stable Quadlet network name through the helper.
 
-Confirm the nginx resolver from inside the same Quadlet network:
+Confirm the nginx resolver from inside the edge Quadlet network:
 
 ```bash
 sudo -iu kravhantering
@@ -1349,7 +1355,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose edge
 )"
 
 RESOLVER_IP="$(
@@ -1387,7 +1394,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose database
 )"
 
 podman run --rm --network "$STACK_NETWORK" \
@@ -1411,7 +1419,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose database
 )"
 EVIDENCE_DIR="/var/tmp/kravhantering-deploy-${VERSION}-evidence"
 mkdir -p "$EVIDENCE_DIR"
@@ -1458,7 +1467,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose database
 )"
 DEMO_SEED_IMAGE_REF=ghcr.io/viscalyx/kravhantering-demo-seed:replace-with-release-tag
 
@@ -1475,9 +1485,9 @@ code. Demo seed files are not included in the production deployment bundle; use
 the separate optional image only for this explicit disposable-environment
 command.
 
-The production deployment bundle does not include the release-smoke Compose
-overlay. Run test-support services only through the separate local or CI smoke
-workflow; they are not part of the RHEL production topology.
+The production deployment bundle does not include the CI-only Quadlet smoke
+overlay. Run test-support services only through the separate CI smoke workflow;
+they are not part of the RHEL production topology.
 
 Reinstall the Quadlet files after correcting `NGINX_RESOLVER`, then enable and
 start the long-running-service target:

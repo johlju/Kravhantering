@@ -345,8 +345,10 @@ describe('container OCI archive helpers', () => {
     expect(workflow).toContain('pull_request:')
     expect(workflow).toContain('contents: read')
     expect(workflow).toContain('persist-credentials: false')
-    expect(workflow).toContain('--skip-build')
-    expect(workflow).toContain('--prune-docker-after-load')
+    expect(workflow).toContain('prepare-production-smoke-bundle.mjs')
+    expect(workflow).toContain('production-smoke.sh up --archive')
+    expect(workflow).not.toContain('--skip-build')
+    expect(workflow).not.toContain('--prune-docker-after-load')
     expect(workflow).toContain('container:oci:export')
     expect(workflow).toContain(
       'HSA_PERSON_LOOKUP_ADAPTER_IMAGE: localhost/kravhantering/hsa-person-lookup-adapter',
@@ -379,7 +381,7 @@ describe('container OCI archive helpers', () => {
       `"${runnerTempExpression}/report-disk-layout.sh" "after runner toolchain cleanup"`,
     )
     expect(stepIndex('Build HSA person lookup adapter image')).toBeLessThan(
-      stepIndex('Start container stack'),
+      stepIndex('Install production archive with rootless Quadlet'),
     )
     expect(workflow).toContain(
       `cat > "${runnerTempExpression}/report-disk-layout.sh" <<'REPORT_DISK_LAYOUT'`,
@@ -414,6 +416,8 @@ describe('container OCI archive helpers', () => {
     expect(workflow).not.toContain('ghcr.io')
     expect(workflow).not.toContain('cosign')
     expect(workflow).not.toContain('.env.app.local')
-    expect(workflow).not.toContain('container-tls')
+    expect(workflow).toContain(
+      'generate-tls.mjs --output-dir tmp/container-tls',
+    )
   })
 })

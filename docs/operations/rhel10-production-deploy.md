@@ -12,6 +12,10 @@ This enterprise production topology is an app node that runs nginx and
 `app-runtime` as rootless Podman Quadlet services. SQL Server and the IdP are
 external services.
 
+Apply the shared containment defaults, validated override ranges, network
+ownership, and host preflight in
+[Production Quadlet Containment](production-quadlet-containment.md).
+
 For the self-contained single-node topology where SQL Server and Keycloak run
 on the same RHEL host, use
 [rhel10-production-single-node-self-contained-deploy.md](./rhel10-production-single-node-self-contained-deploy.md).
@@ -728,9 +732,9 @@ contains public test credentials.
 
 Choose exactly one app-node exposure alternative for the host. Use that
 alternative's Quadlet topology in the shared `app-runtime` and resolver steps
-below. Both alternatives preserve the Podman network name
-`kravhantering-app-node_kravhantering-internal`. Do not install both
-alternatives on one host.
+below. Both alternatives preserve the purpose-specific
+`kravhantering-app-node_edge` and `kravhantering-app-node_egress` Podman
+network names. Do not install both alternatives on one host.
 
 Run the common database jobs:
 
@@ -833,7 +837,7 @@ Use the application settings planned for this environment. The built-in
 defaults require 650 MiB before filesystem headroom. `/api/ready` repeats the
 create/write/remove check, but capacity planning remains an operator check.
 
-Confirm the nginx resolver from inside the same Quadlet network. Resolve its
+Confirm the nginx resolver from inside the edge Quadlet network. Resolve its
 stable Podman name through the helper so explicit release operations use the
 same network as the long-running services.
 
@@ -847,7 +851,8 @@ set +a
 TOPOLOGY=app-node-tls
 # TOPOLOGY=app-node-http
 APP_NODE_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology "$TOPOLOGY"
+  bin/kravhantering-quadlet.sh print-network \
+    --topology "$TOPOLOGY" --purpose edge
 )"
 
 RESOLVER_IP="$(

@@ -1,0 +1,499 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SERVICE_USER="${PRODUCTION_SMOKE_SERVICE_USER:-kravhantering}"
+SERVICE_HOME="/home/$SERVICE_USER"
+INSTALL_ROOT="${PRODUCTION_SMOKE_INSTALL_ROOT:-/opt/kravhantering}"
+CONFIG_ROOT="${PRODUCTION_SMOKE_CONFIG_ROOT:-/etc/kravhantering}"
+EVIDENCE_DIR="${PRODUCTION_SMOKE_EVIDENCE_DIR:-$PWD/tmp/production-smoke-evidence}"
+TOPOLOGY=single-node
+CONFIG_TEMP_DIR=''
+
+cleanup_config_temp() {
+  if [[ -n "$CONFIG_TEMP_DIR" && -d "$CONFIG_TEMP_DIR" ]]; then
+    rm -rf -- "$CONFIG_TEMP_DIR"
+  fi
+}
+
+trap cleanup_config_temp EXIT
+
+fail() {
+  printf 'production-smoke: %s\n' "$*" >&2
+  exit 1
+}
+
+required_env() {
+  local name
+  for name in "$@"; do
+    [[ -n "${!name-}" ]] || fail "missing environment value: $name"
+  done
+}
+
+service_uid() {
+  id -u "$SERVICE_USER"
+}
+
+as_service() {
+  local uid
+  uid="$(service_uid)"
+  sudo -u "$SERVICE_USER" env \
+    HOME="$SERVICE_HOME" \
+    XDG_RUNTIME_DIR="/run/user/$uid" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+    "$@"
+}
+
+service_systemctl() {
+  as_service systemctl --user "$@"
+}
+
+prepare_service_user() {
+  local uid
+  local minimum_free_kib=$(( 5 * 1024 * 1024 ))
+  local available_kib
+  available_kib="$(df --output=avail -k "$PWD" | tail -n 1 | tr -d ' ')"
+  (( available_kib >= minimum_free_kib )) || \
+    fail 'less than 5 GiB is available for the production smoke installation'
+  if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+    sudo useradd --create-home --shell /bin/bash "$SERVICE_USER"
+  fi
+  grep -Eq "^${SERVICE_USER}:[0-9]+:[0-9]+$" /etc/subuid || \
+    fail "service user has no subordinate UID range: $SERVICE_USER"
+  grep -Eq "^${SERVICE_USER}:[0-9]+:[0-9]+$" /etc/subgid || \
+    fail "service user has no subordinate GID range: $SERVICE_USER"
+  uid="$(service_uid)"
+  sudo loginctl enable-linger "$SERVICE_USER"
+  sudo systemctl start "user@${uid}.service"
+  sudo install -d -m 0755 /etc/systemd/journald.conf.d
+  printf '%s\n' \
+    '[Journal]' \
+    'SystemMaxUse=1G' \
+    'SystemKeepFree=1G' |
+    sudo tee /etc/systemd/journald.conf.d/kravhantering-ci.conf >/dev/null
+  sudo systemctl restart systemd-journald
+  as_service podman info --format '{{.Host.CgroupsVersion}} {{.Store.GraphDriverName}}' |
+    grep -Eq '^v2 overlay$' || \
+    fail 'production smoke requires cgroup v2 and rootless overlay storage'
+}
+
+install_archive() {
+  local archive="$1" bundle_name release_root
+  [[ -s "$archive" ]] || fail "deployment archive is missing: $archive"
+  bundle_name="$(tar -tzf "$archive" | sed -n '1s#/.*##p')"
+  [[ "$bundle_name" == kravhantering-production-deploy-* ]] || \
+    fail "unexpected deployment archive root: $bundle_name"
+  release_root="$INSTALL_ROOT/releases/$bundle_name"
+  sudo install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0755 \
+    "$INSTALL_ROOT/releases"
+  sudo tar -xzf "$archive" -C "$INSTALL_ROOT/releases"
+  sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$release_root"
+  sudo ln -sfn "$release_root" "$INSTALL_ROOT/current"
+}
+
+render_runtime_configuration() {
+  CONFIG_TEMP_DIR="$(mktemp -d)"
+  cp containers/app/.env.app.local "$CONFIG_TEMP_DIR/app.env"
+  sed -i \
+    -e 's#/realms/kravhantering-test#/realms/kravhantering-production#' \
+    -e 's#^HSA_PERSON_LOOKUP_URL=.*#HSA_PERSON_LOOKUP_URL=http://kong:8000/hsa/person-records/lookup#' \
+    "$CONFIG_TEMP_DIR/app.env"
+  cp containers/db-job/.env.db-job.local "$CONFIG_TEMP_DIR/db-job.env"
+  cp containers/keycloak/.env.keycloak.local "$CONFIG_TEMP_DIR/keycloak.env"
+  cp containers/sqlserver/.env.sqlserver.local "$CONFIG_TEMP_DIR/sqlserver.env"
+
+  cp "$INSTALL_ROOT/current/keycloak/realm-kravhantering-production.template.json" \
+    "$CONFIG_TEMP_DIR/realm.json"
+  sed -i \
+    -e 's#kravhantering.example.internal#kravhantering.test#g' \
+    -e 's#replace-with-production-app-client-secret#container-demo-app-secret-not-for-production#g' \
+    -e 's#replace-with-production-mcp-client-secret#container-demo-mcp-secret-not-for-production#g' \
+    "$CONFIG_TEMP_DIR/realm.json"
+  node "$INSTALL_ROOT/current/scripts/keycloak-demo-users.mjs" merge-file \
+    --users "$INSTALL_ROOT/current/keycloak/demo-users.not-for-production.json" \
+    --realm-file "$CONFIG_TEMP_DIR/realm.json" \
+    --output "$CONFIG_TEMP_DIR/realm-with-demo-users.json"
+
+  required_env APP_RUNTIME_IMAGE_REF DB_JOB_IMAGE_REF KEYCLOAK_IMAGE_REF \
+    NGINX_IMAGE_REF SQLSERVER_IMAGE_REF
+  {
+    printf 'APP_RUNTIME_IMAGE_REF=%s\n' "$APP_RUNTIME_IMAGE_REF"
+    printf 'DB_JOB_IMAGE_REF=%s\n' "$DB_JOB_IMAGE_REF"
+    printf 'KEYCLOAK_IMAGE_REF=%s\n' "$KEYCLOAK_IMAGE_REF"
+    printf 'NGINX_IMAGE_REF=%s\n' "$NGINX_IMAGE_REF"
+    printf 'SQLSERVER_IMAGE_REF=%s\n' "$SQLSERVER_IMAGE_REF"
+    printf 'PUBLIC_HOSTNAME=kravhantering.test\n'
+    printf 'NGINX_HTTPS_BIND=443:443\n'
+    printf 'NGINX_HTTP_BIND=127.0.0.1:8080\n'
+    printf 'NGINX_RESOLVER=%s\n' "${NGINX_RESOLVER:-10.89.0.1}"
+    printf 'APP_RUNTIME_MEMORY_LIMIT_MIB=4096\n'
+    printf 'APP_RUNTIME_CPU_QUOTA_PERCENT=300\n'
+    printf 'APP_RUNTIME_PIDS_LIMIT=512\n'
+    printf 'APP_RUNTIME_EXPORT_STORAGE=tmpfs\n'
+    printf 'APP_RUNTIME_EXPORT_TMPFS_MIB=1024\n'
+    printf 'APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS=30\n'
+    printf 'APP_RUNTIME_LOG_RATE_BURST=2000\n'
+    printf 'NGINX_MEMORY_LIMIT_MIB=512\n'
+    printf 'NGINX_CPU_QUOTA_PERCENT=100\n'
+    printf 'NGINX_PIDS_LIMIT=128\n'
+    printf 'NGINX_CACHE_TMPFS_MIB=64\n'
+    printf 'NGINX_LOG_RATE_INTERVAL_SECONDS=30\n'
+    printf 'NGINX_LOG_RATE_BURST=6000\n'
+  } >"$CONFIG_TEMP_DIR/release.env"
+
+  sudo install -d -o root -g "$SERVICE_USER" -m 0750 \
+    "$CONFIG_ROOT" "$CONFIG_ROOT/keycloak" "$CONFIG_ROOT/tls"
+  for file in app.env db-job.env keycloak.env release.env sqlserver.env; do
+    sudo install -o root -g "$SERVICE_USER" -m 0640 \
+      "$CONFIG_TEMP_DIR/$file" "$CONFIG_ROOT/$file"
+  done
+  sudo install -o root -g "$SERVICE_USER" -m 0640 \
+    "$CONFIG_TEMP_DIR/realm-with-demo-users.json" \
+    "$CONFIG_ROOT/keycloak/realm-kravhantering-production.json"
+  sudo install -o root -g "$SERVICE_USER" -m 0640 \
+    tmp/container-tls/kravhantering.test.crt "$CONFIG_ROOT/tls/fullchain.pem"
+  sudo install -o root -g "$SERVICE_USER" -m 0640 \
+    tmp/container-tls/kravhantering.test.key "$CONFIG_ROOT/tls/privkey.pem"
+  sudo install -o root -g "$SERVICE_USER" -m 0644 \
+    tmp/container-tls/ca.crt "$CONFIG_ROOT/tls/ca.crt"
+  rm -rf -- "$CONFIG_TEMP_DIR"
+  CONFIG_TEMP_DIR=''
+}
+
+load_project_image() {
+  local reference="$1" archive="${2-}"
+  if [[ -n "$archive" ]]; then
+    [[ -s "$archive" ]] || fail "OCI archive is missing: $archive"
+    as_service podman load --input "$archive"
+  else
+    docker image inspect "$reference" >/dev/null
+    docker save "$reference" |
+      sudo -u "$SERVICE_USER" env \
+        HOME="$SERVICE_HOME" \
+        XDG_RUNTIME_DIR="/run/user/$(service_uid)" \
+        podman load
+  fi
+  as_service podman image exists "$reference" || \
+    fail "loaded image does not provide expected reference: $reference"
+}
+
+prepare_images() {
+  load_project_image "$APP_RUNTIME_IMAGE_REF" "${APP_RUNTIME_OCI_ARCHIVE-}"
+  load_project_image "$DB_JOB_IMAGE_REF" "${DB_JOB_OCI_ARCHIVE-}"
+  load_project_image "$DEMO_SEED_IMAGE_REF" "${DEMO_SEED_OCI_ARCHIVE-}"
+  load_project_image "$HSA_DIRECTORY_MOCK_IMAGE_REF" \
+    "${HSA_DIRECTORY_MOCK_OCI_ARCHIVE-}"
+  load_project_image "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF" \
+    "${HSA_PERSON_LOOKUP_ADAPTER_OCI_ARCHIVE-}"
+  as_service podman pull "$NGINX_IMAGE_REF"
+  as_service podman pull "$SQLSERVER_IMAGE_REF"
+  as_service podman pull "$KEYCLOAK_IMAGE_REF"
+  as_service podman pull "$KONG_IMAGE_REF"
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-images.sh" verify
+}
+
+render_ci_overlay() {
+  local quadlet_dir systemd_dir template output
+  quadlet_dir="$SERVICE_HOME/.config/containers/systemd"
+  systemd_dir="$SERVICE_HOME/.config/systemd/user"
+  as_service mkdir -p "$quadlet_dir" "$systemd_dir"
+  for template in .github/production-smoke/quadlet/*.template; do
+    output="$(basename "${template%.template}")"
+    if [[ "$output" == *.target ]]; then
+      output="$systemd_dir/$output"
+    else
+      output="$quadlet_dir/$output"
+    fi
+    sed \
+      -e "s#@@BUNDLE_ROOT@@#$INSTALL_ROOT/current#g" \
+      -e "s#@@HSA_DIRECTORY_MOCK_IMAGE_REF@@#$HSA_DIRECTORY_MOCK_IMAGE_REF#g" \
+      -e "s#@@HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF@@#$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF#g" \
+      -e "s#@@KONG_IMAGE_REF@@#$KONG_IMAGE_REF#g" \
+      "$template" | as_service tee "$output" >/dev/null
+  done
+}
+
+database_job() {
+  local command="$1" network
+  network="$(as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+    print-network --topology single-node --purpose database)"
+  as_service podman run --rm --pull=never --network "$network" \
+    --env-file "$CONFIG_ROOT/db-job.env" "$DB_JOB_IMAGE_REF" "$command"
+}
+
+wait_for_url() {
+  local url="$1" attempts=0
+  until curl --fail --silent --show-error \
+    --cacert tmp/container-tls/ca.crt "$url" >/dev/null; do
+    attempts="$(( attempts + 1 ))"
+    (( attempts < 90 )) || fail "timed out waiting for $url"
+    sleep 2
+  done
+}
+
+verify_service_cgroup() {
+  local service="$1" expected_memory="$2" expected_tasks="$3"
+  local expected_cpu="$4" control_group cgroup_root
+  control_group="$(service_systemctl show "$service" \
+    --property=ControlGroup --value)"
+  cgroup_root="/sys/fs/cgroup${control_group}"
+  [[ "$(<"$cgroup_root/memory.max")" == "$expected_memory" ]]
+  [[ "$(<"$cgroup_root/pids.max")" == "$expected_tasks" ]]
+  [[ "$(<"$cgroup_root/cpu.max")" == "$expected_cpu" ]]
+}
+
+container_networks() {
+  local name="$1"
+  as_service podman inspect "$name" \
+    --format '{{range $network, $_ := .NetworkSettings.Networks}}{{println $network}}{{end}}' |
+    sort
+}
+
+verify_network_contract() {
+  local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
+  local purpose network expected_internal actual_internal
+  for purpose in edge identity database egress; do
+    network="$(as_service "$helper" print-network \
+      --topology single-node --purpose "$purpose")"
+    expected_internal=true
+    [[ "$purpose" == egress ]] && expected_internal=false
+    actual_internal="$(as_service podman network inspect "$network" \
+      --format '{{.Internal}}')"
+    [[ "$actual_internal" == "$expected_internal" ]]
+  done
+
+  [[ "$(container_networks kravhantering-nginx)" == \
+    $'kravhantering-single-node_edge\nkravhantering-single-node_identity' ]]
+  [[ "$(container_networks kravhantering-app-runtime)" == \
+    $'kravhantering-single-node_database\nkravhantering-single-node_edge\nkravhantering-single-node_egress' ]]
+  [[ "$(container_networks kravhantering-keycloak)" == \
+    'kravhantering-single-node_identity' ]]
+  [[ "$(container_networks kravhantering-sqlserver)" == \
+    'kravhantering-single-node_database' ]]
+
+  if as_service podman exec kravhantering-nginx getent hosts sqlserver; then
+    fail 'nginx unexpectedly resolves the database peer'
+  fi
+  if as_service podman exec kravhantering-app-runtime getent hosts keycloak; then
+    fail 'app-runtime unexpectedly resolves the direct identity peer'
+  fi
+}
+
+verify_containment() {
+  local name
+  for name in kravhantering-app-runtime kravhantering-nginx; do
+    as_service podman inspect "$name" |
+      jq -e '.[0].HostConfig.ReadonlyRootfs == true and
+        any(.[0].HostConfig.CapDrop[]; ascii_upcase | contains("ALL")) and
+        any(.[0].HostConfig.SecurityOpt[]; startswith("no-new-privileges")) and
+        .[0].HostConfig.PidsLimit > 0 and
+        .[0].HostConfig.LogConfig.Type == "journald"' >/dev/null
+  done
+  as_service podman inspect kravhantering-app-runtime |
+    jq -e '([.[0].Mounts[] | select(.RW) | .Destination] | sort) ==
+      ["/run/kravhantering/export", "/tmp"]' >/dev/null
+  as_service podman inspect kravhantering-nginx |
+    jq -e '([.[0].Mounts[] | select(.RW) | .Destination] | sort) ==
+      ["/etc/nginx/conf.d", "/run", "/var/cache/nginx"]' >/dev/null
+  as_service podman inspect kravhantering-nginx |
+    jq -e '.[0].NetworkSettings.Ports as $ports |
+      ($ports | keys) == ["8443/tcp"] and
+      all($ports["8443/tcp"][]; .HostPort == "443")' >/dev/null
+  for name in kravhantering-app-runtime kravhantering-keycloak \
+    kravhantering-sqlserver; do
+    as_service podman inspect "$name" |
+      jq -e '((.[0].NetworkSettings.Ports // {}) | length) == 0' >/dev/null
+  done
+  as_service podman exec kravhantering-app-runtime \
+    sh -c 'touch /tmp/allowed && rm /tmp/allowed'
+  if as_service podman exec kravhantering-app-runtime \
+    sh -c 'touch /app/containment-must-fail'; then
+    fail 'application read-only root probe unexpectedly succeeded'
+  fi
+  verify_network_contract
+  [[ "$(service_systemctl show kravhantering-app-runtime.service \
+    --property=MemoryMax --value)" == 4294967296 ]]
+  [[ "$(service_systemctl show kravhantering-app-runtime.service \
+    --property=TasksMax --value)" == 544 ]]
+  [[ "$(service_systemctl show kravhantering-nginx.service \
+    --property=MemoryMax --value)" == 536870912 ]]
+  [[ "$(service_systemctl show kravhantering-nginx.service \
+    --property=TasksMax --value)" == 160 ]]
+  [[ "$(service_systemctl show kravhantering-app-runtime.service \
+    --property=LogRateLimitIntervalUSec --value)" == 30s ]]
+  [[ "$(service_systemctl show kravhantering-app-runtime.service \
+    --property=LogRateLimitBurst --value)" == 2000 ]]
+  [[ "$(service_systemctl show kravhantering-nginx.service \
+    --property=LogRateLimitIntervalUSec --value)" == 30s ]]
+  [[ "$(service_systemctl show kravhantering-nginx.service \
+    --property=LogRateLimitBurst --value)" == 6000 ]]
+  verify_service_cgroup kravhantering-app-runtime.service \
+    4294967296 544 '300000 100000'
+  verify_service_cgroup kravhantering-nginx.service \
+    536870912 160 '100000 100000'
+  as_service podman exec kravhantering-app-runtime sh -c \
+    'dd if=/dev/zero of=/run/kravhantering/export/capacity-probe bs=1M count=768 status=none && rm /run/kravhantering/export/capacity-probe'
+}
+
+up() {
+  local archive="$1"
+  required_env DEMO_SEED_IMAGE_REF HSA_DIRECTORY_MOCK_IMAGE_REF \
+    HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF KONG_IMAGE_REF
+  prepare_service_user
+  install_archive "$archive"
+  render_runtime_configuration
+  prepare_images
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+    install --topology "$TOPOLOGY"
+  render_ci_overlay
+  service_systemctl daemon-reload
+  mkdir -p "$EVIDENCE_DIR"
+  service_systemctl start kravhantering-sqlserver.service
+  service_systemctl start kravhantering-keycloak.service
+  database_job wait
+  database_job bootstrap
+  database_job migration-status >"$EVIDENCE_DIR/migration-before.json"
+  database_job migrate >"$EVIDENCE_DIR/migration.json"
+  database_job migration-status >"$EVIDENCE_DIR/migration-after.json"
+  database_job permission-status >"$EVIDENCE_DIR/permissions.json"
+  database_job seed:required
+  local database_network
+  database_network="$(as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+    print-network --topology single-node --purpose database)"
+  as_service podman run --rm --pull=never --network "$database_network" \
+    --env-file "$CONFIG_ROOT/db-job.env" "$DEMO_SEED_IMAGE_REF"
+  service_systemctl start kravhantering-ci-hsa.target
+  service_systemctl enable --now kravhantering-single-node.target
+  wait_for_url https://kravhantering.test/api/health
+  wait_for_url https://kravhantering.test/api/ready
+  verify_containment
+  service_systemctl restart kravhantering-app-runtime.service
+  wait_for_url https://kravhantering.test/api/ready
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+    install --topology "$TOPOLOGY"
+  service_systemctl daemon-reload
+  service_systemctl stop kravhantering-single-node.target
+  ! service_systemctl is-active --quiet kravhantering-single-node.target
+  service_systemctl start kravhantering-single-node.target
+  wait_for_url https://kravhantering.test/api/ready
+  printf '%s\n' \
+    'restart=passed' \
+    'reinstall=passed' \
+    'target-stop-start=passed' >"$EVIDENCE_DIR/lifecycle.txt"
+}
+
+evidence() {
+  mkdir -p "$EVIDENCE_DIR"
+  for file in DEPLOYMENT-MANIFEST.json container-stack.lock.json \
+    release-metadata.json; do
+    if [[ -f "$INSTALL_ROOT/current/$file" ]]; then
+      cp "$INSTALL_ROOT/current/$file" "$EVIDENCE_DIR/$file"
+    fi
+  done
+  service_systemctl status kravhantering-single-node.target --no-pager \
+    >"$EVIDENCE_DIR/systemd-status.txt" 2>&1 || true
+  service_systemctl list-units 'kravhantering-*' --all --no-pager \
+    >"$EVIDENCE_DIR/systemd-units.txt" 2>&1 || true
+  as_service podman ps --all --format json \
+    >"$EVIDENCE_DIR/podman-ps.json" 2>&1 || true
+  as_service podman network ls --format json \
+    >"$EVIDENCE_DIR/podman-networks.json" 2>&1 || true
+  as_service podman volume ls --format json \
+    >"$EVIDENCE_DIR/podman-volumes.json" 2>&1 || true
+  local network purpose
+  for purpose in edge identity database egress; do
+    network="$(as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+      print-network --topology single-node --purpose "$purpose" 2>/dev/null)" || \
+      continue
+    as_service podman network inspect "$network" \
+      >"$EVIDENCE_DIR/network-${purpose}.json" 2>&1 || true
+  done
+  as_service find "$SERVICE_HOME/.config/containers/systemd" \
+    -maxdepth 1 -type f -name 'kravhantering-*' -print -exec sed -n '1,240p' {} \; \
+    >"$EVIDENCE_DIR/generated-quadlet-units.txt" 2>&1 || true
+  as_service find "$SERVICE_HOME/.config/systemd/user" \
+    -maxdepth 1 -type f -name 'kravhantering-*' -print -exec sed -n '1,240p' {} \; \
+    >"$EVIDENCE_DIR/generated-systemd-units.txt" 2>&1 || true
+  for name in kravhantering-app-runtime kravhantering-nginx; do
+    as_service podman inspect "$name" 2>/dev/null |
+      jq '.[0] | del(.Config.Env)' \
+        >"$EVIDENCE_DIR/${name}-inspect.redacted.json" || true
+  done
+  service_systemctl show kravhantering-app-runtime.service \
+    >"$EVIDENCE_DIR/app-runtime-systemd.txt" 2>&1 || true
+  service_systemctl show kravhantering-nginx.service \
+    >"$EVIDENCE_DIR/nginx-systemd.txt" 2>&1 || true
+  as_service journalctl --user -u 'kravhantering-*' --since=-30min \
+    --no-pager >"$EVIDENCE_DIR/journal.txt" 2>&1 || true
+}
+
+boundaries() {
+  local marker captured suppressed
+  [[ "$(service_systemctl show kravhantering-app-runtime.service \
+    --property=NRestarts --value)" == 0 ]]
+  if as_service podman exec kravhantering-app-runtime sh -c \
+    'dd if=/dev/zero of=/run/kravhantering/export/must-not-fit bs=1M count=1100 status=none'; then
+    as_service podman exec kravhantering-app-runtime \
+      rm -f /run/kravhantering/export/must-not-fit
+    fail 'application export tmpfs accepted data beyond its configured limit'
+  fi
+  as_service podman exec kravhantering-app-runtime \
+    rm -f /run/kravhantering/export/must-not-fit
+
+  marker="kravhantering-log-boundary-$(date +%s)"
+  as_service podman exec kravhantering-app-runtime sh -c \
+    'i=0; while [ "$i" -lt 2500 ]; do printf "%s-%s\\n" "$1" "$i" > /proc/1/fd/1; i=$((i + 1)); done' \
+    sh "$marker"
+  sleep 2
+  captured="$(as_service journalctl --user-unit \
+    kravhantering-app-runtime.service --since=-1min --no-pager |
+    grep -c "$marker" || true)"
+  (( captured > 0 && captured < 2500 )) || \
+    fail "journald rate boundary was not observable (captured $captured of 2500)"
+  suppressed="$(as_service journalctl --user --since=-1min --no-pager |
+    grep -Eic 'suppress(ed|ing).*(message|log)|message.*suppress' || true)"
+  printf 'sent=2500\ncaptured=%s\nsuppression-messages=%s\n' \
+    "$captured" "$suppressed" >"$EVIDENCE_DIR/log-boundary.txt"
+}
+
+down() {
+  id "$SERVICE_USER" >/dev/null 2>&1 || return 0
+  mkdir -p "$EVIDENCE_DIR"
+  service_systemctl disable --now kravhantering-single-node.target || true
+  service_systemctl stop kravhantering-ci-hsa.target || true
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+    remove --topology "$TOPOLOGY" \
+    >"$EVIDENCE_DIR/removal.txt" 2>&1
+  as_service podman volume exists kravhantering-sqlserver-data
+  as_service podman volume exists kravhantering-keycloak-data
+  printf '%s\n' 'named-volumes-survived-helper-removal=passed' >> \
+    "$EVIDENCE_DIR/removal.txt"
+  as_service find "$SERVICE_HOME/.config/containers/systemd" \
+    -maxdepth 1 -type f -name 'kravhantering-ci-*' -delete || true
+  as_service find "$SERVICE_HOME/.config/systemd/user" \
+    -maxdepth 1 -type f -name 'kravhantering-ci-*' -delete || true
+  service_systemctl daemon-reload || true
+  as_service podman rm --all --force || true
+  as_service podman volume rm kravhantering-ci-hsa-mtls-certs \
+    kravhantering-sqlserver-data kravhantering-keycloak-data || true
+  local purpose network
+  for purpose in edge identity database egress; do
+    network="$(as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+      print-network --topology single-node --purpose "$purpose" 2>/dev/null)" || \
+      continue
+    as_service podman network rm "$network" || true
+  done
+}
+
+COMMAND="${1-}"
+case "$COMMAND" in
+  up)
+    [[ "${2-}" == --archive && -n "${3-}" ]] || \
+      fail 'usage: production-smoke.sh up --archive <path>'
+    up "$3"
+    ;;
+  boundaries) boundaries ;;
+  evidence) evidence ;;
+  down) down ;;
+  *) fail 'expected up, boundaries, evidence, or down' ;;
+esac

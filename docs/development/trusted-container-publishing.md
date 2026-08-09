@@ -15,14 +15,15 @@ index.
 
 Syft generates an SBOM directly from each candidate archive. Grype scans every
 SBOM with an updated vulnerability database, and the committed exception policy
-evaluates the complete reports. The release-smoke stack loads those same
-archives into Podman without rebuilding. GHCR authentication, release tag
-publication and final attestations occur only after every candidate passes both
-the vulnerability and smoke gates. Promotion first copies every candidate to a
-content-addressed, non-promoted `candidate-sha256-*` GHCR tag and verifies all
-of those remote manifest digests. It then applies the planned release tags from
-the verified remote identities and verifies every published tag against the
-candidate manifest digest.
+evaluates the complete reports. The release smoke job stages the real production
+deployment archive, installs it for a dedicated rootless user on Ubuntu 24.04,
+and loads those same candidate archives into that user's Podman store without
+rebuilding. GHCR authentication, release tag publication and final attestations
+occur only after every candidate passes both the vulnerability and smoke gates.
+Promotion first copies every candidate to a content-addressed, non-promoted
+`candidate-sha256-*` GHCR tag and verifies all remote manifest digests. It then
+applies the planned release tags from the verified remote identities and
+verifies every published tag against the candidate manifest digest.
 
 The production image identities are recorded in
 `container-stack.lock.json`. The `manifestDigest` is the candidate and verified
@@ -34,10 +35,11 @@ The test support identities are recorded separately in
 `container-test-support.lock.json`.
 The optional demo seed image is recorded in release metadata and release notes,
 not in the production or test-support lock files.
-The release smoke test starts Podman from the local OCI candidates. Production
-deployment and upgrade guides use tag-style runtime refs by default and verify
-them against locked image IDs. The production helper also accepts tag-and-digest
-refs when a site explicitly chooses pull-time digest pinning.
+The release smoke test uses the production archive's single-node Quadlet
+topology and a separate CI-only HSA overlay. Production deployment and upgrade
+guides use tag-style runtime refs by default and verify them against locked image
+IDs. The production helper also accepts tag-and-digest refs when a site
+explicitly chooses pull-time digest pinning.
 
 The Buildx candidate steps disable BuildKit's default registry provenance
 attestations with `--provenance=false`. The workflow publishes provenance and
@@ -74,12 +76,11 @@ tag aliases for commit traceability. Preview releases use GitVersion's
 names strip SemVer build metadata from the first `+` onward. For example,
 `1.2.0-preview.4+Branch.main.Sha.abcdef` becomes `1.2.0-preview.4`.
 
-Local and release-smoke stack startup honor `--lock-file`. When the stack builds
-local images, `run-local-stack.mjs` passes that path to
-`generate-stack-lock.mjs` before `generate-compose.mjs` reads it.
-Trusted release smoke runs instead use `--candidate-metadata`; this loads the
-recorded OCI archives and refuses incomplete or digest-inconsistent candidate
-metadata.
+Local Compose startup honors `--lock-file`; `run-local-stack.mjs` writes the
+local image identities before `generate-compose.mjs` reads it. Trusted release
+smoke does not use that Compose path. It stages the production archive from
+recorded candidate metadata and the stack lock, then the archive's image helper
+refuses image IDs that differ from the lock.
 
 ## Vulnerability Promotion Policy
 
@@ -168,8 +169,8 @@ untouched and fails the workflow.
 Kong is a vendor-updated HSA integration support image. Its lock under
 `containers/kong/` is copied into
 `container-hsa-integration-support.lock.json` during container releases and is
-used by the test-only `single-node-demo` topology. Kong is not part of the
-required production runtime topology. Dependency maintenance also requires
+used by the CI-only release-smoke overlay. Kong is not part of the required
+production runtime topology. Dependency maintenance also requires
 every active devcontainer and Azure VM Kong runtime reference to match the
 lock's exact tag and Linux AMD64 manifest digest.
 
@@ -330,9 +331,9 @@ Each trusted run also writes runtime evidence:
   and outcome.
 - `promotion-result.json` records each verified non-promoted staging identity
   and final GHCR tag with its manifest digest after successful validation.
-- `container-stack.compose.yml` is the generated Compose file used by the local
-  release-smoke harness. It is smoke evidence, not a production
-  deployment asset.
+- `production-smoke-evidence/` contains redacted systemd, journal, Podman
+  inspect, network, database-job, restart, reinstall, and removal evidence from
+  the installed production archive.
 - `hashes.sha256` contains checksums for saved runtime evidence.
 - `public/build.json` contains the app version, commit SHA, build time, image
   tag and expected database schema migration `name` embedded in the tested app
@@ -343,8 +344,8 @@ Each trusted run also writes runtime evidence:
 
 The workflow uploads these artifact groups:
 
-- `container-release-runtime-*` for release-smoke Compose evidence, stack
-  lock, status, build metadata and hashes.
+- `container-release-runtime-*` for production Quadlet smoke evidence, stack
+  lock, build metadata and hashes.
 - `container-release-metadata-*` for GitVersion, release metadata, release
   notes, Grype database status, complete vulnerability reports, the policy
   decision and SBOM files, including optional demonstration image SBOMs.
@@ -421,8 +422,8 @@ artifacts anonymously:
 - `ghcr.io/<owner>/kravhantering-db-job`
 - `ghcr.io/<owner>/kravhantering-hsa-person-lookup-adapter` for optional HSA
   integration support
-- `ghcr.io/<owner>/kravhantering-hsa-directory-mock` for test-only
-  `single-node-demo` support
+- `ghcr.io/<owner>/kravhantering-hsa-directory-mock` for test-only CI and
+  developer support
 <!-- cSpell:ignore opencontainers -->
 The publish steps attach `org.opencontainers.image.description` as both an
 image label and a manifest annotation. GHCR reads labels for normal image

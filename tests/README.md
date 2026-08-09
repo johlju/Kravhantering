@@ -111,18 +111,17 @@ these locations:
 
 - Location: [release-smoke/release-smoke.md](release-smoke/release-smoke.md)
 - Config: [playwright.release-smoke.config.ts](../playwright.release-smoke.config.ts)
-- Run against a started container stack with:
+- PR and release workflows install the production archive's rootless Quadlet
+  topology on Ubuntu 24.04 before running:
 
 ```bash
-npm run container:release-smoke:up
 npm run test:release-smoke
-npm run container:release-smoke:down
 ```
 
-The suite signs in as `release-smoke-user` and `release-smoke-admin` through
-the container Keycloak realm and verifies HTTPS, nginx, session reuse, seeded
-SQL Server reads, one CSRF-protected write, static assets, `/build.json` and
-HSA lookup through Kong plus the HSA directory mock.
+The suite signs in as the bundled `rita.reviewer` and `ada.admin` demo users
+through the production-shaped Keycloak realm and verifies HTTPS, nginx,
+session reuse, seeded SQL Server reads, one CSRF-protected write, static
+assets, `/build.json` and HSA lookup through Kong plus the HSA directory mock.
 
 In the devcontainer, stack startup trusts the generated container CA for Node
 and Chromium. Other runners must trust `tmp/container-tls/ca.crt` themselves.

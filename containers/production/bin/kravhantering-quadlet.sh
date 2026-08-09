@@ -14,9 +14,10 @@ usage() {
 Usage:
   kravhantering-quadlet.sh render --topology <app-node-tls|app-node-http|single-node> [--output-dir <path>]
   kravhantering-quadlet.sh install --topology <app-node-tls|app-node-http|single-node>
+  kravhantering-quadlet.sh verify-host --topology <app-node-tls|app-node-http|single-node>
   kravhantering-quadlet.sh status --topology <app-node-tls|app-node-http|single-node>
   kravhantering-quadlet.sh remove --topology <app-node-tls|app-node-http|single-node>
-  kravhantering-quadlet.sh print-network --topology <app-node-tls|app-node-http|single-node>
+  kravhantering-quadlet.sh print-network --topology <app-node-tls|app-node-http|single-node> --purpose <edge|identity|database|egress>
 USAGE
 }
 
@@ -34,14 +35,22 @@ topology_target() {
 }
 
 topology_network() {
-  case "$1" in
-    app-node-tls | app-node-http)
-      printf '%s\n' 'kravhantering-app-node_kravhantering-internal'
+  local topology="$1" purpose="$2"
+  case "$topology:$purpose" in
+    app-node-tls:edge | app-node-http:edge)
+      printf '%s\n' 'kravhantering-app-node_edge'
       ;;
-    single-node)
-      printf '%s\n' 'kravhantering-single-node_kravhantering-internal'
+    app-node-tls:egress | app-node-http:egress)
+      printf '%s\n' 'kravhantering-app-node_egress'
       ;;
-    *) fail "unsupported topology: $1" ;;
+    single-node:edge | single-node:identity | single-node:database | single-node:egress)
+      printf 'kravhantering-single-node_%s\n' "$purpose"
+      ;;
+    app-node-tls:* | app-node-http:*)
+      fail "network purpose $purpose is unavailable for topology $topology"
+      ;;
+    single-node:*) fail "unsupported network purpose: $purpose" ;;
+    *) fail "unsupported topology: $topology" ;;
   esac
 }
 
@@ -61,6 +70,26 @@ required_values() {
       ;;
     *) fail "unsupported topology: $1" ;;
   esac
+}
+
+template_values() {
+  required_values "$1"
+  printf '%s\n' \
+    APP_RUNTIME_CPU_QUOTA_PERCENT \
+    APP_RUNTIME_EXPORT_MOUNT \
+    APP_RUNTIME_LOG_RATE_BURST \
+    APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS \
+    APP_RUNTIME_MEMORY_LIMIT_MIB \
+    APP_RUNTIME_PIDS_LIMIT \
+    APP_RUNTIME_TASKS_MAX \
+    NGINX_CACHE_TMPFS_MIB \
+    NGINX_CPU_QUOTA_PERCENT \
+    NGINX_HTTPS_PUBLISH \
+    NGINX_LOG_RATE_BURST \
+    NGINX_LOG_RATE_INTERVAL_SECONDS \
+    NGINX_MEMORY_LIMIT_MIB \
+    NGINX_PIDS_LIMIT \
+    NGINX_TASKS_MAX
 }
 
 read_release_env() {
@@ -86,15 +115,110 @@ validate_release_env() {
   done < <(required_values "$1")
 }
 
+default_release_value() {
+  local key="$1" value="$2"
+  [[ -n "${!key-}" ]] || printf -v "$key" '%s' "$value"
+}
+
+validate_integer_range() {
+  local key="$1" minimum="$2" maximum="$3" value="${!1-}"
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "invalid $key: expected a decimal integer"
+  (( value >= minimum && value <= maximum )) || \
+    fail "invalid $key: expected $minimum-$maximum"
+}
+
+configure_containment() {
+  local topology_cpu_capacity
+  default_release_value APP_RUNTIME_MEMORY_LIMIT_MIB 4096
+  default_release_value APP_RUNTIME_CPU_QUOTA_PERCENT 300
+  default_release_value APP_RUNTIME_PIDS_LIMIT 512
+  default_release_value APP_RUNTIME_EXPORT_STORAGE tmpfs
+  default_release_value APP_RUNTIME_EXPORT_TMPFS_MIB 1024
+  default_release_value APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS 30
+  default_release_value APP_RUNTIME_LOG_RATE_BURST 2000
+  default_release_value NGINX_MEMORY_LIMIT_MIB 512
+  default_release_value NGINX_CPU_QUOTA_PERCENT 100
+  default_release_value NGINX_PIDS_LIMIT 128
+  default_release_value NGINX_CACHE_TMPFS_MIB 64
+  default_release_value NGINX_LOG_RATE_INTERVAL_SECONDS 30
+  default_release_value NGINX_LOG_RATE_BURST 6000
+
+  validate_integer_range APP_RUNTIME_MEMORY_LIMIT_MIB 4096 8192
+  validate_integer_range APP_RUNTIME_CPU_QUOTA_PERCENT 50 "$(( $(nproc) * 100 ))"
+  validate_integer_range APP_RUNTIME_PIDS_LIMIT 128 1024
+  validate_integer_range APP_RUNTIME_EXPORT_TMPFS_MIB 1024 4096
+  validate_integer_range APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS 10 60
+  validate_integer_range APP_RUNTIME_LOG_RATE_BURST 100 10000
+  validate_integer_range NGINX_MEMORY_LIMIT_MIB 256 1024
+  validate_integer_range NGINX_CPU_QUOTA_PERCENT 25 "$(( $(nproc) * 100 ))"
+  validate_integer_range NGINX_PIDS_LIMIT 32 512
+  validate_integer_range NGINX_CACHE_TMPFS_MIB 16 256
+  validate_integer_range NGINX_LOG_RATE_INTERVAL_SECONDS 10 60
+  validate_integer_range NGINX_LOG_RATE_BURST 500 50000
+
+  (( APP_RUNTIME_EXPORT_TMPFS_MIB * 2 <= APP_RUNTIME_MEMORY_LIMIT_MIB )) || \
+    fail 'invalid APP_RUNTIME_EXPORT_TMPFS_MIB: must not exceed half APP_RUNTIME_MEMORY_LIMIT_MIB'
+  (( NGINX_CACHE_TMPFS_MIB * 2 <= NGINX_MEMORY_LIMIT_MIB )) || \
+    fail 'invalid NGINX_CACHE_TMPFS_MIB: must not exceed half NGINX_MEMORY_LIMIT_MIB'
+  topology_cpu_capacity="$(( $(nproc) * 100 ))"
+  (( topology_cpu_capacity <= 400 )) || topology_cpu_capacity=400
+  (( APP_RUNTIME_CPU_QUOTA_PERCENT + NGINX_CPU_QUOTA_PERCENT <= topology_cpu_capacity )) || \
+    fail 'invalid CPU quota combination: exceeds topology CPU capacity'
+
+  APP_RUNTIME_TASKS_MAX="$(( APP_RUNTIME_PIDS_LIMIT + 32 ))"
+  NGINX_TASKS_MAX="$(( NGINX_PIDS_LIMIT + 32 ))"
+  if [[ -n "${NGINX_HTTPS_BIND-}" ]]; then
+    NGINX_HTTPS_PUBLISH="${NGINX_HTTPS_BIND%:*}:8443"
+  else
+    NGINX_HTTPS_PUBLISH=''
+  fi
+
+  case "$APP_RUNTIME_EXPORT_STORAGE" in
+    tmpfs)
+      [[ -z "${APP_RUNTIME_EXPORT_HOST_PATH-}" ]] || \
+        fail 'invalid APP_RUNTIME_EXPORT_HOST_PATH: only valid with bind storage'
+      APP_RUNTIME_EXPORT_MOUNT="Tmpfs=/run/kravhantering/export:rw,size=${APP_RUNTIME_EXPORT_TMPFS_MIB}M,mode=0700,uid=1000,gid=1000,nosuid,nodev,noexec"
+      ;;
+    bind)
+      local export_path="${APP_RUNTIME_EXPORT_HOST_PATH-}" export_mode
+      local export_available_bytes
+      local podman_bin="${KRAVHANTERING_PODMAN_BIN:-podman}"
+      [[ "$export_path" == /* ]] || \
+        fail 'invalid APP_RUNTIME_EXPORT_HOST_PATH: expected an absolute path'
+      [[ -d "$export_path" && ! -L "$export_path" ]] || \
+        fail 'invalid APP_RUNTIME_EXPORT_HOST_PATH: expected an existing nonsymlink directory'
+      export_mode="$(stat -c '%a' -- "$export_path")"
+      [[ "$export_mode" == 700 ]] || \
+        fail 'invalid APP_RUNTIME_EXPORT_HOST_PATH: expected mode 0700'
+      "$podman_bin" unshare setpriv --reuid=1000 --regid=1000 \
+        --clear-groups sh -c \
+        'test -r "$1" && test -w "$1" && test -x "$1"' sh \
+        "$export_path" >/dev/null 2>&1 || \
+        fail 'invalid APP_RUNTIME_EXPORT_HOST_PATH: container UID 1000 lacks read, write, or search access'
+      export_available_bytes="$(df --output=avail -B1 -- "$export_path" | tail -n 1 | tr -d ' ')"
+      (( export_available_bytes >= 1073741824 )) || \
+        fail 'invalid APP_RUNTIME_EXPORT_HOST_PATH: less than 1 GiB is available'
+      APP_RUNTIME_EXPORT_MOUNT="Volume=$export_path:/run/kravhantering/export:rw,Z,nosuid,nodev,noexec"
+      ;;
+    *) fail 'invalid APP_RUNTIME_EXPORT_STORAGE: expected tmpfs or bind' ;;
+  esac
+}
+
 managed_unit_names() {
   printf '%s\n' \
     kravhantering-app-node.network \
+    kravhantering-app-node-edge.network \
+    kravhantering-app-node-egress.network \
     kravhantering-app-node.target \
     kravhantering-app-runtime.container \
     kravhantering-keycloak-data.volume \
     kravhantering-keycloak.container \
     kravhantering-nginx.container \
     kravhantering-single-node.network \
+    kravhantering-single-node-database.network \
+    kravhantering-single-node-edge.network \
+    kravhantering-single-node-egress.network \
+    kravhantering-single-node-identity.network \
     kravhantering-single-node.target \
     kravhantering-sqlserver-data.volume \
     kravhantering-sqlserver.container
@@ -123,6 +247,112 @@ remove_stale_managed_units() {
   done < <(managed_unit_names)
 }
 
+quadlet_generator() {
+  local candidate
+  if [[ -n "${KRAVHANTERING_QUADLET_GENERATOR-}" ]]; then
+    printf '%s\n' "$KRAVHANTERING_QUADLET_GENERATOR"
+    return
+  fi
+  for candidate in \
+    /usr/lib/systemd/user-generators/podman-user-generator \
+    /usr/lib/systemd/system-generators/podman-system-generator; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+  fail 'compatible Podman Quadlet generator is unavailable'
+}
+
+verify_journal_retention() {
+  local configured=false file line value
+  local -a files=()
+  if [[ -n "${KRAVHANTERING_JOURNAL_CONFIG_DIR-}" ]]; then
+    while IFS= read -r file; do files+=("$file"); done < <(
+      find "$KRAVHANTERING_JOURNAL_CONFIG_DIR" -maxdepth 1 -type f -name '*.conf' -print 2>/dev/null | sort
+    )
+  else
+    [[ -f /etc/systemd/journald.conf ]] && files+=(/etc/systemd/journald.conf)
+    while IFS= read -r file; do files+=("$file"); done < <(
+      find /etc/systemd/journald.conf.d -maxdepth 1 -type f -name '*.conf' -print 2>/dev/null | sort
+    )
+  fi
+
+  for file in "${files[@]}"; do
+    while IFS= read -r line; do
+      value="${line#*=}"
+      value="${value//[[:space:]]/}"
+      if [[ "$value" =~ ^[1-9][0-9]*(K|M|G|T|P|E)?$ ]]; then
+        configured=true
+      fi
+    done < <(grep -E '^[[:space:]]*(SystemMaxUse|SystemKeepFree|RuntimeMaxUse|RuntimeKeepFree)[[:space:]]*=' "$file" || true)
+  done
+  [[ "$configured" == true ]] || \
+    fail 'finite journald retention is not configured'
+}
+
+verify_rootless_networking() {
+  local podman_bin="$1" network_name network_internal
+  network_name="kravhantering-preflight-$(id -u)-$$"
+  "$podman_bin" network create --internal "$network_name" >/dev/null 2>&1 || \
+    fail 'rootless Podman cannot create the required bridge networks'
+  network_internal="$(
+    "$podman_bin" network inspect "$network_name" \
+      --format '{{.Internal}}' 2>/dev/null
+  )" || {
+    "$podman_bin" network rm "$network_name" >/dev/null 2>&1 || true
+    fail 'rootless Podman cannot inspect the required bridge networks'
+  }
+  "$podman_bin" network rm "$network_name" >/dev/null 2>&1 || \
+    fail 'rootless Podman cannot remove a temporary bridge network'
+  [[ "$network_internal" == true ]] || \
+    fail 'rootless Podman did not enforce an internal bridge network'
+}
+
+verify_host_enforcement() {
+  local rendered_dir="$1" controller controllers missing='' podman_info generator
+  local controllers_file="${KRAVHANTERING_CGROUP_CONTROLLERS_FILE:-/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/cgroup.controllers}"
+  local meminfo_file="${KRAVHANTERING_MEMINFO_FILE:-/proc/meminfo}"
+  local podman_bin="${KRAVHANTERING_PODMAN_BIN:-podman}"
+  local systemctl_bin="${KRAVHANTERING_SYSTEMCTL_BIN:-systemctl}"
+  local total_memory_mib
+
+  [[ -r "$controllers_file" ]] || \
+    fail "cannot read delegated cgroup controllers: $controllers_file"
+  controllers="$(<"$controllers_file")"
+  for controller in cpu memory pids; do
+    if [[ " $controllers " != *" $controller "* ]]; then
+      missing="${missing:+$missing }$controller"
+    fi
+  done
+  [[ -z "$missing" ]] || \
+    fail "delegated cgroup controllers are missing: $missing"
+
+  "$systemctl_bin" --user show-environment >/dev/null 2>&1 || \
+    fail 'user systemd manager is unavailable'
+  podman_info="$("$podman_bin" info --format '{{.Host.Security.Rootless}} {{.Host.CgroupsVersion}}' 2>/dev/null)" || \
+    fail 'rootless Podman is unavailable'
+  [[ "$podman_info" == 'true v2' ]] || \
+    fail "rootless Podman with cgroup v2 is required (reported: $podman_info)"
+  verify_rootless_networking "$podman_bin"
+  total_memory_mib="$(awk '/^MemTotal:/ { print int($2 / 1024) }' "$meminfo_file")"
+  [[ "$total_memory_mib" =~ ^[0-9]+$ ]] || \
+    fail "cannot determine host memory capacity from $meminfo_file"
+  if [[ "$TOPOLOGY" == app-node-* ]]; then
+    (( (APP_RUNTIME_MEMORY_LIMIT_MIB + NGINX_MEMORY_LIMIT_MIB) * 4 <= total_memory_mib * 3 )) || \
+      fail 'stateless service memory limits exceed 75% of app-node host memory'
+  else
+    (( APP_RUNTIME_MEMORY_LIMIT_MIB + NGINX_MEMORY_LIMIT_MIB + 8192 <= total_memory_mib )) || \
+      fail 'single-node memory limits leave less than 8 GiB for stateful services and the host'
+  fi
+  verify_journal_retention
+
+  generator="$(quadlet_generator)"
+  env QUADLET_UNIT_DIRS="$rendered_dir" \
+    "$generator" --user --dryrun >/dev/null 2>&1 || \
+    fail 'Quadlet generator rejected the rendered production units'
+}
+
 render_template() {
   local source="$1" destination="$2" content key value
   content="$(<"$source")"
@@ -131,7 +361,7 @@ render_template() {
   while IFS= read -r key; do
     value="${!key}"
     content="${content//@@$key@@/$value}"
-  done < <(required_values "$TOPOLOGY")
+  done < <(template_values "$TOPOLOGY")
 
   if grep -Eq '(@@[A-Z0-9_]+@@|\$\{[^}]+\})' <<<"$content"; then
     fail "template contains an unresolved value: $source"
@@ -147,6 +377,7 @@ render_units() {
 
   read_release_env
   validate_release_env "$TOPOLOGY"
+  configure_containment
   mkdir -p -- "$output_dir"
   remove_managed_units "$output_dir"
 
@@ -165,6 +396,7 @@ install_units() {
   printf -v cleanup_command 'rm -rf -- %q' "$temporary_dir"
   trap "$cleanup_command" EXIT
   render_units "$temporary_dir"
+  verify_host_enforcement "$temporary_dir"
 
   mkdir -p -- "$QUADLET_DIR" "$SYSTEMD_USER_DIR"
   quadlet_stage="$(mktemp -d -- "$QUADLET_DIR/.kravhantering-stage.XXXXXX")"
@@ -212,6 +444,7 @@ shift
 
 TOPOLOGY=''
 OUTPUT_DIR=''
+PURPOSE=''
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --topology)
@@ -222,6 +455,11 @@ while [[ $# -gt 0 ]]; do
     --output-dir)
       [[ $# -ge 2 ]] || fail 'missing value for --output-dir'
       OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --purpose)
+      [[ $# -ge 2 ]] || fail 'missing value for --purpose'
+      PURPOSE="$2"
       shift 2
       ;;
     --help | -h)
@@ -237,23 +475,36 @@ topology_target "$TOPOLOGY" >/dev/null
 
 case "$COMMAND" in
   render)
+    [[ -z "$PURPOSE" ]] || fail '--purpose is only valid with print-network'
     OUTPUT_DIR="${OUTPUT_DIR:-$PWD/rendered-quadlet/$TOPOLOGY}"
     render_units "$OUTPUT_DIR"
     printf 'Rendered %s Quadlet units in %s\n' "$TOPOLOGY" "$OUTPUT_DIR"
     ;;
   install)
     [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
+    [[ -z "$PURPOSE" ]] || fail '--purpose is only valid with print-network'
     install_units
     printf 'Installed %s Quadlet resources in %s and target in %s\n' \
       "$TOPOLOGY" "$QUADLET_DIR" "$SYSTEMD_USER_DIR"
     printf '%s\n' 'Run: systemctl --user daemon-reload'
     ;;
+  verify-host)
+    [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
+    [[ -z "$PURPOSE" ]] || fail '--purpose is only valid with print-network'
+    temporary_dir="$(mktemp -d)"
+    trap 'rm -rf -- "$temporary_dir"' EXIT
+    render_units "$temporary_dir"
+    verify_host_enforcement "$temporary_dir"
+    printf '%s\n' 'Host can enforce the rendered Quadlet contract.'
+    ;;
   status)
     [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
+    [[ -z "$PURPOSE" ]] || fail '--purpose is only valid with print-network'
     systemctl --user status "$(topology_target "$TOPOLOGY")"
     ;;
   remove)
     [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
+    [[ -z "$PURPOSE" ]] || fail '--purpose is only valid with print-network'
     target="$(topology_target "$TOPOLOGY")"
     systemctl --user stop "$target"
     systemctl --user disable "$target"
@@ -266,7 +517,8 @@ case "$COMMAND" in
     ;;
   print-network)
     [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
-    topology_network "$TOPOLOGY"
+    [[ -n "$PURPOSE" ]] || fail '--purpose is required with print-network'
+    topology_network "$TOPOLOGY" "$PURPOSE"
     ;;
   *)
     usage >&2

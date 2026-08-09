@@ -1,0 +1,6 @@
+[Unit]
+Description=Kravhantering app-node edge network
+
+[Network]
+NetworkName=kravhantering-app-node_edge
+Internal=true

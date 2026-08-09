@@ -477,6 +477,11 @@ describe('trusted container release helpers', () => {
     ).toBe(true)
     expect(
       isReleaseRelevantPath(
+        'docs/operations/production-quadlet-containment.md',
+      ),
+    ).toBe(true)
+    expect(
+      isReleaseRelevantPath(
         'docs/operations/rhel10-production-disconnected.md',
       ),
     ).toBe(true)
@@ -1494,7 +1499,7 @@ describe('trusted container release helpers', () => {
       notes.indexOf('## Production Deployment Bundle'),
     )
     expect(notes).toContain(
-      'Production deployment uses rootless Podman Quadlet; the release-smoke harness remains Compose-based.',
+      'The same rootless Podman Quadlet deployment archive passes production smoke validation before promotion.',
     )
     expect(notes).not.toContain('## Checksums')
     expect(notes).not.toContain('abc123  container-stack.lock.json')
@@ -1671,14 +1676,17 @@ describe('trusted container release helpers', () => {
     }
   })
 
-  it('requires the single-node Quadlet network for temporary containers', () => {
+  it('requires the purpose-specific Quadlet network for temporary containers', () => {
     const singleNodeGuide = readWorkspaceFile(
       'docs/operations/rhel10-production-single-node-self-contained-deploy.md',
     )
 
     expect(singleNodeGuide).toContain(
-      'NETWORK_UNIT=kravhantering-single-node-network.service',
+      'NETWORK_UNIT=kravhantering-single-node-identity-network.service',
     )
+    expect(singleNodeGuide).toContain('--purpose identity')
+    expect(singleNodeGuide).toContain('--purpose database')
+    expect(singleNodeGuide).toContain('--purpose edge')
     expect(singleNodeGuide).toContain('systemctl --user start "$NETWORK_UNIT"')
     expect(singleNodeGuide).not.toContain(
       'podman network create "$STACK_NETWORK"',
@@ -1965,6 +1973,9 @@ describe('trusted container release helpers', () => {
         'docs/operations/api-docs-edge-verification.md',
       )
       expect(result.files).toContain(
+        'docs/operations/production-quadlet-containment.md',
+      )
+      expect(result.files).toContain(
         'docs/operations/rhel10-production-disconnected.md',
       )
       expect(result.files).toContain(
@@ -2065,10 +2076,21 @@ describe('trusted container release helpers', () => {
         )
         .join('\n')
       expect(quadletTemplates).toContain('NGINX_RESOLVER')
-      expect(quadletTemplates).toContain('NetworkName=kravhantering-app-node')
       expect(quadletTemplates).toContain(
-        'NetworkName=kravhantering-single-node',
+        'NetworkName=kravhantering-app-node_edge',
       )
+      expect(quadletTemplates).toContain(
+        'NetworkName=kravhantering-app-node_egress',
+      )
+      expect(quadletTemplates).toContain(
+        'NetworkName=kravhantering-single-node_identity',
+      )
+      expect(quadletTemplates).toContain(
+        'NetworkName=kravhantering-single-node_database',
+      )
+      expect(quadletTemplates).toContain('DropCapability=all')
+      expect(quadletTemplates).toContain('ReadOnlyTmpfs=false')
+      expect(quadletTemplates).toContain('MemoryMax=')
       expect(quadletTemplates).toContain(
         '/api-docs:/usr/share/nginx/html/api-docs:ro',
       )
@@ -2267,14 +2289,14 @@ describe('trusted container release helpers', () => {
     )
     expect(workflow).not.toContain('push-to-registry: true')
     expect(workflow).toContain(
-      '--test-lock-file container-test-support.lock.json',
+      'scripts/containers/production-smoke.sh up --archive',
     )
     expect(workflow).toContain(
-      '--hsa-integration-lock-file container-hsa-integration-support.lock.json',
+      'HSA_DIRECTORY_MOCK_OCI_ARCHIVE: $' +
+        '{{ env.HSA_DIRECTORY_MOCK_CANDIDATE_ARTIFACT }}',
     )
-    expect(workflow).toContain(
-      '--run-id "$' + '{CONTAINER_STACK_RUN_ID}" || true',
-    )
+    expect(workflow).not.toContain('podman-compose')
+    expect(workflow).not.toContain('container-stack.compose.yml')
     expect(workflow).toContain('container-release.mjs identities')
     expect(workflow).toContain(
       '--build-arg BUILD_EXPECTED_DATABASE_SCHEMA_VERSION="$' +

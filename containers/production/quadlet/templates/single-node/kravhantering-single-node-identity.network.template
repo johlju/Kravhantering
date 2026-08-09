@@ -1,0 +1,6 @@
+[Unit]
+Description=Kravhantering single-node identity network
+
+[Network]
+NetworkName=kravhantering-single-node_identity
+Internal=true

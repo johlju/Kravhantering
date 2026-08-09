@@ -1,19 +1,37 @@
 [Unit]
 Description=Kravhantering application runtime
 PartOf=kravhantering-single-node.target
-Requires=kravhantering-single-node-network.service kravhantering-sqlserver.service kravhantering-keycloak.service
-After=kravhantering-single-node-network.service kravhantering-sqlserver.service kravhantering-keycloak.service
+Requires=kravhantering-single-node-edge-network.service kravhantering-single-node-database-network.service kravhantering-single-node-egress-network.service kravhantering-sqlserver.service kravhantering-keycloak.service
+After=kravhantering-single-node-edge-network.service kravhantering-single-node-database-network.service kravhantering-single-node-egress-network.service kravhantering-sqlserver.service kravhantering-keycloak.service
 
 [Container]
 ContainerName=kravhantering-app-runtime
 Image=@@APP_RUNTIME_IMAGE_REF@@
 EnvironmentFile=/etc/kravhantering/app.env
 Environment=NODE_EXTRA_CA_CERTS=/run/kravhantering/tls/ca.crt
-Network=kravhantering-single-node.network
+Environment=KRAVHANTERING_EXPORT_TEMP_DIR=/run/kravhantering/export
+DropCapability=all
+NoNewPrivileges=true
+ReadOnly=true
+ReadOnlyTmpfs=false
+PidsLimit=@@APP_RUNTIME_PIDS_LIMIT@@
+LogDriver=journald
+Network=kravhantering-single-node-edge.network
+Network=kravhantering-single-node-database.network
+Network=kravhantering-single-node-egress.network
 NetworkAlias=app-runtime
 Volume=/etc/kravhantering/tls/ca.crt:/run/kravhantering/tls/ca.crt:ro
+@@APP_RUNTIME_EXPORT_MOUNT@@
+Tmpfs=/tmp:rw,size=64M,mode=1777,nosuid,nodev,noexec
 
 [Service]
 Restart=always
 TimeoutStartSec=180
 TimeoutStopSec=90
+MemoryMax=@@APP_RUNTIME_MEMORY_LIMIT_MIB@@M
+CPUQuota=@@APP_RUNTIME_CPU_QUOTA_PERCENT@@%
+TasksMax=@@APP_RUNTIME_TASKS_MAX@@
+LogRateLimitIntervalSec=@@APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS@@s
+LogRateLimitBurst=@@APP_RUNTIME_LOG_RATE_BURST@@
+StandardOutput=journal
+StandardError=journal

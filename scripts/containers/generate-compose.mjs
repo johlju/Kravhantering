@@ -20,7 +20,7 @@ export const PROJECT_SERVICE_NAMES = new Set(['app-runtime', 'db-job'])
 export const VENDOR_SERVICE_NAMES = new Set(['nginx', 'sqlserver', 'keycloak'])
 
 const USAGE = `Usage:
-  node scripts/containers/generate-compose.mjs --mode <pr|release> [options]
+  node scripts/containers/generate-compose.mjs --mode test [options]
 
 Options:
   --lock-file <path>             Stack lock file path
@@ -28,7 +28,6 @@ Options:
   --output <path>                Generated Compose output path
   --project-name <name>          Compose project name
   --network-name <name>          Internal Compose network name
-  --demo-seed-image <ref>        Optional demo seed image for release-smoke
   --tls-dir <path>               Runtime TLS directory mounted into nginx/app
   --sqlserver-volume-name <name> SQL Server named volume
   --sqlserver-host-port <value>  Host bind value, for example 127.0.0.1:1433`
@@ -89,12 +88,8 @@ export function imageReference(service, mode) {
     )
   }
 
-  if (mode === 'pr') {
+  if (mode === 'test') {
     return `${service.image}:${service.tag}`
-  }
-
-  if (mode === 'release') {
-    return `${service.image}@${service.manifestDigest}`
   }
 
   throw new Error(`Unsupported Compose generation mode: ${mode}`)
@@ -102,7 +97,7 @@ export function imageReference(service, mode) {
 
 export function buildComposeValues(stackLock, options = {}) {
   assertStackLockSchema(stackLock)
-  const mode = options.mode ?? 'pr'
+  const mode = options.mode ?? 'test'
   const services = {
     appRuntime: requireService(stackLock, 'app-runtime'),
     dbJob: requireService(stackLock, 'db-job'),
@@ -154,8 +149,8 @@ export function renderTemplate(template, values) {
 }
 
 export function generateCompose(template, stackLock, options = {}) {
-  const mode = options.mode ?? 'pr'
-  if (!['pr', 'release'].includes(mode)) {
+  const mode = options.mode ?? 'test'
+  if (mode !== 'test') {
     throw new Error(`Unsupported Compose generation mode: ${mode}`)
   }
 
@@ -163,7 +158,6 @@ export function generateCompose(template, stackLock, options = {}) {
     template,
     buildComposeValues(stackLock, {
       mode,
-      demoSeedImage: options.demoSeedImage,
       networkName: options.networkName,
       projectName: options.projectName,
       sqlServerHostPort: options.sqlServerHostPort,
@@ -180,7 +174,7 @@ export async function main(args, dependencies = {}) {
 
   try {
     const options = parseArgs(args)
-    const mode = options.mode ?? 'pr'
+    const mode = options.mode ?? 'test'
     const lockFile = path.resolve(
       cwd,
       options['lock-file'] ?? DEFAULT_STACK_LOCK_PATH,
@@ -197,7 +191,6 @@ export async function main(args, dependencies = {}) {
     const template = fsImpl.readFileSync(templatePath, 'utf8')
     const compose = generateCompose(template, stackLock, {
       mode,
-      demoSeedImage: options['demo-seed-image'],
       networkName: options['network-name'],
       projectName: options['project-name'],
       sqlServerHostPort: options['sqlserver-host-port'],

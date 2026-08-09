@@ -1,0 +1,18 @@
+[Unit]
+Description=Kravhantering CI-only HSA directory mock
+Requires=kravhantering-ci-hsa-mtls-cert-generator.service
+After=kravhantering-ci-hsa-mtls-cert-generator.service
+Before=kravhantering-ci-hsa-person-lookup-adapter.service
+
+[Container]
+ContainerName=kravhantering-ci-hsa-directory-mock
+Image=@@HSA_DIRECTORY_MOCK_IMAGE_REF@@
+Network=kravhantering-single-node-egress.network
+NetworkAlias=hsa-directory-mock
+Volume=kravhantering-ci-hsa-mtls-certs.volume:/run/hsa-mtls:ro
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=120

@@ -556,7 +556,8 @@ describe('GitHub Actions workflow security', () => {
       )
     }
     for (const stepName of [
-      'Stop container stack',
+      'Collect production Quadlet evidence',
+      'Remove production Quadlet stack',
       'Write artifact hashes',
       'Stage release artifacts',
     ]) {
@@ -699,7 +700,7 @@ describe('GitHub Actions workflow security', () => {
         step.name === 'Gate PR images against release vulnerability policy',
     )
     const prStartIndex = prSteps.findIndex(
-      step => step.name === 'Start container stack',
+      step => step.name === 'Install production archive with rootless Quadlet',
     )
     expect(prGateIndex).toBeGreaterThanOrEqual(0)
     expect(prGateIndex).toBeLessThan(prStartIndex)
@@ -720,6 +721,60 @@ describe('GitHub Actions workflow security', () => {
     expect(uploadEvidence?.with?.path).toContain(
       'tmp/container-release-artifacts/sbom/',
     )
+  })
+
+  it('runs PR and main smoke through the same Ubuntu production Quadlet seam', () => {
+    const smokeHarness = readFileSync(
+      path.join(process.cwd(), 'scripts', 'containers', 'production-smoke.sh'),
+      'utf8',
+    )
+
+    expect(smokeHarness).toContain('kravhantering-images.sh" verify')
+    expect(smokeHarness).toContain('install --topology "$TOPOLOGY"')
+    expect(smokeHarness).toContain('target-stop-start=passed')
+    expect(smokeHarness).toContain('--cacert tmp/container-tls/ca.crt')
+    expect(smokeHarness).toContain('remove --topology "$TOPOLOGY"')
+    expect(smokeHarness).toContain('captured > 0 && captured < 2500')
+
+    for (const fileName of [
+      'container-pr-smoke.yml',
+      'container-release.yml',
+    ]) {
+      const workflow = readWorkflowYaml(fileName)
+      const job = Object.values(workflow.jobs ?? {})[0]
+      const steps = job?.steps ?? []
+      const workflowText = readFileSync(
+        path.join(WORKFLOWS_DIR, fileName),
+        'utf8',
+      )
+
+      expect(job).toMatchObject({})
+      expect(workflowText).toContain('runs-on: ubuntu-24.04')
+      expect(workflowText).not.toContain('podman-compose')
+      expect(workflowText).not.toContain('container-stack.compose.yml')
+      expect(workflowText).not.toMatch(
+        /run-local-stack\.mjs[\s\S]*release-smoke/u,
+      )
+      expect(
+        steps.find(
+          step =>
+            step.name === 'Install production archive with rootless Quadlet',
+        )?.run,
+      ).toContain('scripts/containers/production-smoke.sh up --archive')
+      expect(
+        steps.find(
+          step => step.name === 'Probe disposable containment boundaries',
+        )?.run,
+      ).toContain('scripts/containers/production-smoke.sh boundaries')
+      expect(
+        steps.find(step => step.name === 'Collect production Quadlet evidence')
+          ?.run,
+      ).toContain('scripts/containers/production-smoke.sh evidence')
+      expect(
+        steps.find(step => step.name === 'Remove production Quadlet stack')
+          ?.run,
+      ).toContain('scripts/containers/production-smoke.sh down')
+    }
   })
 
   it('rescans verified SBOMs for supported releases and safely synchronizes findings', () => {

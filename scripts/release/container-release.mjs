@@ -62,6 +62,7 @@ const RELEVANT_PATH_PREFIXES = [
   'docs/images/',
   'docs/operations/api-docs-edge-verification.md',
   'docs/operations/operator-upgrade-notes.md',
+  'docs/operations/production-quadlet-containment.md',
   'docs/operations/rhel10-production-deploy.md',
   'docs/operations/rhel10-production-disconnected.md',
   'docs/operations/rhel10-production-uninstall.md',
@@ -88,6 +89,10 @@ const RELEVANT_PATH_PREFIXES = [
 ]
 
 export const DEPLOYMENT_BUNDLE_STATIC_ENTRIES = [
+  {
+    source: 'docs/operations/production-quadlet-containment.md',
+    target: 'docs/operations/production-quadlet-containment.md',
+  },
   {
     source: 'docs/operations/api-docs-edge-verification.md',
     target: 'docs/operations/api-docs-edge-verification.md',
@@ -467,7 +472,6 @@ export function releasePlanEnv(plan) {
     BUILD_EXPECTED_DATABASE_SCHEMA_VERSION: plan.expectedDatabaseSchemaVersion,
     BUILD_IMAGE_TAG: plan.buildImageTag,
     BUILD_VERSION: plan.version,
-    CONTAINER_PROJECT_NAME: `kravhantering-container-stack-release-smoke-${plan.runId}`,
     CONTAINER_STACK_RUN_ID: plan.runId,
     DB_JOB_DESCRIPTION,
     DB_JOB_CANDIDATE_ARTIFACT: plan.candidates.dbJob.artifactPath,
@@ -1620,7 +1624,7 @@ export function renderReleaseNotes(
     '',
     '## Production Deployment Bundle',
     '',
-    'Production deployment uses rootless Podman Quadlet; the release-smoke harness remains Compose-based.',
+    'The same rootless Podman Quadlet deployment archive passes production smoke validation before promotion.',
     '',
     `- ${codeLink(deploymentArchive, releaseAssetDownloadUrl(plan, deploymentArchive))}`,
     `- ${codeLink(deploymentChecksum, releaseAssetDownloadUrl(plan, deploymentChecksum))}`,

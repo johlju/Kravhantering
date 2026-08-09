@@ -309,7 +309,7 @@ configuration change.
    ```
 
 8. Run the database jobs once from the new release.
-   First ensure SQL Server, Keycloak and the Quadlet network exist for the new
+   First ensure SQL Server, Keycloak and their Quadlet networks exist for the new
    release, then run the job sequence with the new `DB_JOB_IMAGE_REF`. Use the
    DBA-pre-provisioned production sequence by default, matching
    [rhel10-production-upgrade.md](./rhel10-production-upgrade.md), and skip
@@ -339,7 +339,7 @@ configuration change.
    exit
    ```
 
-   Confirm the nginx resolver from inside the same Quadlet network. The
+   Confirm the nginx resolver from inside the edge Quadlet network. The
    `STACK_NETWORK` variable is for temporary `podman run` containers that need
    internal service-name DNS such as `keycloak` or `sqlserver`.
 
@@ -351,7 +351,8 @@ configuration change.
    set +a
 
    STACK_NETWORK="$(
-     bin/kravhantering-quadlet.sh print-network --topology single-node
+     bin/kravhantering-quadlet.sh print-network \
+       --topology single-node --purpose edge
    )"
 
    RESOLVER_IP="$(
@@ -399,7 +400,8 @@ configuration change.
    set +a
 
    STACK_NETWORK="$(
-     bin/kravhantering-quadlet.sh print-network --topology single-node
+     bin/kravhantering-quadlet.sh print-network \
+       --topology single-node --purpose database
    )"
    RUN_BOOTSTRAP=false
    EVIDENCE_DIR="/var/tmp/kravhantering-upgrade-${VERSION}-evidence"
@@ -480,7 +482,8 @@ configuration change.
    set +a
 
    STACK_NETWORK="$(
-     bin/kravhantering-quadlet.sh print-network --topology single-node
+     bin/kravhantering-quadlet.sh print-network \
+       --topology single-node --purpose identity
    )"
    DEMO_USERS_FILE=$PWD/keycloak/demo-users.not-for-production.json
    DEMO_USERS_CONTAINER_FILE=/tmp/demo-users.not-for-production.json
@@ -515,7 +518,8 @@ configuration change.
    set +a
 
    STACK_NETWORK="$(
-     bin/kravhantering-quadlet.sh print-network --topology single-node
+     bin/kravhantering-quadlet.sh print-network \
+       --topology single-node --purpose database
    )"
    DEMO_SEED_IMAGE_REF=ghcr.io/viscalyx/kravhantering-demo-seed:replace-with-release-tag
 
@@ -568,9 +572,9 @@ configuration change.
       https://kravhantering.example.internal/api/health
     ```
 
-    The Quadlet network retains the established
-    `kravhantering-single-node_kravhantering-internal` name, and the SQL Server
-    and Keycloak volumes retain their established names.
+    The Quadlet networks retain the established edge, identity, database, and
+    egress names documented in the deployment guide. The SQL Server and
+    Keycloak volumes retain their established names.
 
 11. Re-enable traffic.
     Put the host back into the load balancer, reverse proxy or firewall

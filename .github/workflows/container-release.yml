@@ -22,13 +22,15 @@ jobs:
   trusted-release:
     name: Validate and Promote Trusted Container Stack
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     env:
+      KEYCLOAK_IMAGE_REF: quay.io/keycloak/keycloak:26.7.0-1
+      KONG_IMAGE_REF: docker.io/kong/kong-gateway:3.15.0.2-20260721-ubuntu
       NEXT_PUBLIC_SITE_URL: https://kravhantering.test
-      PODMAN_COMPOSE_PROVIDER: podman-compose
-      STORAGE_DRIVER: vfs
+      NGINX_IMAGE_REF: docker.io/library/nginx:1.31.3-alpine
+      SQLSERVER_IMAGE_REF: mcr.microsoft.com/mssql/server:2025-CU7-ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -95,11 +97,10 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y podman podman-compose skopeo libnss3-tools
+          sudo apt-get install -y jq podman skopeo libnss3-tools
           sudo sysctl net.ipv4.ip_unprivileged_port_start=0
           echo "127.0.0.1 kravhantering.test" | sudo tee -a /etc/hosts
           podman --version
-          podman compose version
           podman info
           docker --version
           docker buildx version
@@ -288,14 +289,44 @@ jobs:
       - name: Create per-container local env files
         run: npm run container:env:local
 
-      - name: Start release stack from exact candidate OCI artifacts
+      - name: Generate production-smoke TLS
+        run: node scripts/containers/generate-tls.mjs --output-dir tmp/container-tls
+
+      - name: Stage production deployment bundle for validation
         run: |
-          node scripts/containers/run-local-stack.mjs up \
-            --mode release-smoke \
-            --run-id "${CONTAINER_STACK_RUN_ID}" \
-            --hsa-integration-lock-file container-hsa-integration-support.lock.json \
-            --test-lock-file container-test-support.lock.json \
-            --candidate-metadata tmp/container-release-artifacts/metadata/release-metadata.json
+          node scripts/release/container-release.mjs bundle \
+            --plan tmp/container-release-artifacts/metadata/release-plan.json \
+            --metadata tmp/container-release-artifacts/metadata/release-metadata.json \
+            --stack-lock container-stack.lock.json \
+            --hsa-integration-support-lock container-hsa-integration-support.lock.json \
+            --test-support-lock container-test-support.lock.json \
+            --build-json public/build.json \
+            --sbom-dir tmp/container-release-artifacts/sbom \
+            --output-dir tmp/container-release-artifacts/deployment
+
+      - name: Archive production deployment bundle for validation
+        run: |
+          set -euo pipefail
+          bundle="kravhantering-production-deploy-${RELEASE_VERSION}"
+          tar -C tmp/container-release-artifacts/deployment \
+            -czf "tmp/container-release-artifacts/${bundle}.tar.gz" \
+            "${bundle}"
+
+      - name: Install production archive with rootless Quadlet
+        env:
+          APP_RUNTIME_IMAGE_REF: ${{ env.APP_RUNTIME_CANDIDATE_REF }}
+          APP_RUNTIME_OCI_ARCHIVE: ${{ env.APP_RUNTIME_CANDIDATE_ARTIFACT }}
+          DB_JOB_IMAGE_REF: ${{ env.DB_JOB_CANDIDATE_REF }}
+          DB_JOB_OCI_ARCHIVE: ${{ env.DB_JOB_CANDIDATE_ARTIFACT }}
+          DEMO_SEED_IMAGE_REF: ${{ env.DEMO_SEED_CANDIDATE_REF }}
+          DEMO_SEED_OCI_ARCHIVE: ${{ env.DEMO_SEED_CANDIDATE_ARTIFACT }}
+          HSA_DIRECTORY_MOCK_IMAGE_REF: ${{ env.HSA_DIRECTORY_MOCK_CANDIDATE_REF }}
+          HSA_DIRECTORY_MOCK_OCI_ARCHIVE: ${{ env.HSA_DIRECTORY_MOCK_CANDIDATE_ARTIFACT }}
+          HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF: ${{ env.HSA_PERSON_LOOKUP_ADAPTER_CANDIDATE_REF }}
+          HSA_PERSON_LOOKUP_ADAPTER_OCI_ARCHIVE: ${{ env.HSA_PERSON_LOOKUP_ADAPTER_CANDIDATE_ARTIFACT }}
+        run: |
+          scripts/containers/production-smoke.sh up --archive \
+            "tmp/container-release-artifacts/kravhantering-production-deploy-${RELEASE_VERSION}.tar.gz"
 
       - name: Trust generated CA for browser runner
         run: bash .devcontainer/trust-container-ca.sh
@@ -305,30 +336,16 @@ jobs:
         env:
           CI: true
 
-      - name: Collect status before shutdown on failure
-        if: failure()
-        run: |
-          node scripts/containers/collect-status.mjs \
-            --project-name "${CONTAINER_PROJECT_NAME}" \
-            --output-text container-status-before-down.txt \
-            --output-json container-status-before-down.json \
-            --tail 160 || true
+      - name: Probe disposable containment boundaries
+        run: scripts/containers/production-smoke.sh boundaries
 
-      - name: Stop container stack
+      - name: Collect production Quadlet evidence
         if: always()
-        run: |
-          node scripts/containers/run-local-stack.mjs down \
-            --mode release-smoke \
-            --run-id "${CONTAINER_STACK_RUN_ID}" || true
+        run: scripts/containers/production-smoke.sh evidence || true
 
-      - name: Collect status after shutdown on failure
-        if: failure()
-        run: |
-          node scripts/containers/collect-status.mjs \
-            --project-name "${CONTAINER_PROJECT_NAME}" \
-            --output-text container-status-after-down.txt \
-            --output-json container-status-after-down.json \
-            --tail 160 || true
+      - name: Remove production Quadlet stack
+        if: always()
+        run: scripts/containers/production-smoke.sh down
 
       - name: Log in to GHCR after validation gates
         id: ghcr-login
@@ -457,13 +474,6 @@ jobs:
             container-stack.lock.json \
             container-hsa-integration-support.lock.json \
             container-test-support.lock.json \
-            container-stack.compose.yml \
-            container-status.txt \
-            container-status.json \
-            container-status-before-down.txt \
-            container-status-before-down.json \
-            container-status-after-down.txt \
-            container-status-after-down.json \
             public/build.json \
             tmp/container-release-artifacts/metadata/gitversion.json \
             tmp/container-release-artifacts/metadata/grype-db-status.json \
@@ -663,19 +673,18 @@ jobs:
             container-stack.lock.json \
             container-hsa-integration-support.lock.json \
             container-test-support.lock.json \
-            container-stack.compose.yml \
-            container-status.txt \
-            container-status.json \
-            container-status-before-down.txt \
-            container-status-before-down.json \
-            container-status-after-down.txt \
-            container-status-after-down.json \
             public/build.json \
             hashes.sha256; do
             if [ -f "${file}" ]; then
               cp "${file}" tmp/container-release-artifacts/runtime/
             fi
           done
+
+          if [ -d tmp/production-smoke-evidence ]; then
+            cp -R \
+              tmp/production-smoke-evidence \
+              tmp/container-release-artifacts/runtime/production-smoke-evidence
+          fi
 
           if [ -d playwright-report-release-smoke ]; then
             cp -R \
@@ -728,7 +737,6 @@ jobs:
             container-stack.lock.json \
             container-hsa-integration-support.lock.json \
             container-test-support.lock.json \
-            container-stack.compose.yml \
             hashes.sha256 \
             public/build.json \
             tmp/container-release-artifacts/metadata/release-metadata.json \
