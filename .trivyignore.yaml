@@ -1,0 +1,7 @@
+misconfigurations:
+  - id: AVD-DS-0002
+    paths:
+      - scripts/containers/production-smoke-debug.Containerfile
+    statement: >-
+      This disposable, privileged debug host must boot systemd as root so the
+      smoke test can create and exercise the dedicated rootless service user.

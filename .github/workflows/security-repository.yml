@@ -90,6 +90,7 @@ jobs:
           hide-progress: 'true'
           timeout: '10m'
           limit-severities-for-sarif: 'true'
+          trivyignores: '.trivyignore.yaml'
           skip-dirs: 'node_modules,.next,.cache,coverage,test-results,playwright-report,playwright-report-dev,playwright-report-prodlike'
 
       - name: Upload Trivy filesystem SARIF
