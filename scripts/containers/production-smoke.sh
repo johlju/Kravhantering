@@ -59,6 +59,22 @@ service_systemctl() {
   as_service systemctl --user "$@"
 }
 
+install_ci_user_quadlet_generator() {
+  local generator_dir='/run/systemd/user-generators'
+  local system_generator='/usr/lib/systemd/system-generators/podman-system-generator'
+  local user_generator="$generator_dir/podman-user-generator"
+  # Podman 4.9 derives user mode from its entry point; make the CI contract
+  # explicit instead of depending on the Ubuntu package's symlink behavior.
+  [[ -x "$system_generator" ]] || \
+    fail 'Podman Quadlet generator is unavailable'
+  sudo install -d -m 0755 "$generator_dir"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    "exec $system_generator --user \"\$@\"" |
+    sudo tee "$user_generator" >/dev/null
+  sudo chmod 0755 "$user_generator"
+}
+
 configure_service_systemd_environment() {
   local uid
   uid="$(service_uid)"
@@ -67,7 +83,22 @@ configure_service_systemd_environment() {
     "XDG_CACHE_HOME=$SERVICE_HOME/.cache" \
     "XDG_CONFIG_HOME=$SERVICE_HOME/.config" \
     "XDG_DATA_HOME=$SERVICE_HOME/.local/share" \
-    "XDG_RUNTIME_DIR=/run/user/$uid"
+    "XDG_RUNTIME_DIR=/run/user/$uid" \
+    "QUADLET_UNIT_DIRS=$SERVICE_HOME/.config/containers/systemd"
+}
+
+assert_generated_quadlet_service() {
+  local service="$1"
+  local manager_environment
+  if service_systemctl cat "$service" >/dev/null 2>&1; then
+    return
+  fi
+  manager_environment="$(
+    service_systemctl show-environment |
+      grep -E '^(HOME|XDG_CONFIG_HOME|QUADLET_UNIT_DIRS)=' |
+      paste -sd ' ' -
+  )"
+  fail "systemd did not generate $service (manager environment: $manager_environment)"
 }
 
 prepare_service_user() {
@@ -84,6 +115,7 @@ prepare_service_user() {
     fail "service user has no subordinate UID range: $SERVICE_USER"
   grep -Eq "^${SERVICE_USER}:[0-9]+:[0-9]+$" /etc/subgid || \
     fail "service user has no subordinate GID range: $SERVICE_USER"
+  install_ci_user_quadlet_generator
   uid="$(service_uid)"
   sudo loginctl enable-linger "$SERVICE_USER"
   sudo systemctl start "user@${uid}.service"
@@ -420,6 +452,7 @@ up() {
     install --topology "$TOPOLOGY"
   render_ci_overlay
   service_systemctl daemon-reload
+  assert_generated_quadlet_service kravhantering-sqlserver.service
   mkdir -p "$EVIDENCE_DIR"
   service_systemctl start kravhantering-sqlserver.service
   service_systemctl start kravhantering-keycloak.service
