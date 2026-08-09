@@ -118,6 +118,7 @@ prepare_service_user() {
   sudo systemctl start "user@${uid}.service"
   configure_service_systemd_environment
   graph_root="$(as_service podman info --format '{{.Store.GraphRoot}}')"
+  as_service install -d -m 0700 "$graph_root"
   sudo install -d -m 0755 "$INSTALL_ROOT"
   for storage_path in "$PWD" "$INSTALL_ROOT" "$graph_root"; do
     available_kib="$(
