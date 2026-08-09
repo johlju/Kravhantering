@@ -104,10 +104,7 @@ assert_generated_quadlet_service() {
 prepare_service_user() {
   local uid
   local minimum_free_kib=$(( 5 * 1024 * 1024 ))
-  local available_kib
-  available_kib="$(df --output=avail -k "$PWD" | tail -n 1 | tr -d ' ')"
-  (( available_kib >= minimum_free_kib )) || \
-    fail 'less than 5 GiB is available for the production smoke installation'
+  local available_kib graph_root storage_path
   if ! id "$SERVICE_USER" >/dev/null 2>&1; then
     sudo useradd --create-home --shell /bin/bash "$SERVICE_USER"
   fi
@@ -120,6 +117,19 @@ prepare_service_user() {
   sudo loginctl enable-linger "$SERVICE_USER"
   sudo systemctl start "user@${uid}.service"
   configure_service_systemd_environment
+  graph_root="$(as_service podman info --format '{{.Store.GraphRoot}}')"
+  sudo install -d -m 0755 "$INSTALL_ROOT"
+  for storage_path in "$PWD" "$INSTALL_ROOT" "$graph_root"; do
+    available_kib="$(
+      df --output=avail -k "$storage_path" 2>/dev/null |
+        tail -n 1 |
+        tr -d ' '
+    )" || \
+      fail 'less than 5 GiB is available for the production smoke installation'
+    [[ "$available_kib" =~ ^[0-9]+$ ]] &&
+      (( available_kib >= minimum_free_kib )) || \
+      fail 'less than 5 GiB is available for the production smoke installation'
+  done
   sudo install -d -m 0755 /etc/systemd/journald.conf.d
   printf '%s\n' \
     '[Journal]' \
