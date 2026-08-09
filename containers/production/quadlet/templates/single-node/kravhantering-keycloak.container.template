@@ -10,7 +10,7 @@ Image=@@KEYCLOAK_IMAGE_REF@@
 Exec=start --import-realm
 EnvironmentFile=/etc/kravhantering/keycloak.env
 Network=kravhantering-single-node-identity.network
-NetworkAlias=keycloak
+PodmanArgs=--network-alias=keycloak
 Volume=/etc/kravhantering/keycloak/realm-kravhantering-production.json:/opt/keycloak/data/import/realm-kravhantering-production.json:ro
 Volume=kravhantering-keycloak-data.volume:/opt/keycloak/data
 

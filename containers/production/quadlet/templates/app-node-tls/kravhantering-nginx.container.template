@@ -17,7 +17,7 @@ LogDriver=journald
 Environment=NGINX_RESOLVER=@@NGINX_RESOLVER@@
 PublishPort=@@NGINX_HTTPS_PUBLISH@@
 Network=kravhantering-app-node-edge.network
-NetworkAlias=nginx
+PodmanArgs=--network-alias=nginx
 Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec
 Tmpfs=/var/cache/nginx:rw,size=@@NGINX_CACHE_TMPFS_MIB@@M,mode=0750,uid=101,gid=101,nosuid,nodev,noexec
 Tmpfs=/run:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec

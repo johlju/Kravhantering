@@ -7,6 +7,7 @@ SERVICE_HOME="/home/$SERVICE_USER"
 INSTALL_ROOT="${PRODUCTION_SMOKE_INSTALL_ROOT:-/opt/kravhantering}"
 CONFIG_ROOT="${PRODUCTION_SMOKE_CONFIG_ROOT:-/etc/kravhantering}"
 EVIDENCE_DIR="${PRODUCTION_SMOKE_EVIDENCE_DIR:-$PWD/tmp/production-smoke-evidence}"
+HSA_INTEGRATION_LOCK_FILE="${PRODUCTION_SMOKE_HSA_INTEGRATION_LOCK_FILE:-$PWD/container-hsa-integration-support.lock.json}"
 TOPOLOGY=single-node
 CONFIG_TEMP_DIR=''
 
@@ -185,6 +186,7 @@ verify_project_image_id() {
 }
 
 prepare_images() {
+  local kong_image_id
   load_project_image "$APP_RUNTIME_IMAGE_REF" "${APP_RUNTIME_OCI_ARCHIVE-}"
   load_project_image "$DB_JOB_IMAGE_REF" "${DB_JOB_OCI_ARCHIVE-}"
   load_project_image "$DEMO_SEED_IMAGE_REF" "${DEMO_SEED_OCI_ARCHIVE-}"
@@ -204,6 +206,12 @@ prepare_images() {
   verify_project_image_id \
     "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF" \
     "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID"
+  kong_image_id="$(jq -r \
+    '.services[] | select(.name == "kong") | .imageId' \
+    "$HSA_INTEGRATION_LOCK_FILE")"
+  [[ "$kong_image_id" != null && -n "$kong_image_id" ]] || \
+    fail 'HSA integration support lock has no Kong image ID'
+  verify_project_image_id "$KONG_IMAGE_REF" "$kong_image_id"
   as_service "$INSTALL_ROOT/current/bin/kravhantering-images.sh" \
     --topology single-node \
     --lock-file "$INSTALL_ROOT/current/container-stack.lock.json" \
@@ -477,15 +485,34 @@ evidence() {
     ' >"$EVIDENCE_DIR/journal.redacted.txt" || true
 }
 
-boundaries() {
-  local marker captured normal_suppressed suppressed
-  [[ "$(service_systemctl show kravhantering-app-runtime.service \
-    --property=NRestarts --value)" == 0 ]]
-  normal_suppressed="$(as_service journalctl --user-unit \
-    kravhantering-app-runtime.service --since=-30min --no-pager |
+verify_normal_service_state() {
+  local service="$1" control_group cgroup_root suppression_count
+  [[ "$(service_systemctl show "$service" \
+    --property=NRestarts --value)" == 0 ]] || \
+    fail "$service restarted during normal or maximum-concurrency smoke"
+  control_group="$(service_systemctl show "$service" \
+    --property=ControlGroup --value)"
+  cgroup_root="/sys/fs/cgroup${control_group}"
+  grep -Eq '^oom_kill 0$' "$cgroup_root/memory.events" || \
+    fail "$service recorded a cgroup OOM kill during normal smoke"
+  suppression_count="$(as_service journalctl --user-unit "$service" \
+    --since=-30min --no-pager |
     grep -Eic 'suppress(ed|ing).*(message|log)|message.*suppress' || true)"
-  (( normal_suppressed == 0 )) || \
-    fail 'normal application smoke unexpectedly triggered journal suppression'
+  (( suppression_count == 0 )) || \
+    fail "$service triggered journal suppression during normal smoke"
+  {
+    printf '## %s memory.events\n' "$service"
+    cat "$cgroup_root/memory.events"
+    printf '## %s cpu.stat\n' "$service"
+    cat "$cgroup_root/cpu.stat"
+  } >>"$EVIDENCE_DIR/normal-load-cgroup-state.txt"
+}
+
+boundaries() {
+  local marker captured suppressed
+  : >"$EVIDENCE_DIR/normal-load-cgroup-state.txt"
+  verify_normal_service_state kravhantering-app-runtime.service
+  verify_normal_service_state kravhantering-nginx.service
   if as_service podman exec kravhantering-app-runtime sh -c \
     'dd if=/dev/zero of=/run/kravhantering/export/must-not-fit bs=1M count=1100 status=none'; then
     as_service podman exec kravhantering-app-runtime \

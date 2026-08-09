@@ -52,6 +52,7 @@ flowchart TD
     M --> N[GET /api/requirements/:id]
     N --> O[Verify nginx API docs headers, assets, rendering and 404]
     O --> P[Admin verifies HSA person through Kong and adapter]
+    P --> Q[Run 5 CSV exports and 3 PDF reports concurrently]
 ```
 
 ## Test Setup
@@ -211,3 +212,11 @@ sequenceDiagram
     APP->>DB: Upsert Kravansvarsperson
     APP-->>PW: Verified person payload
 ```
+
+## runs configured maximum generated-output concurrency
+
+This test starts five authenticated action-log CSV exports and three
+authenticated requirement-list PDF reports together, matching the configured
+per-node concurrency maxima. Every response must complete with its expected
+content type. The subsequent boundary harness confirms that the application
+did not restart or trigger journal suppression during this normal load.

@@ -8,7 +8,7 @@ Before=kravhantering-ci-hsa-person-lookup-adapter.service
 ContainerName=kravhantering-ci-hsa-directory-mock
 Image=@@HSA_DIRECTORY_MOCK_IMAGE_REF@@
 Network=kravhantering-single-node-egress.network
-NetworkAlias=hsa-directory-mock
+PodmanArgs=--network-alias=hsa-directory-mock
 Volume=kravhantering-ci-hsa-mtls-certs.volume:/run/hsa-mtls:ro
 NoNewPrivileges=true
 DropCapability=all

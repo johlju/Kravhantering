@@ -8,6 +8,12 @@ const SCRIPT_PATH = path.resolve(
   process.cwd(),
   'containers/production/bin/kravhantering-quadlet.sh',
 )
+const PODMAN_USER_GENERATOR =
+  '/usr/lib/systemd/user-generators/podman-user-generator'
+const PODMAN_GENERATOR_VERSION =
+  childProcess.spawnSync(PODMAN_USER_GENERATOR, ['--version'], {
+    encoding: 'utf8',
+  }).stdout ?? ''
 const temporaryDirectories = []
 
 function createFixture(releaseEnv) {
@@ -233,15 +239,54 @@ describe('kravhantering Quadlet helper', () => {
     expect(allContent).toContain(
       'PodmanArgs=--add-host=kravhantering.example.internal:host-gateway',
     )
-    expect(allContent).not.toContain(
-      'NetworkAlias=kravhantering.example.internal',
-    )
     expect(allContent).toContain(
       'Volume=/etc/kravhantering/tls/ca.crt:/run/kravhantering/tls/ca.crt:ro',
     )
     expect(allContent).not.toMatch(
       /^(?:After|Requires)=.*\.(?:container|network|volume)(?:\s|$)/mu,
     )
+  })
+
+  it.runIf(
+    fs.existsSync(PODMAN_USER_GENERATOR) &&
+      PODMAN_GENERATOR_VERSION.includes('4.9.3'),
+  )('uses the Podman 4.9-compatible public issuer host mapping', () => {
+    const fixture = createFixture(releaseEnv())
+    render('single-node', fixture)
+    const generatorEnv = {
+      ...process.env,
+      QUADLET_UNIT_DIRS: fixture.outputDir,
+    }
+    const fallback = childProcess.spawnSync(
+      PODMAN_USER_GENERATOR,
+      ['--user', '--dryrun'],
+      { encoding: 'utf8', env: generatorEnv },
+    )
+
+    const controlDir = path.join(fixture.root, 'unsupported-add-host')
+    fs.cpSync(fixture.outputDir, controlDir, { recursive: true })
+    const appUnitPath = path.join(
+      controlDir,
+      'kravhantering-app-runtime.container',
+    )
+    fs.writeFileSync(
+      appUnitPath,
+      fs
+        .readFileSync(appUnitPath, 'utf8')
+        .replace('PodmanArgs=--add-host=', 'AddHost='),
+    )
+    const unsupported = childProcess.spawnSync(
+      PODMAN_USER_GENERATOR,
+      ['--user', '--dryrun'],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, QUADLET_UNIT_DIRS: controlDir },
+      },
+    )
+
+    expect(fallback.status, fallback.stderr).toBe(0)
+    expect(unsupported.status).not.toBe(0)
+    expect(unsupported.stderr).toContain("unsupported key 'AddHost'")
   })
 
   it('fails before writing units when a required release value is missing', () => {

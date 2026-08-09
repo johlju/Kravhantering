@@ -322,4 +322,41 @@ test.describe('Release smoke container flow', () => {
       await adminRequest.dispose()
     }
   })
+
+  test('runs the configured maximum CSV and PDF output concurrency', async ({
+    baseURL: configuredBaseUrl,
+  }) => {
+    const baseURL = releaseSmokeBaseUrl(configuredBaseUrl)
+    const adminRequest = await playwrightRequest.newContext({
+      baseURL,
+      extraHTTPHeaders: {
+        Origin: originHeader(baseURL),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      storageState: RELEASE_SMOKE_ADMIN.filePath,
+    })
+
+    try {
+      const csvRequests = Array.from({ length: 5 }, () =>
+        adminRequest.get('/api/admin/audit-events?format=csv&locale=en'),
+      )
+      const pdfRequests = Array.from({ length: 3 }, () =>
+        adminRequest.get('/sv/requirements/reports/pdf/list?locale=sv'),
+      )
+      const responses = await Promise.all([...csvRequests, ...pdfRequests])
+
+      for (const [index, response] of responses.entries()) {
+        expect(response.ok(), `generated output ${index + 1}`).toBe(true)
+        expect((await response.body()).length).toBeGreaterThan(0)
+      }
+      for (const response of responses.slice(0, 5)) {
+        expect(response.headers()['content-type']).toContain('text/csv')
+      }
+      for (const response of responses.slice(5)) {
+        expect(response.headers()['content-type']).toContain('application/pdf')
+      }
+    } finally {
+      await adminRequest.dispose()
+    }
+  })
 })

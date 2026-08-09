@@ -118,10 +118,11 @@ nginx publishes a host port.
 
 On single-node, the application maps the public hostname to Podman's host
 gateway so its OIDC discovery and token requests traverse the published
-`443`-to-`8443` nginx route. This is the only `PodmanArgs` compatibility use:
-Podman 4.9 lacks the newer Quadlet `AddHost` key. It does not grant a
-capability or add a writable path, and incompatible generators fail during
-the helper preflight.
+`443`-to-`8443` nginx route. Podman 4.9 lacks the newer Quadlet `AddHost` and
+`NetworkAlias` keys, so the units use narrowly scoped `PodmanArgs` only for
+that host mapping and their required service DNS aliases. These arguments do
+not grant a capability or add a writable path, and incompatible generators
+fail during the helper preflight.
 
 Podman bridge membership does not provide directional, per-port, or DNS-name
 egress policy. The host firewall, an approved egress proxy, and upstream ACLs

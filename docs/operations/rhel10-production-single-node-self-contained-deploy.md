@@ -760,7 +760,7 @@ Its server-side OIDC requests therefore traverse the same published host port
 as browser traffic before nginx forwards the `/auth` route to Keycloak. This
 preserves the browser-facing issuer without asking the unprivileged nginx
 process to bind container port 443. Podman 4.9 does not expose Quadlet's newer
-`AddHost` key, so this one narrowly scoped host mapping uses
+`AddHost` key, so this narrowly scoped host mapping uses
 `PodmanArgs=--add-host`; the helper's generator preflight rejects hosts where
 that compatibility form is unavailable.
 

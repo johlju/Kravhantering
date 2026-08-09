@@ -11,7 +11,7 @@ Environment=PORT=8080
 Environment=HSA_SOAP_ENDPOINT_URL=https://hsa-directory-mock:8443/svr-hsaws2/hsaws
 Environment=HSA_SOAP_TIMEOUT_MS=5000
 Network=kravhantering-single-node-egress.network
-NetworkAlias=hsa-person-lookup-adapter
+PodmanArgs=--network-alias=hsa-person-lookup-adapter
 Volume=kravhantering-ci-hsa-mtls-certs.volume:/run/hsa-mtls:ro
 NoNewPrivileges=true
 DropCapability=all
