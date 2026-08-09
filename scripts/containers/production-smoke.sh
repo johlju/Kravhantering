@@ -127,9 +127,10 @@ prepare_service_user() {
         tr -d ' '
     )" || \
       fail 'less than 5 GiB is available for the production smoke installation'
-    [[ "$available_kib" =~ ^[0-9]+$ ]] &&
-      (( available_kib >= minimum_free_kib )) || \
+    if [[ ! "$available_kib" =~ ^[0-9]+$ ]] ||
+      (( available_kib < minimum_free_kib )); then
       fail 'less than 5 GiB is available for the production smoke installation'
+    fi
   done
   sudo install -d -m 0755 /etc/systemd/journald.conf.d
   printf '%s\n' \
