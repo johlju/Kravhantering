@@ -229,8 +229,7 @@ load_project_image() {
   local reference="$1" archive="${2-}"
   if [[ -n "$archive" ]]; then
     [[ -s "$archive" ]] || fail "OCI archive is missing: $archive"
-    archive="$(realpath -- "$archive")"
-    as_service podman load --input "$archive"
+    as_service podman load <"$archive"
   else
     docker image inspect "$reference" >/dev/null
     docker save "$reference" | as_service podman load
