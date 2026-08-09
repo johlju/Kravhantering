@@ -240,9 +240,7 @@ describe('kravhantering Quadlet helper', () => {
     expect(
       units.find(unit => unit.file === 'kravhantering-sqlserver.container')
         ?.content,
-    ).toContain(
-      'Volume=kravhantering-sqlserver-data.volume:/var/opt/mssql:U',
-    )
+    ).toContain('Volume=kravhantering-sqlserver-data.volume:/var/opt/mssql:U')
     const keycloak = units.find(
       unit => unit.file === 'kravhantering-keycloak.container',
     )?.content
