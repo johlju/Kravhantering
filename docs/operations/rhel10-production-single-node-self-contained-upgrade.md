@@ -325,6 +325,19 @@ configuration change.
    >[!IMPORTANT]
    >Do not run `seed:demo` or the optional demo seed image in production.
 
+   Releases that predate the identity resolver setting need a temporary value
+   so the helper can render the network units. nginx is not started with this
+   value; the resolver discovery below replaces it before the full target
+   starts:
+
+   ```bash
+   if ! sudo grep -q '^NGINX_IDENTITY_RESOLVER=' \
+     /etc/kravhantering/release.env; then
+     printf '%s\n' 'NGINX_IDENTITY_RESOLVER=10.89.1.1' |
+       sudo tee -a /etc/kravhantering/release.env >/dev/null
+   fi
+   ```
+
    ```bash
    sudo -iu kravhantering
    cd /opt/kravhantering/current
@@ -339,9 +352,8 @@ configuration change.
    exit
    ```
 
-   Confirm the nginx resolver from inside the edge Quadlet network. The
-   `STACK_NETWORK` variable is for temporary `podman run` containers that need
-   internal service-name DNS such as `keycloak` or `sqlserver`.
+   Start the edge network, then discover the edge and identity resolvers that
+   nginx needs for `app-runtime` and Keycloak through the Quadlet helper.
 
    ```bash
    sudo -iu kravhantering
@@ -350,30 +362,40 @@ configuration change.
    . /etc/kravhantering/release.env
    set +a
 
-   STACK_NETWORK="$(
-     bin/kravhantering-quadlet.sh print-network \
+   systemctl --user start kravhantering-single-node-edge-network.service
+   EDGE_RESOLVER="$(
+     bin/kravhantering-quadlet.sh print-resolver \
        --topology single-node --purpose edge
    )"
-
-   RESOLVER_IP="$(
-     podman run --rm --network "$STACK_NETWORK" --entrypoint /bin/sh \
-       "$NGINX_IMAGE_REF" -c \
-       "awk '/^nameserver / { print \$2; exit }' /etc/resolv.conf"
+   IDENTITY_RESOLVER="$(
+     bin/kravhantering-quadlet.sh print-resolver \
+       --topology single-node --purpose identity
    )"
-   printf 'Use NGINX_RESOLVER=%s in /etc/kravhantering/release.env\n' \
-     "$RESOLVER_IP"
+   printf 'Use NGINX_RESOLVER=%s and NGINX_IDENTITY_RESOLVER=%s\n' \
+     "$EDGE_RESOLVER" "$IDENTITY_RESOLVER"
 
    exit
    ```
 
-   If the printed resolver differs from `NGINX_RESOLVER`, update
-   `/etc/kravhantering/release.env` to the printed IP before starting nginx:
+   Add or update both values before starting nginx. The add path is required
+   when upgrading from a release that predates `NGINX_IDENTITY_RESOLVER`:
 
    ```bash
-   # Replace 10.89.1.1 with the printed resolver IP.
-   RESOLVER_IP=10.89.1.1
-   sudo sed -i "s#^NGINX_RESOLVER=.*#NGINX_RESOLVER=${RESOLVER_IP}#" \
-     /etc/kravhantering/release.env
+   # Replace these examples with the printed resolver IPs.
+   EDGE_RESOLVER=10.89.0.1
+   ID_DNS=10.89.1.1
+   set_release_value() {
+     local name="$1" value="$2"
+     if sudo grep -q "^${name}=" /etc/kravhantering/release.env; then
+       sudo sed -i "s#^${name}=.*#${name}=${value}#" \
+         /etc/kravhantering/release.env
+     else
+       printf '%s=%s\n' "$name" "$value" |
+         sudo tee -a /etc/kravhantering/release.env >/dev/null
+     fi
+   }
+   set_release_value NGINX_RESOLVER "$EDGE_RESOLVER"
+   set_release_value NGINX_IDENTITY_RESOLVER "$ID_DNS"
    ```
 
    The resolver can change when the internal Quadlet network is recreated or
@@ -532,7 +554,8 @@ configuration change.
    ```
 
 9. Start the stack from the new release. Reinstall the units after correcting
-   `NGINX_RESOLVER`, then enable and start the target:
+   `NGINX_RESOLVER` and `NGINX_IDENTITY_RESOLVER`, then enable and start the
+   target:
 
    ```bash
    sudo -iu kravhantering

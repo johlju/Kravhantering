@@ -21,8 +21,8 @@ the check after rendering into a temporary directory and does not replace the
 active units when validation fails.
 
 Configure `SystemMaxUse` or `SystemKeepFree` in `journald.conf` on the host.
-The per-unit rate limits below reduce log-flood amplification; they do not
-limit total journal disk use.
+Podman's journald log driver writes container records directly to the journal,
+so this finite retention setting is the enforced bound on journal disk use.
 
 ## Default service boundaries
 
@@ -42,10 +42,10 @@ The application export tmpfs is sized above the built-in maximum concurrent
 output reservation: five 100 MiB CSV outputs plus three 50 MiB PDF outputs,
 650 MiB in total. Tmpfs pages count against the service memory cgroup. Capacity
 tests must therefore exercise the configured concurrent export maximum after
-changing either limit. Podman 4.9 does not accept `uid` or `gid` options on a
-`Tmpfs=` mount, so the dedicated mount uses mode `1777`. The app remains the
-only workload in the container, and each generated operation directory and
-file is still created with mode `0700` and `0600`, respectively.
+changing either limit. Podman's `U` tmpfs option maps the dedicated export
+mount to application UID 1000 while retaining mode `0700`. Each generated
+operation directory and file is also created with mode `0700` and `0600`,
+respectively.
 
 nginx writes generated configuration to `/etc/nginx/conf.d`, request and proxy
 buffers to `/var/cache/nginx`, and its PID to `/run/nginx.pid`. Access and error
@@ -70,14 +70,10 @@ unknown storage modes and values outside these ranges.
 | `APP_RUNTIME_PIDS_LIMIT` | 512 | 128–1024 |
 | `APP_RUNTIME_EXPORT_STORAGE` | `tmpfs` | `tmpfs` or `bind` |
 | `APP_RUNTIME_EXPORT_TMPFS_MIB` | 1024 | 1024–4096 and at most half of app memory |
-| `APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS` | 30 | 10–60 |
-| `APP_RUNTIME_LOG_RATE_BURST` | 2000 | 100–10000 |
 | `NGINX_MEMORY_LIMIT_MIB` | 512 | 256–1024 |
 | `NGINX_CPU_QUOTA_PERCENT` | 100 | 25–online CPUs × 100 |
 | `NGINX_PIDS_LIMIT` | 128 | 32–512 |
 | `NGINX_CACHE_TMPFS_MIB` | 64 | 16–256 and at most half of nginx memory |
-| `NGINX_LOG_RATE_INTERVAL_SECONDS` | 30 | 10–60 |
-| `NGINX_LOG_RATE_BURST` | 6000 | 500–50000 |
 <!-- markdownlint-enable MD013 -->
 
 The helper derives `TasksMax` as the PIDs limit plus 32 for the Podman and
@@ -139,12 +135,14 @@ remain responsible for source CIDR restrictions and destination allowlists.
 
 ## Logging and evidence limits
 
-The application currently multiplexes ordinary, capacity, and security-audit
-JSON records on stdout and stderr. Unit-level rate limiting is therefore lossy
-for every one of those streams during overload. Alert on journal suppression
-messages and do not claim complete security-audit retention from journald. The
-database-backed action log remains the durable audit record. A future lossless
-security-audit sink must be separate from the rate-limited service stream.
+The application multiplexes ordinary, capacity, and security-audit JSON records
+on stdout and stderr. Podman's journald driver sends those records directly to
+the host journal; systemd service-unit rate-limit directives do not constrain
+that path. Finite `SystemMaxUse` or `SystemKeepFree` therefore remains a host
+prerequisite and bounds journal disk growth. The database-backed action log is
+the durable audit record. If per-service flood control or complete external
+security-audit retention is required, use a separate lossless log pipeline
+rather than relying on service-unit suppression.
 
 PR and release workflows install the real production archive on Ubuntu 24.04
 under a dedicated rootless user, execute the documented database lifecycle,
@@ -171,8 +169,7 @@ sudo -iu kravhantering \
   --topology app-node-tls
 sudo -iu kravhantering systemctl --user show \
   kravhantering-app-runtime.service kravhantering-nginx.service \
-  -p MemoryMax -p CPUQuotaPerSecUSec -p TasksMax \
-  -p LogRateLimitIntervalUSec -p LogRateLimitBurst
+  -p MemoryMax -p CPUQuotaPerSecUSec -p TasksMax
 sudo -iu kravhantering podman inspect \
   kravhantering-app-runtime kravhantering-nginx
 ```
@@ -195,5 +192,5 @@ sudo -iu kravhantering podman volume ls
 For `single-node`, substitute `kravhantering-single-node.target`. Record the
 exact RHEL, kernel, systemd, Podman, SELinux policy, and firewalld versions with
 the results. A missing controller, unexpected writable mount, extra published
-port, journal suppression during the normal load, or failed reboot recovery
-blocks rollout.
+port, missing finite journal retention, unavailable journald, or failed reboot
+recovery blocks rollout.

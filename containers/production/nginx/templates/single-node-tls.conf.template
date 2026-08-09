@@ -5,16 +5,17 @@ map $http_upgrade $connection_upgrade {
     '' close;
 }
 
-resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
-resolver_timeout 5s;
-
 upstream keycloak_upstream {
     zone keycloak_upstream 64k;
+    resolver ${NGINX_IDENTITY_RESOLVER} valid=10s ipv6=off;
+    resolver_timeout 5s;
     server keycloak:8080 resolve;
 }
 
 upstream app_runtime_upstream {
     zone app_runtime_upstream 64k;
+    resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+    resolver_timeout 5s;
     server app-runtime:3000 resolve;
 }
 

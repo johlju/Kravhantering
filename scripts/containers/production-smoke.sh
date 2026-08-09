@@ -193,19 +193,17 @@ render_runtime_configuration() {
     printf 'NGINX_HTTPS_BIND=443:443\n'
     printf 'NGINX_HTTP_BIND=127.0.0.1:8080\n'
     printf 'NGINX_RESOLVER=%s\n' "${NGINX_RESOLVER:-10.89.0.1}"
+    printf 'NGINX_IDENTITY_RESOLVER=%s\n' \
+      "${NGINX_IDENTITY_RESOLVER:-10.89.1.1}"
     printf 'APP_RUNTIME_MEMORY_LIMIT_MIB=4096\n'
     printf 'APP_RUNTIME_CPU_QUOTA_PERCENT=300\n'
     printf 'APP_RUNTIME_PIDS_LIMIT=512\n'
     printf 'APP_RUNTIME_EXPORT_STORAGE=tmpfs\n'
     printf 'APP_RUNTIME_EXPORT_TMPFS_MIB=1024\n'
-    printf 'APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS=30\n'
-    printf 'APP_RUNTIME_LOG_RATE_BURST=2000\n'
     printf 'NGINX_MEMORY_LIMIT_MIB=512\n'
     printf 'NGINX_CPU_QUOTA_PERCENT=100\n'
     printf 'NGINX_PIDS_LIMIT=128\n'
     printf 'NGINX_CACHE_TMPFS_MIB=64\n'
-    printf 'NGINX_LOG_RATE_INTERVAL_SECONDS=30\n'
-    printf 'NGINX_LOG_RATE_BURST=6000\n'
   } >"$CONFIG_TEMP_DIR/release.env"
 
   sudo install -d -o root -g "$SERVICE_USER" -m 0750 \
@@ -310,19 +308,62 @@ database_job() {
     --env-file "$CONFIG_ROOT/db-job.env" "$DB_JOB_IMAGE_REF" "$command"
 }
 
+stack_services_are_progressing() {
+  local service state
+  for service in kravhantering-app-runtime.service \
+    kravhantering-keycloak.service kravhantering-nginx.service \
+    kravhantering-sqlserver.service; do
+    state="$(service_systemctl is-active "$service" 2>/dev/null || true)"
+    case "$state" in
+      active | activating | reloading) ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
+configure_nginx_resolvers() {
+  local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
+  local edge_resolver identity_resolver
+  service_systemctl start \
+    kravhantering-single-node-edge-network.service
+  edge_resolver="$(as_service "$helper" print-resolver \
+    --topology single-node --purpose edge)"
+  identity_resolver="$(as_service "$helper" print-resolver \
+    --topology single-node --purpose identity)"
+  sudo sed -i \
+    -e "s#^NGINX_RESOLVER=.*#NGINX_RESOLVER=${edge_resolver}#" \
+    -e "s#^NGINX_IDENTITY_RESOLVER=.*#NGINX_IDENTITY_RESOLVER=${identity_resolver}#" \
+    "$CONFIG_ROOT/release.env"
+  as_service "$helper" install --topology "$TOPOLOGY"
+  service_systemctl daemon-reload
+}
+
 wait_for_url() {
-  local url="$1" attempts=0
+  local url="$1" attempts=0 target_state
   until curl --fail --silent --show-error \
     --cacert tmp/container-tls/ca.crt "$url" >/dev/null; do
-    if ! service_systemctl is-active --quiet \
-      kravhantering-single-node.target; then
-      report_target_failure \
-        "single-node target stopped while waiting for $url"
-    fi
+    target_state="$(service_systemctl is-active \
+      kravhantering-single-node.target 2>/dev/null || true)"
+    case "$target_state" in
+      active | activating | reloading) ;;
+      inactive)
+        stack_services_are_progressing ||
+          report_target_failure \
+            "single-node target entered $target_state while waiting for $url"
+        ;;
+      *)
+        report_target_failure \
+          "single-node target entered $target_state while waiting for $url"
+        ;;
+    esac
     attempts="$(( attempts + 1 ))"
     (( attempts < 90 )) || fail "timed out waiting for $url"
     sleep 2
   done
+  [[ "$(service_systemctl is-active \
+    kravhantering-single-node.target 2>/dev/null || true)" == active ]] ||
+    report_target_failure \
+      "single-node target was not active after $url became ready"
 }
 
 report_target_failure() {
@@ -354,13 +395,14 @@ container_networks() {
   local name="$1"
   as_service podman inspect "$name" \
     --format '{{range $network, $_ := .NetworkSettings.Networks}}{{println $network}}{{end}}' |
+    sed '/^$/d' |
     sort
 }
 
 verify_network_contract() {
   local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
   local purpose network expected_internal actual_internal host_gateway_ip
-  local public_hostname_ip
+  local public_hostname_ips
   for purpose in edge identity database egress; do
     network="$(as_service "$helper" print-network \
       --topology single-node --purpose "$purpose")"
@@ -388,9 +430,10 @@ verify_network_contract() {
   fi
   host_gateway_ip="$(as_service podman exec kravhantering-app-runtime \
     getent ahostsv4 host.containers.internal | awk 'NR == 1 { print $1 }')"
-  public_hostname_ip="$(as_service podman exec kravhantering-app-runtime \
-    getent ahostsv4 kravhantering.test | awk 'NR == 1 { print $1 }')"
-  [[ -n "$host_gateway_ip" && "$public_hostname_ip" == "$host_gateway_ip" ]] || \
+  public_hostname_ips="$(as_service podman exec kravhantering-app-runtime \
+    getent ahostsv4 kravhantering.test | awk '{ print $1 }' | sort -u)"
+  [[ -n "$host_gateway_ip" ]] && \
+    grep -Fqx "$host_gateway_ip" <<<"$public_hostname_ips" || \
     fail 'the public OIDC hostname does not resolve through the host-published nginx route'
   if as_service podman exec kravhantering-nginx \
     wget -T 2 -qO /dev/null http://1.1.1.1; then
@@ -399,29 +442,44 @@ verify_network_contract() {
 }
 
 verify_containment() {
-  local name
+  local effective_caps name
   for name in kravhantering-app-runtime kravhantering-nginx; do
     as_service podman inspect "$name" |
       jq -e '.[0].HostConfig.ReadonlyRootfs == true and
-        any(.[0].HostConfig.CapDrop[]; ascii_upcase | contains("ALL")) and
         any(.[0].HostConfig.SecurityOpt[]; startswith("no-new-privileges")) and
         .[0].HostConfig.PidsLimit > 0 and
-        .[0].HostConfig.LogConfig.Type == "journald"' >/dev/null
+        .[0].HostConfig.LogConfig.Type == "journald"' >/dev/null ||
+      fail "$name inspect did not prove its containment contract"
+    effective_caps="$(as_service podman top "$name" capeff | tail -n 1)"
+    [[ "$effective_caps" == none ]] ||
+      fail "$name retained effective capabilities: $effective_caps"
   done
   as_service podman inspect kravhantering-app-runtime |
-    jq -e '([.[0].Mounts[] | select(.RW) | .Destination] | sort) ==
-      ["/run/kravhantering/export", "/tmp"]' >/dev/null
+    jq -e '([(
+        .[0].Mounts[]? | select(.RW) | .Destination
+      ), (.[0].HostConfig.Tmpfs // {} | keys[])] | sort) ==
+      ["/run/kravhantering/export", "/tmp"]' >/dev/null ||
+    fail 'app-runtime writable mount allow-list did not match the contract'
   as_service podman inspect kravhantering-nginx |
-    jq -e '([.[0].Mounts[] | select(.RW) | .Destination] | sort) ==
-      ["/etc/nginx/conf.d", "/run", "/var/cache/nginx"]' >/dev/null
+    jq -e '([(
+        .[0].Mounts[]? | select(.RW) | .Destination
+      ), (.[0].HostConfig.Tmpfs // {} | keys[])] | sort) ==
+      ["/etc/nginx/conf.d", "/run", "/var/cache/nginx"]' >/dev/null ||
+    fail 'nginx writable mount allow-list did not match the contract'
   as_service podman inspect kravhantering-nginx |
     jq -e '.[0].NetworkSettings.Ports as $ports |
-      ($ports | keys) == ["8443/tcp"] and
-      all($ports["8443/tcp"][]; .HostPort == "443")' >/dev/null
+      ([$ports | to_entries[] | select(.value != null) | .key]) ==
+        ["8443/tcp"] and
+      all($ports["8443/tcp"][]; .HostPort == "443")' >/dev/null ||
+    fail 'nginx published-port allow-list did not match the contract'
   for name in kravhantering-app-runtime kravhantering-keycloak \
     kravhantering-sqlserver; do
     as_service podman inspect "$name" |
-      jq -e '((.[0].NetworkSettings.Ports // {}) | length) == 0' >/dev/null
+      jq -e 'all(
+        (.[0].NetworkSettings.Ports // {}) | to_entries[];
+        .value == null
+      )' >/dev/null ||
+      fail "$name unexpectedly published a host port"
   done
   as_service podman exec kravhantering-app-runtime \
     sh -c 'touch /tmp/allowed && rm /tmp/allowed'
@@ -434,13 +492,6 @@ verify_containment() {
   assert_service_property kravhantering-app-runtime.service TasksMax 544
   assert_service_property kravhantering-nginx.service MemoryMax 536870912
   assert_service_property kravhantering-nginx.service TasksMax 160
-  assert_service_property \
-    kravhantering-app-runtime.service LogRateLimitIntervalUSec 30s
-  assert_service_property \
-    kravhantering-app-runtime.service LogRateLimitBurst 2000
-  assert_service_property \
-    kravhantering-nginx.service LogRateLimitIntervalUSec 30s
-  assert_service_property kravhantering-nginx.service LogRateLimitBurst 6000
   verify_service_cgroup kravhantering-app-runtime.service \
     4294967296 544 '300000 100000'
   verify_service_cgroup kravhantering-nginx.service \
@@ -487,6 +538,7 @@ up() {
   mkdir -p "$EVIDENCE_DIR"
   service_systemctl start kravhantering-sqlserver.service
   service_systemctl start kravhantering-keycloak.service
+  configure_nginx_resolvers
   database_job wait
   database_job bootstrap
   database_job migration-status >"$EVIDENCE_DIR/migration-before.json"
@@ -575,7 +627,7 @@ evidence() {
 }
 
 verify_normal_service_state() {
-  local service="$1" control_group cgroup_root suppression_count
+  local service="$1" control_group cgroup_root
   [[ "$(service_systemctl show "$service" \
     --property=NRestarts --value)" == 0 ]] || \
     fail "$service restarted during normal or maximum-concurrency smoke"
@@ -584,11 +636,6 @@ verify_normal_service_state() {
   cgroup_root="/sys/fs/cgroup${control_group}"
   grep -Eq '^oom_kill 0$' "$cgroup_root/memory.events" || \
     fail "$service recorded a cgroup OOM kill during normal smoke"
-  suppression_count="$(as_service journalctl --user-unit "$service" \
-    --since=-30min --no-pager |
-    grep -Eic 'suppress(ed|ing).*(message|log)|message.*suppress' || true)"
-  (( suppression_count == 0 )) || \
-    fail "$service triggered journal suppression during normal smoke"
   {
     printf '## %s memory.events\n' "$service"
     cat "$cgroup_root/memory.events"
@@ -598,7 +645,6 @@ verify_normal_service_state() {
 }
 
 boundaries() {
-  local marker captured suppressed
   : >"$EVIDENCE_DIR/normal-load-cgroup-state.txt"
   verify_normal_service_state kravhantering-app-runtime.service
   verify_normal_service_state kravhantering-nginx.service
@@ -638,23 +684,6 @@ boundaries() {
     'pid-limit-violation=passed' \
     'tmpfs-limit-violation=passed' \
     >"$EVIDENCE_DIR/resource-boundaries.txt"
-
-  marker="kravhantering-log-boundary-$(date +%s)"
-  as_service podman exec kravhantering-app-runtime sh -c \
-    'i=0; while [ "$i" -lt 2500 ]; do printf "%s-%s\n" "$1" "$i" > /proc/1/fd/1; i=$((i + 1)); done' \
-    sh "$marker"
-  sleep 2
-  captured="$(as_service journalctl --user-unit \
-    kravhantering-app-runtime.service --since=-1min --no-pager |
-    grep -c "$marker" || true)"
-  (( captured > 0 && captured < 2500 )) || \
-    fail "journald rate boundary was not observable (captured $captured of 2500)"
-  suppressed="$(as_service journalctl --user --since=-1min --no-pager |
-    grep -Eic 'suppress(ed|ing).*(message|log)|message.*suppress' || true)"
-  (( suppressed > 0 )) || \
-    fail 'journald did not emit an observable suppression record'
-  printf 'sent=2500\ncaptured=%s\nsuppression-messages=%s\n' \
-    "$captured" "$suppressed" >"$EVIDENCE_DIR/log-boundary.txt"
 }
 
 down() {

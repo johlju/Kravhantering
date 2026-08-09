@@ -32,7 +32,5 @@ TimeoutStopSec=90
 MemoryMax=@@APP_RUNTIME_MEMORY_LIMIT_MIB@@M
 CPUQuota=@@APP_RUNTIME_CPU_QUOTA_PERCENT@@%
 TasksMax=@@APP_RUNTIME_TASKS_MAX@@
-LogRateLimitIntervalSec=@@APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS@@s
-LogRateLimitBurst=@@APP_RUNTIME_LOG_RATE_BURST@@
 StandardOutput=journal
 StandardError=journal

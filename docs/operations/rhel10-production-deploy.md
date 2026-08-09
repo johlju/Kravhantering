@@ -855,15 +855,9 @@ set +a
 
 TOPOLOGY=app-node-tls
 # TOPOLOGY=app-node-http
-APP_NODE_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network \
-    --topology "$TOPOLOGY" --purpose edge
-)"
-
 RESOLVER_IP="$(
-  podman run --rm --network "$APP_NODE_NETWORK" --entrypoint /bin/sh \
-    "$NGINX_IMAGE_REF" -c \
-    "awk '/^nameserver / { print \$2; exit }' /etc/resolv.conf"
+  bin/kravhantering-quadlet.sh print-resolver \
+    --topology "$TOPOLOGY" --purpose edge
 )"
 printf 'Use NGINX_RESOLVER=%s in /etc/kravhantering/release.env\n' \
   "$RESOLVER_IP"

@@ -219,4 +219,4 @@ This test starts five authenticated action-log CSV exports and three
 authenticated requirement-list PDF reports together, matching the configured
 per-node concurrency maxima. Every response must complete with its expected
 content type. The subsequent boundary harness confirms that the application
-did not restart or trigger journal suppression during this normal load.
+did not restart or record a cgroup OOM kill during this normal load.

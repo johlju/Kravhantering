@@ -18,6 +18,7 @@ Usage:
   kravhantering-quadlet.sh status --topology <app-node-tls|app-node-http|single-node>
   kravhantering-quadlet.sh remove --topology <app-node-tls|app-node-http|single-node>
   kravhantering-quadlet.sh print-network --topology <app-node-tls|app-node-http|single-node> --purpose <edge|identity|database|egress>
+  kravhantering-quadlet.sh print-resolver --topology <app-node-tls|app-node-http|single-node> --purpose <edge|identity|database|egress>
 USAGE
 }
 
@@ -54,6 +55,23 @@ topology_network() {
   esac
 }
 
+network_resolver() {
+  local topology="$1" purpose="$2" network resolver
+  local podman_bin="${KRAVHANTERING_PODMAN_BIN:-podman}"
+  network="$(topology_network "$topology" "$purpose")"
+  read_release_env
+  [[ -n "${NGINX_IMAGE_REF-}" ]] || \
+    fail 'release.env is missing required value: NGINX_IMAGE_REF'
+  resolver="$(
+    "$podman_bin" run --rm --pull=never --network "$network" \
+      --entrypoint /bin/sh "$NGINX_IMAGE_REF" -c \
+      "awk '/^nameserver / { print \$2; exit }' /etc/resolv.conf"
+  )" || fail "cannot discover the resolver for network: $network"
+  [[ "$resolver" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || \
+    fail "network returned an invalid IPv4 resolver: $network"
+  printf '%s\n' "$resolver"
+}
+
 required_values() {
   case "$1" in
     app-node-tls)
@@ -66,7 +84,8 @@ required_values() {
       ;;
     single-node)
       printf '%s\n' APP_RUNTIME_IMAGE_REF KEYCLOAK_IMAGE_REF NGINX_IMAGE_REF \
-        NGINX_HTTPS_BIND NGINX_RESOLVER PUBLIC_HOSTNAME SQLSERVER_IMAGE_REF
+        NGINX_HTTPS_BIND NGINX_IDENTITY_RESOLVER NGINX_RESOLVER \
+        PUBLIC_HOSTNAME SQLSERVER_IMAGE_REF
       ;;
     *) fail "unsupported topology: $1" ;;
   esac
@@ -77,16 +96,12 @@ template_values() {
   printf '%s\n' \
     APP_RUNTIME_CPU_QUOTA_PERCENT \
     APP_RUNTIME_EXPORT_MOUNT \
-    APP_RUNTIME_LOG_RATE_BURST \
-    APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS \
     APP_RUNTIME_MEMORY_LIMIT_MIB \
     APP_RUNTIME_PIDS_LIMIT \
     APP_RUNTIME_TASKS_MAX \
     NGINX_CACHE_TMPFS_MIB \
     NGINX_CPU_QUOTA_PERCENT \
     NGINX_HTTPS_PUBLISH \
-    NGINX_LOG_RATE_BURST \
-    NGINX_LOG_RATE_INTERVAL_SECONDS \
     NGINX_MEMORY_LIMIT_MIB \
     NGINX_PIDS_LIMIT \
     NGINX_TASKS_MAX
@@ -134,27 +149,19 @@ configure_containment() {
   default_release_value APP_RUNTIME_PIDS_LIMIT 512
   default_release_value APP_RUNTIME_EXPORT_STORAGE tmpfs
   default_release_value APP_RUNTIME_EXPORT_TMPFS_MIB 1024
-  default_release_value APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS 30
-  default_release_value APP_RUNTIME_LOG_RATE_BURST 2000
   default_release_value NGINX_MEMORY_LIMIT_MIB 512
   default_release_value NGINX_CPU_QUOTA_PERCENT 100
   default_release_value NGINX_PIDS_LIMIT 128
   default_release_value NGINX_CACHE_TMPFS_MIB 64
-  default_release_value NGINX_LOG_RATE_INTERVAL_SECONDS 30
-  default_release_value NGINX_LOG_RATE_BURST 6000
 
   validate_integer_range APP_RUNTIME_MEMORY_LIMIT_MIB 4096 8192
   validate_integer_range APP_RUNTIME_CPU_QUOTA_PERCENT 50 "$(( $(nproc) * 100 ))"
   validate_integer_range APP_RUNTIME_PIDS_LIMIT 128 1024
   validate_integer_range APP_RUNTIME_EXPORT_TMPFS_MIB 1024 4096
-  validate_integer_range APP_RUNTIME_LOG_RATE_INTERVAL_SECONDS 10 60
-  validate_integer_range APP_RUNTIME_LOG_RATE_BURST 100 10000
   validate_integer_range NGINX_MEMORY_LIMIT_MIB 256 1024
   validate_integer_range NGINX_CPU_QUOTA_PERCENT 25 "$(( $(nproc) * 100 ))"
   validate_integer_range NGINX_PIDS_LIMIT 32 512
   validate_integer_range NGINX_CACHE_TMPFS_MIB 16 256
-  validate_integer_range NGINX_LOG_RATE_INTERVAL_SECONDS 10 60
-  validate_integer_range NGINX_LOG_RATE_BURST 500 50000
 
   (( APP_RUNTIME_EXPORT_TMPFS_MIB * 2 <= APP_RUNTIME_MEMORY_LIMIT_MIB )) || \
     fail 'invalid APP_RUNTIME_EXPORT_TMPFS_MIB: must not exceed half APP_RUNTIME_MEMORY_LIMIT_MIB'
@@ -569,6 +576,11 @@ case "$COMMAND" in
     [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
     [[ -n "$PURPOSE" ]] || fail '--purpose is required with print-network'
     topology_network "$TOPOLOGY" "$PURPOSE"
+    ;;
+  print-resolver)
+    [[ -z "$OUTPUT_DIR" ]] || fail '--output-dir is only valid with render'
+    [[ -n "$PURPOSE" ]] || fail '--purpose is required with print-resolver'
+    network_resolver "$TOPOLOGY" "$PURPOSE"
     ;;
   *)
     usage >&2

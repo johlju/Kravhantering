@@ -26,6 +26,11 @@ function writePodmanProbe(filePath, runtime = 'crun') {
       `  printf 'true v2 ${runtime}\\n'`,
       'elif [[ "$1 $2" == "network inspect" ]]; then',
       "  printf 'true\\n'",
+      'elif [[ "$1" == run ]]; then',
+      '  case " $* " in',
+      "    *kravhantering-single-node_identity*) printf '10.91.1.1\\n' ;;",
+      "    *) printf '10.91.0.1\\n' ;;",
+      '  esac',
       'fi',
       '',
     ].join('\n'),
@@ -82,6 +87,7 @@ function releaseEnv(overrides = {}) {
     KEYCLOAK_IMAGE_REF: 'registry.example/keycloak:26.7',
     NGINX_HTTP_BIND: '127.0.0.1:9080',
     NGINX_HTTPS_BIND: '8443:443',
+    NGINX_IDENTITY_RESOLVER: '10.91.1.1',
     NGINX_IMAGE_REF: 'registry.example/nginx:1.31',
     NGINX_RESOLVER: '10.91.0.1',
     PUBLIC_HOSTNAME: 'kravhantering.example.internal',
@@ -172,8 +178,6 @@ describe('kravhantering Quadlet helper', () => {
     expect(appRuntime).toContain('MemoryMax=4096M')
     expect(appRuntime).toContain('CPUQuota=300%')
     expect(appRuntime).toContain('TasksMax=544')
-    expect(appRuntime).toContain('LogRateLimitIntervalSec=30s')
-    expect(appRuntime).toContain('LogRateLimitBurst=2000')
     const nginx = units.find(
       unit => unit.file === 'kravhantering-nginx.container',
     )?.content
@@ -200,8 +204,6 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('MemoryMax=512M')
     expect(nginx).toContain('CPUQuota=100%')
     expect(nginx).toContain('TasksMax=160')
-    expect(nginx).toContain('LogRateLimitIntervalSec=30s')
-    expect(nginx).toContain('LogRateLimitBurst=6000')
     expect(units.map(unit => unit.content).join('\n')).not.toMatch(
       /(?:@@[A-Z_]+@@|\$\{[^}]+\})/u,
     )
@@ -263,6 +265,10 @@ describe('kravhantering Quadlet helper', () => {
     )
     expect(allContent).toContain(
       'PodmanArgs=--add-host=kravhantering.example.internal:host-gateway',
+    )
+    expect(allContent).toContain('Environment=NGINX_RESOLVER=10.91.0.1')
+    expect(allContent).toContain(
+      'Environment=NGINX_IDENTITY_RESOLVER=10.91.1.1',
     )
     expect(allContent).toContain(
       'Volume=/etc/kravhantering/tls/ca.crt:/run/kravhantering/tls/ca.crt:ro',
@@ -354,6 +360,23 @@ describe('kravhantering Quadlet helper', () => {
     )
   })
 
+  it('discovers the resolver from each topology network', () => {
+    const fixture = createFixture(releaseEnv())
+    const edge = runHelper(
+      ['print-resolver', '--topology', 'single-node', '--purpose', 'edge'],
+      fixture,
+    )
+    const identity = runHelper(
+      ['print-resolver', '--topology', 'single-node', '--purpose', 'identity'],
+      fixture,
+    )
+
+    expect(edge.status).toBe(0)
+    expect(edge.stdout).toBe('10.91.0.1\n')
+    expect(identity.status).toBe(0)
+    expect(identity.stdout).toBe('10.91.1.1\n')
+  })
+
   it('renders bounded resource and disk-backed export overrides', () => {
     const exportPath = fs.mkdtempSync(
       path.join(os.tmpdir(), 'kh-export-private-'),
@@ -365,7 +388,6 @@ describe('kravhantering Quadlet helper', () => {
         APP_RUNTIME_CPU_QUOTA_PERCENT: '250',
         APP_RUNTIME_EXPORT_HOST_PATH: exportPath,
         APP_RUNTIME_EXPORT_STORAGE: 'bind',
-        APP_RUNTIME_LOG_RATE_BURST: '3000',
         APP_RUNTIME_MEMORY_LIMIT_MIB: '6144',
         APP_RUNTIME_PIDS_LIMIT: '640',
         NGINX_CACHE_TMPFS_MIB: '96',
@@ -390,7 +412,6 @@ describe('kravhantering Quadlet helper', () => {
     expect(appRuntime).toContain('CPUQuota=250%')
     expect(appRuntime).toContain('PidsLimit=640')
     expect(appRuntime).toContain('TasksMax=672')
-    expect(appRuntime).toContain('LogRateLimitBurst=3000')
     expect(nginx).toContain('MemoryMax=768M')
     expect(nginx).toContain('CPUQuota=75%')
     expect(nginx).toContain('PidsLimit=192')
@@ -408,7 +429,6 @@ describe('kravhantering Quadlet helper', () => {
     ['NGINX_MEMORY_LIMIT_MIB', '2048'],
     ['NGINX_CACHE_TMPFS_MIB', '8'],
     ['NGINX_PIDS_LIMIT', '0'],
-    ['APP_RUNTIME_LOG_RATE_BURST', 'lots'],
   ])('rejects invalid bounded override %s=%s', (key, value) => {
     const fixture = createFixture(releaseEnv({ [key]: value }))
     const result = runHelper(

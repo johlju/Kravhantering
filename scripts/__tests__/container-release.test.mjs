@@ -1722,6 +1722,7 @@ describe('trusted container release helpers', () => {
 
   it('ships nginx templates with dynamic upstream DNS resolution', () => {
     const nginxResolverPlaceholder = '$' + '{NGINX_RESOLVER}'
+    const nginxIdentityResolverPlaceholder = '$' + '{NGINX_IDENTITY_RESOLVER}'
     const templates = [
       'containers/production/nginx/templates/app-node-http.conf.template',
       'containers/production/nginx/templates/app-node-tls.conf.template',
@@ -1731,11 +1732,18 @@ describe('trusted container release helpers', () => {
     for (const template of templates) {
       const content = readWorkspaceFile(template)
       expectNginxTemplateSyntax(
-        content.replaceAll(nginxResolverPlaceholder, '10.89.0.1'),
+        content
+          .replaceAll(nginxResolverPlaceholder, '10.89.0.1')
+          .replaceAll(nginxIdentityResolverPlaceholder, '10.89.1.1'),
       )
       expect(content).toContain(
         `resolver ${nginxResolverPlaceholder} valid=10s ipv6=off;`,
       )
+      if (template.includes('single-node')) {
+        expect(content).toContain(
+          `resolver ${nginxIdentityResolverPlaceholder} valid=10s ipv6=off;`,
+        )
+      }
       expect(content).toContain('resolver_timeout 5s;')
       expect(content).toContain('server app-runtime:3000 resolve;')
       expect(content).toContain('proxy_pass http://app_runtime_upstream')

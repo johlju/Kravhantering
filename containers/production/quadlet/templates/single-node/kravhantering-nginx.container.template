@@ -15,6 +15,7 @@ ReadOnlyTmpfs=false
 PidsLimit=@@NGINX_PIDS_LIMIT@@
 LogDriver=journald
 Environment=NGINX_RESOLVER=@@NGINX_RESOLVER@@
+Environment=NGINX_IDENTITY_RESOLVER=@@NGINX_IDENTITY_RESOLVER@@
 PublishPort=@@NGINX_HTTPS_PUBLISH@@
 Network=kravhantering-single-node-edge.network
 Network=kravhantering-single-node-identity.network
@@ -38,7 +39,5 @@ TimeoutStopSec=90
 MemoryMax=@@NGINX_MEMORY_LIMIT_MIB@@M
 CPUQuota=@@NGINX_CPU_QUOTA_PERCENT@@%
 TasksMax=@@NGINX_TASKS_MAX@@
-LogRateLimitIntervalSec=@@NGINX_LOG_RATE_INTERVAL_SECONDS@@s
-LogRateLimitBurst=@@NGINX_LOG_RATE_BURST@@
 StandardOutput=journal
 StandardError=journal
