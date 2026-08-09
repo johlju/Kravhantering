@@ -59,20 +59,21 @@ service_systemctl() {
   as_service systemctl --user "$@"
 }
 
-install_ci_user_quadlet_generator() {
-  local generator_dir='/run/systemd/user-generators'
-  local system_generator='/usr/lib/systemd/system-generators/podman-system-generator'
-  local user_generator="$generator_dir/podman-user-generator"
-  # Podman 4.9 derives user mode from its entry point; make the CI contract
-  # explicit instead of depending on the Ubuntu package's symlink behavior.
-  [[ -x "$system_generator" ]] || \
-    fail 'Podman Quadlet generator is unavailable'
-  sudo install -d -m 0755 "$generator_dir"
-  printf '%s\n' \
-    '#!/bin/sh' \
-    "exec $system_generator --user \"\$@\"" |
-    sudo tee "$user_generator" >/dev/null
-  sudo chmod 0755 "$user_generator"
+configure_ci_quadlet_search_path() {
+  local uid
+  local user_search_path
+  local quadlet_dir="$SERVICE_HOME/.config/containers/systemd"
+  uid="$(service_uid)"
+  user_search_path="/etc/containers/systemd/users/$uid"
+  sudo install -d -m 0755 /etc/containers/systemd/users
+  if [[ -L "$user_search_path" ]]; then
+    [[ "$(readlink "$user_search_path")" == "$quadlet_dir" ]] || \
+      fail "unexpected Quadlet user search path: $user_search_path"
+    return
+  fi
+  [[ ! -e "$user_search_path" ]] || \
+    fail "Quadlet user search path already exists: $user_search_path"
+  sudo ln -s "$quadlet_dir" "$user_search_path"
 }
 
 configure_service_systemd_environment() {
@@ -83,8 +84,7 @@ configure_service_systemd_environment() {
     "XDG_CACHE_HOME=$SERVICE_HOME/.cache" \
     "XDG_CONFIG_HOME=$SERVICE_HOME/.config" \
     "XDG_DATA_HOME=$SERVICE_HOME/.local/share" \
-    "XDG_RUNTIME_DIR=/run/user/$uid" \
-    "QUADLET_UNIT_DIRS=$SERVICE_HOME/.config/containers/systemd"
+    "XDG_RUNTIME_DIR=/run/user/$uid"
 }
 
 assert_generated_quadlet_service() {
@@ -95,7 +95,7 @@ assert_generated_quadlet_service() {
   fi
   manager_environment="$(
     service_systemctl show-environment |
-      grep -E '^(HOME|XDG_CONFIG_HOME|QUADLET_UNIT_DIRS)=' |
+      grep -E '^(HOME|XDG_CONFIG_HOME)=' |
       paste -sd ' ' -
   )"
   fail "systemd did not generate $service (manager environment: $manager_environment)"
@@ -115,7 +115,7 @@ prepare_service_user() {
     fail "service user has no subordinate UID range: $SERVICE_USER"
   grep -Eq "^${SERVICE_USER}:[0-9]+:[0-9]+$" /etc/subgid || \
     fail "service user has no subordinate GID range: $SERVICE_USER"
-  install_ci_user_quadlet_generator
+  configure_ci_quadlet_search_path
   uid="$(service_uid)"
   sudo loginctl enable-linger "$SERVICE_USER"
   sudo systemctl start "user@${uid}.service"
@@ -626,7 +626,7 @@ boundaries() {
 
 down() {
   local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
-  local network purpose volume volume_status
+  local network purpose uid user_search_path volume volume_status
   id "$SERVICE_USER" >/dev/null 2>&1 || return 0
   mkdir -p "$EVIDENCE_DIR"
   service_systemctl disable --now kravhantering-single-node.target || true
@@ -654,6 +654,13 @@ down() {
     -maxdepth 1 -type f -name 'kravhantering-ci-*' -delete || true
   as_service find "$SERVICE_HOME/.config/systemd/user" \
     -maxdepth 1 -type f -name 'kravhantering-ci-*' -delete || true
+  uid="$(service_uid)"
+  user_search_path="/etc/containers/systemd/users/$uid"
+  if [[ -L "$user_search_path" ]] &&
+    [[ "$(readlink "$user_search_path")" == \
+      "$SERVICE_HOME/.config/containers/systemd" ]]; then
+    sudo unlink "$user_search_path"
+  fi
   service_systemctl daemon-reload || true
   as_service podman rm --all --force || true
   as_service podman volume rm kravhantering-ci-hsa-mtls-certs \
