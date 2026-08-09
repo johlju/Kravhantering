@@ -33,9 +33,11 @@ HSA-katalogmocken är fortsatt test- och demo-stöd.
 Kong-topologin som projektet stödjer publicerar bara
 `/hsa/person-records/lookup` och dirigerar den till adaptern. Den tidigare
 REST-fasaden i mocken och Kong-SOAP-sökvägen ska inte längre beskrivas som
-nuvarande kontrakt. `single-node-demo` använder samma adapter- och mTLS-väg som
-release-smoke. Lokala och pipeline-baserade testcertifikat kan genereras, men
-operatörer kan montera egna självsignerade testcertifikat för demo.
+nuvarande kontrakt. Release-smoke använder en separat CI-only Quadlet-overlay
+med samma adapter- och mTLS-väg. `single-node-demo` är endast ett val för
+frånkopplad transport av stödavbildningarna, inte en runtime-topologi. Lokala
+och pipeline-baserade testcertifikat kan genereras, men operatörer kan montera
+egna självsignerade testcertifikat för demo.
 
 REST-kontraktet använder stabila felkoder. Framgång ger `200` med `hsaId`,
 `givenName`, `middleName`, `surname`, `email` och

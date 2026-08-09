@@ -18,9 +18,14 @@ av det separata arbetet för tillståndsbevarande tjänster.
 
 PR- och releasevalidering installerar samma versionssatta produktionsarkiv som
 en operatör använder och kör den riktiga Quadlet-livscykeln på en fullständig
-Ubuntu-runner. RHEL-kvalificering kompletterar detta med SELinux, firewalld,
-RHEL:s Podman-version och verklig omstartsbeständighet. Compose är endast ett
-lokalt utvecklingskontrakt. Tjänsternas loggtak begränsar tillväxt men är
+Ubuntu-runner. HSA-flödet verifieras genom en separat CI-only Quadlet-overlay
+med Kong, adaptern och katalogmocken; overlayen ingår inte i
+produktionsarkivet eller produktionstopologin. HSA-gränsen och de separata
+stödlåsen ägs fortsatt av
+[ADR 0029](0029-hsa-personuppslag-som-restgrans-mot-integrationsplattform.md).
+RHEL-kvalificering kompletterar detta med SELinux, firewalld, RHEL:s
+Podman-version och verklig omstartsbeständighet. Compose är endast ett lokalt
+utvecklingskontrakt. Tjänsternas loggtak begränsar tillväxt men är
 förlustbringande vid extrem överlast; plattformens säkerhetslogg får därför
 inte beskrivas som fullständig, medan den databaslagrade åtgärdsloggen förblir
 den varaktiga beviskanalen.
