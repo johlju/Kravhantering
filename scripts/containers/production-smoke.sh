@@ -122,7 +122,7 @@ prepare_service_user() {
   sudo install -d -m 0755 "$INSTALL_ROOT"
   for storage_path in "$PWD" "$INSTALL_ROOT" "$graph_root"; do
     available_kib="$(
-      df --output=avail -k "$storage_path" 2>/dev/null |
+      sudo df --output=avail -k "$storage_path" 2>/dev/null |
         tail -n 1 |
         tr -d ' '
     )" || \
