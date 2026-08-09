@@ -76,9 +76,10 @@ function stackLock() {
   }
 }
 
-function fakeFs() {
+function fakeFs(existingArchives = ['.oci.tar.gz']) {
   return {
-    existsSync: filePath => String(filePath).endsWith('.oci.tar.gz'),
+    existsSync: filePath =>
+      existingArchives.some(extension => String(filePath).endsWith(extension)),
     mkdtempSync: vi.fn(() => '/tmp/kh-oci-verify/verify-ci'),
     mkdirSync: vi.fn(),
     readFileSync: vi.fn(() => JSON.stringify(stackLock())),
@@ -139,8 +140,9 @@ describe('container OCI archive helpers', () => {
   it('exports separate compressed OCI archives with Podman', () => {
     const fsImpl = fakeFs()
     const commands = []
-    const spawnSync = vi.fn((command, args) => {
+    const spawnSync = vi.fn((command, args, options) => {
       commands.push(`${command} ${args.join(' ')}`)
+      expect(options.env.STORAGE_DRIVER).toBeUndefined()
       return { status: 0 }
     })
 
@@ -205,6 +207,7 @@ describe('container OCI archive helpers', () => {
     ])
     expect(commandEnvs.every(env => env.TMP === env.TMPDIR)).toBe(true)
     expect(commandEnvs.every(env => env.TEMP === env.TMPDIR)).toBe(true)
+    expect(commandEnvs.every(env => env.STORAGE_DRIVER === 'vfs')).toBe(true)
     expect(fsImpl.rmSync).toHaveBeenCalledTimes(2)
     expect(fsImpl.rmSync).toHaveBeenCalledWith(
       '/workspace/tmp/verify-oci/app-runtime',
@@ -214,6 +217,36 @@ describe('container OCI archive helpers', () => {
       '/workspace/tmp/verify-oci/db-job',
       { force: true, recursive: true },
     )
+  })
+
+  it('verifies uncompressed Buildx OCI candidate archives', () => {
+    const fsImpl = fakeFs(['.oci.tar'])
+    const commands = []
+    const spawnSync = vi.fn((command, args) => {
+      commands.push(`${command} ${args.join(' ')}`)
+      return { status: 0 }
+    })
+    const execFileSync = vi.fn((_command, args) =>
+      args.join(' ').includes('db-job')
+        ? 'sha256:db-job\n'
+        : 'sha256:app-runtime\n',
+    )
+
+    const results = verifyOciArchives({
+      cwd: '/workspace',
+      execFileSync,
+      fsImpl,
+      outputDir: 'tmp/oci',
+      spawnSync,
+      verifyRoot: 'tmp/verify-oci',
+    })
+
+    expect(results.map(result => result.archivePath)).toEqual([
+      'tmp/oci/app-runtime.oci.tar',
+      'tmp/oci/db-job.oci.tar',
+    ])
+    expect(commands[0]).toContain('load --input tmp/oci/app-runtime.oci.tar')
+    expect(commands[2]).toContain('load --input tmp/oci/db-job.oci.tar')
   })
 
   it('does not let temporary Podman store cleanup failures mask image ID verification', () => {

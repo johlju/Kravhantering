@@ -581,7 +581,9 @@ describe('GitHub Actions workflow security', () => {
     const workflow = readWorkflowYaml('container-release.yml')
     const prWorkflow = readWorkflowYaml('container-pr-smoke.yml')
     const releaseJob = workflow.jobs?.['trusted-release']
+    const prJob = prWorkflow.jobs?.['container-smoke']
     const steps = releaseJob?.steps ?? []
+    const prSteps = prJob?.steps ?? []
     const stepNames = steps.map(step => step.name)
     const indexOf = (name: string) => {
       const index = stepNames.indexOf(name)
@@ -589,6 +591,9 @@ describe('GitHub Actions workflow security', () => {
       return index
     }
     const candidateBuilds = steps.filter(step =>
+      String(step.name).match(/^Build .+ candidate OCI artifact$/u),
+    )
+    const prCandidateBuilds = prSteps.filter(step =>
       String(step.name).match(/^Build .+ candidate OCI artifact$/u),
     )
     const gateAction = yaml.load(
@@ -603,6 +608,7 @@ describe('GitHub Actions workflow security', () => {
     )
 
     expect(candidateBuilds).toHaveLength(5)
+    expect(prCandidateBuilds).toHaveLength(5)
     expect(candidateSbomSteps).toHaveLength(5)
     for (const step of candidateSbomSteps) {
       expect(step.with?.format).toBe('spdx-json')
@@ -628,6 +634,21 @@ describe('GitHub Actions workflow security', () => {
       'hsa-person-lookup-adapter',
     ]) {
       expect(releaseGate?.with?.[inputName]).toMatch(/^oci-archive:/u)
+    }
+
+    const prGate = prSteps.find(
+      step =>
+        step.name === 'Gate PR images against release vulnerability policy',
+    )
+    expect(prGate?.uses).toBe('./.github/actions/container-vulnerability-gate')
+    for (const inputName of [
+      'app-runtime',
+      'db-job',
+      'demo-seed',
+      'hsa-directory-mock',
+      'hsa-person-lookup-adapter',
+    ]) {
+      expect(prGate?.with?.[inputName]).toMatch(/^oci-archive:/u)
     }
 
     const scanStep = gateSteps.find(
@@ -695,7 +716,6 @@ describe('GitHub Actions workflow security', () => {
       "success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'",
     )
 
-    const prSteps = prWorkflow.jobs?.['container-smoke']?.steps ?? []
     const prGateIndex = prSteps.findIndex(
       step =>
         step.name === 'Gate PR images against release vulnerability policy',
@@ -705,7 +725,6 @@ describe('GitHub Actions workflow security', () => {
     )
     expect(prGateIndex).toBeGreaterThanOrEqual(0)
     expect(prGateIndex).toBeLessThan(prStartIndex)
-    const prGate = prSteps[prGateIndex]
     expect(prGate?.uses).toBe('./.github/actions/container-vulnerability-gate')
     expect(prGate?.with?.metadata).toBeUndefined()
     expect(prGate?.with?.['artifact-prefix']).toBe(

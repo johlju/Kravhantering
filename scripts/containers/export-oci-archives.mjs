@@ -102,9 +102,10 @@ export function buildArchivePlans(stackLock, outputDir) {
 }
 
 function podmanEnv(options = {}) {
+  const storageDriver = readNonEmpty(options.storageDriver)
   return {
     ...process.env,
-    STORAGE_DRIVER: process.env.STORAGE_DRIVER ?? DEFAULT_PODMAN_STORAGE_DRIVER,
+    ...(storageDriver ? { STORAGE_DRIVER: storageDriver } : {}),
     ...options.env,
   }
 }
@@ -211,6 +212,7 @@ function createVerifyWorkspace(options = {}, serviceName = 'archive') {
 function verifyWorkspaceOptions(options, workspace) {
   return {
     ...options,
+    storageDriver: options.storageDriver ?? DEFAULT_PODMAN_STORAGE_DRIVER,
     env: {
       ...options.env,
       TEMP: workspace.tmpDir,
@@ -282,10 +284,12 @@ export function verifyOciArchives(options = {}) {
   const results = []
 
   for (const plan of plans) {
-    const absoluteArchivePath = path.resolve(cwd, plan.archivePath)
-    if (!fsImpl.existsSync(absoluteArchivePath)) {
+    const archivePath = [plan.archivePath, plan.rawArchivePath].find(
+      candidate => fsImpl.existsSync(path.resolve(cwd, candidate)),
+    )
+    if (!archivePath) {
       throw new Error(
-        `Missing OCI archive for ${plan.serviceName}: ${plan.archivePath}`,
+        `Missing OCI archive for ${plan.serviceName}: ${plan.archivePath} or ${plan.rawArchivePath}`,
       )
     }
 
@@ -293,7 +297,7 @@ export function verifyOciArchives(options = {}) {
     const workspaceOptions = verifyWorkspaceOptions(options, workspace)
     try {
       runPodman(
-        [...workspace.podmanGlobalArgs, 'load', '--input', plan.archivePath],
+        [...workspace.podmanGlobalArgs, 'load', '--input', archivePath],
         workspaceOptions,
       )
       const actualImageId = normalizeImageId(
@@ -315,7 +319,7 @@ export function verifyOciArchives(options = {}) {
           `${plan.serviceName} OCI archive image ID ${actualImageId} does not match ${plan.imageId}.`,
         )
       }
-      results.push({ ...plan, actualImageId })
+      results.push({ ...plan, actualImageId, archivePath })
     } finally {
       if (workspace.created) {
         removeTemporaryVerifyWorkspace(workspace, fsImpl, workspaceOptions)
