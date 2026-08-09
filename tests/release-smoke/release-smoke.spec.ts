@@ -3,7 +3,7 @@ import {
   expectApiDocsSecurityHeaders,
   expectApiDocsToRenderWithoutCspErrors,
 } from '../helpers/api-docs-security-headers'
-import { RELEASE_SMOKE_ADMIN } from './global-setup'
+import { RELEASE_SMOKE_ADMIN, RELEASE_SMOKE_AUTHOR } from './auth-roles'
 
 interface AuthMeResponse {
   authenticated?: boolean
@@ -103,6 +103,7 @@ const RELEASE_SMOKE_AREA_PREFIX = 'AUTHZ'
 
 test.describe('Release smoke container flow', () => {
   test('proves HTTPS, auth, SQL Server reads and writes, assets, and build metadata', async ({
+    baseURL: configuredBaseUrl,
     page,
     request,
   }) => {
@@ -122,9 +123,9 @@ test.describe('Release smoke container flow', () => {
       const me = (await meResponse.json()) as AuthMeResponse
 
       expect(me.authenticated).toBe(true)
-      expect(me.hsaId).toBe('SE5560000001-smoke1')
-      expect(me.name).toBe('Release SmokeUser')
-      expect(me.roles).toEqual([])
+      expect(me.hsaId).toBe('SE5560000001-reviewer1')
+      expect(me.name).toBe('Rita Reviewer')
+      expect(me.roles).toEqual(['Reviewer'])
     })
 
     await test.step('open the requirements library and capture page evidence', async () => {
@@ -181,45 +182,59 @@ test.describe('Release smoke container flow', () => {
     })
 
     await test.step('create and read back a smoke requirement through the API', async () => {
-      const areasResponse = await request.get('/api/requirement-areas')
-      expect(areasResponse.ok()).toBe(true)
-      const areasPayload =
-        (await areasResponse.json()) as RequirementAreasResponse
-      const area = areasPayload.areas?.find(
-        candidate => candidate.prefix === RELEASE_SMOKE_AREA_PREFIX,
-      )
-      expect(area).toBeDefined()
-      if (!area) {
-        throw new Error(
-          `No ${RELEASE_SMOKE_AREA_PREFIX} requirement area returned for smoke test`,
-        )
-      }
-
-      const description = `release-smoke-${releaseSmokeRunId()}-${Date.now().toString(36)}`
-      const createResponse = await request.post('/api/requirements', {
-        data: {
-          areaId: area.id,
-          description,
-          verifiable: false,
+      const baseURL = releaseSmokeBaseUrl(configuredBaseUrl)
+      const authorRequest = await playwrightRequest.newContext({
+        baseURL,
+        extraHTTPHeaders: {
+          Origin: originHeader(baseURL),
+          'X-Requested-With': 'XMLHttpRequest',
         },
+        storageState: RELEASE_SMOKE_AUTHOR.filePath,
       })
-      expect(createResponse.status()).toBe(201)
 
-      const created =
-        (await createResponse.json()) as CreatedRequirementResponse
-      expect(created.requirement.id).toBeGreaterThan(0)
-      expect(created.requirement.uniqueId).toBeTruthy()
-      expect(created.version.description).toBe(description)
+      try {
+        const areasResponse = await authorRequest.get('/api/requirement-areas')
+        expect(areasResponse.ok()).toBe(true)
+        const areasPayload =
+          (await areasResponse.json()) as RequirementAreasResponse
+        const area = areasPayload.areas?.find(
+          candidate => candidate.prefix === RELEASE_SMOKE_AREA_PREFIX,
+        )
+        expect(area).toBeDefined()
+        if (!area) {
+          throw new Error(
+            `No ${RELEASE_SMOKE_AREA_PREFIX} requirement area returned for smoke test`,
+          )
+        }
 
-      const readBackResponse = await request.get(
-        `/api/requirements/${created.requirement.id}`,
-      )
-      expect(readBackResponse.ok()).toBe(true)
-      const readBack =
-        (await readBackResponse.json()) as RequirementDetailResponse
-      expect(readBack.id).toBe(created.requirement.id)
-      expect(readBack.uniqueId).toBe(created.requirement.uniqueId)
-      expect(readBack.versions?.[0]?.description).toBe(description)
+        const description = `release-smoke-${releaseSmokeRunId()}-${Date.now().toString(36)}`
+        const createResponse = await authorRequest.post('/api/requirements', {
+          data: {
+            areaId: area.id,
+            description,
+            verifiable: false,
+          },
+        })
+        expect(createResponse.status()).toBe(201)
+
+        const created =
+          (await createResponse.json()) as CreatedRequirementResponse
+        expect(created.requirement.id).toBeGreaterThan(0)
+        expect(created.requirement.uniqueId).toBeTruthy()
+        expect(created.version.description).toBe(description)
+
+        const readBackResponse = await authorRequest.get(
+          `/api/requirements/${created.requirement.id}`,
+        )
+        expect(readBackResponse.ok()).toBe(true)
+        const readBack =
+          (await readBackResponse.json()) as RequirementDetailResponse
+        expect(readBack.id).toBe(created.requirement.id)
+        expect(readBack.uniqueId).toBe(created.requirement.uniqueId)
+        expect(readBack.versions?.[0]?.description).toBe(description)
+      } finally {
+        await authorRequest.dispose()
+      }
     })
   })
 

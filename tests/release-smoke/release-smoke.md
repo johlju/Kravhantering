@@ -13,12 +13,12 @@ documentation, without duplicating the full integration suite.
 <!-- markdownlint-disable MD013 -->
 | Property | Source | Purpose |
 | --- | --- | --- |
-| `storageState` | `tests/release-smoke/global-setup.ts` | Global setup generates the `rita.reviewer` and `ada.admin` browser sessions under `test-results/release-smoke/auth/`. |
+| `storageState` | `tests/release-smoke/global-setup.ts` | Global setup generates the `rita.reviewer`, `olle.areaowner`, and `ada.admin` browser sessions under `test-results/release-smoke/auth/`. |
 | `RELEASE_SMOKE_RUN_ID` | Environment | Optional stable prefix for created smoke requirements. |
 | `build.json` | `/build.json` | Public build metadata embedded in the app image. |
 | API docs | `public/api-docs/` | Static Swagger UI mounted directly into nginx. |
 | HSA fixture | `containers/hsa-directory-mock/fixtures/hsa-personer.json` | Provides deterministic person data through Kong and the adapter. |
-| `AUTHZ` requirement area | `typeorm/seed.mjs` | Gives the no-role smoke user a deterministic kravområdesmedförfattare assignment for the write proof. |
+| `AUTHZ` requirement area | `typeorm/seed.mjs` | Gives `olle.areaowner` a deterministic owner assignment for the write proof. |
 <!-- markdownlint-enable MD013 -->
 
 Example build metadata shape:
@@ -40,19 +40,20 @@ flowchart TD
     A[Release smoke config] --> B[Global setup]
     B --> C[Login via nginx /auth]
     C --> D[Store rita.reviewer storageState]
-    D --> E[Store ada.admin storageState]
-    E --> F[GET /api/auth/me]
-    F --> G[Open /sv/requirements]
-    G --> H[Verify seeded SQL Server data]
-    H --> I[Verify Next static assets]
-    I --> J[Attach screenshot]
-    J --> K[GET /build.json]
-    K --> L[Attach build metadata]
-    L --> M[POST /api/requirements]
-    M --> N[GET /api/requirements/:id]
-    N --> O[Verify nginx API docs headers, assets, rendering and 404]
-    O --> P[Admin verifies HSA person through Kong and adapter]
-    P --> Q[Run 5 CSV exports and 3 PDF reports concurrently]
+    D --> E[Store olle.areaowner storageState]
+    E --> F[Store ada.admin storageState]
+    F --> G[GET /api/auth/me]
+    G --> H[Open /sv/requirements]
+    H --> I[Verify seeded SQL Server data]
+    I --> J[Verify Next static assets]
+    J --> K[Attach screenshot]
+    K --> L[GET /build.json]
+    L --> M[Attach build metadata]
+    M --> N[POST /api/requirements as olle.areaowner]
+    N --> O[GET /api/requirements/:id]
+    O --> P[Verify nginx API docs headers, assets, rendering and 404]
+    P --> Q[Admin verifies HSA person through Kong and adapter]
+    Q --> R[Run 5 CSV exports and 3 PDF reports concurrently]
 ```
 
 ## Test Setup
@@ -62,8 +63,9 @@ flowchart TD
   and does not start a web server.
 - The runner trusts `tmp/container-tls/ca.crt` for both Node and Chromium so
   the suite uses regular HTTPS verification.
-- `global-setup.ts` signs in as `rita.reviewer` and `ada.admin` with the
-  committed non-production passwords merged into the production realm.
+- `global-setup.ts` signs in as `rita.reviewer`, `olle.areaowner`, and
+  `ada.admin` with the committed non-production passwords merged into the
+  production realm.
 - The CI-only Quadlet overlay starts Kong, the HSA person lookup adapter and
   the HSA directory mock. The app runtime receives
   `HSA_PERSON_LOOKUP_URL=http://kong:8000/hsa/person-records/lookup`.
@@ -90,8 +92,8 @@ CSRF-protected requirement mutation.
 5. Attach a full-page screenshot as release smoke evidence.
 6. Request `/build.json`, validate all metadata fields including the expected
    database schema version, and attach the JSON.
-7. Request `/api/requirement-areas` and choose the seeded `AUTHZ` requirement
-   area assigned to the smoke user.
+7. Use the `olle.areaowner` session to request `/api/requirement-areas` and
+   choose the seeded `AUTHZ` requirement area assigned to that user.
 8. POST `/api/requirements` with a description beginning
    `release-smoke-<run-id>`.
 9. GET the created requirement by id and verify it matches the POST result.
@@ -121,11 +123,11 @@ sequenceDiagram
     Note over PW,APP: ✓ seeded data and static assets are visible
     PW->>APP: GET /build.json
     Note over PW,APP: ✓ build metadata is valid and attached
-    PW->>APP: GET /api/requirement-areas
+    PW->>APP: GET /api/requirement-areas as olle.areaowner
     APP->>DB: Read requirement areas
     DB-->>APP: Requirement area rows
-    Note over PW,APP: Select AUTHZ requirement area assigned to smoke user
-    PW->>APP: POST /api/requirements release-smoke-<run-id>
+    Note over PW,APP: Select AUTHZ requirement area assigned to olle.areaowner
+    PW->>APP: POST /api/requirements as olle.areaowner
     APP->>DB: Persist release-smoke-<run-id> requirement
     PW->>APP: GET /api/requirements/:id
     APP->>DB: Read created requirement
