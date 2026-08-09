@@ -20,6 +20,7 @@
     "bubblewrap",
     "bwrap",
     "conmon",
+    "crun",
     "delfil",
     "dryrun",
     "datetimeoffset",

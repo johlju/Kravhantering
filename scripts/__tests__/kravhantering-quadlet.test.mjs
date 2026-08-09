@@ -17,6 +17,22 @@ const PODMAN_GENERATOR_VERSION = fs.existsSync(PODMAN_USER_GENERATOR)
   : ''
 const temporaryDirectories = []
 
+function writePodmanProbe(filePath, runtime = 'crun') {
+  fs.writeFileSync(
+    filePath,
+    [
+      '#!/usr/bin/env bash',
+      'if [[ "$1" == info ]]; then',
+      `  printf 'true v2 ${runtime}\\n'`,
+      'elif [[ "$1 $2" == "network inspect" ]]; then',
+      "  printf 'true\\n'",
+      'fi',
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  )
+}
+
 function createFixture(releaseEnv) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kh-quadlet-'))
   temporaryDirectories.push(root)
@@ -38,25 +54,14 @@ function createFixture(releaseEnv) {
   fs.writeFileSync(generatorPath, '#!/usr/bin/env bash\nexit 0\n', {
     mode: 0o755,
   })
-  fs.writeFileSync(
-    podmanPath,
-    [
-      '#!/usr/bin/env bash',
-      'if [[ "$1" == info ]]; then',
-      "  printf 'true v2\\n'",
-      'elif [[ "$1 $2" == "network inspect" ]]; then',
-      "  printf 'true\\n'",
-      'fi',
-      '',
-    ].join('\n'),
-    { mode: 0o755 },
-  )
+  writePodmanProbe(podmanPath)
   fs.writeFileSync(systemctlPath, '#!/usr/bin/env bash\nexit 0\n', {
     mode: 0o755,
   })
   fs.writeFileSync(releaseEnvPath, releaseEnv)
   return {
     outputDir,
+    podmanPath,
     preflightEnv: {
       KRAVHANTERING_CGROUP_CONTROLLERS_FILE: controllersPath,
       KRAVHANTERING_JOURNAL_CONFIG_DIR: journalConfigDir,
@@ -182,14 +187,15 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('ReadOnlyTmpfs=false')
     expect(nginx).toContain('PidsLimit=128')
     expect(nginx).toContain('LogDriver=journald')
+    expect(nginx).toContain('PodmanArgs=--group-add=keep-groups')
     expect(nginx).toContain(
-      'Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec',
+      'Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=1777,nosuid,nodev,noexec',
     )
     expect(nginx).toContain(
-      'Tmpfs=/var/cache/nginx:rw,size=64M,mode=0750,uid=101,gid=101,nosuid,nodev,noexec',
+      'Tmpfs=/var/cache/nginx:rw,size=64M,mode=1777,nosuid,nodev,noexec',
     )
     expect(nginx).toContain(
-      'Tmpfs=/run:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec',
+      'Tmpfs=/run:rw,size=1M,mode=1777,nosuid,nodev,noexec',
     )
     expect(nginx).toContain('MemoryMax=512M')
     expect(nginx).toContain('CPUQuota=100%')
@@ -214,6 +220,7 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('PublishPort=127.0.0.1:9080:8080')
     expect(nginx).toContain('app-node-http.conf.template')
     expect(nginx).not.toContain('fullchain.pem')
+    expect(nginx).not.toContain('keep-groups')
   })
 
   it('renders single-node services, volumes and the public issuer host route', () => {
@@ -237,6 +244,10 @@ describe('kravhantering Quadlet helper', () => {
     expect(allContent).toContain('NetworkName=kravhantering-single-node_edge')
     expect(allContent).toContain('VolumeName=kravhantering-sqlserver-data')
     expect(allContent).toContain('VolumeName=kravhantering-keycloak-data')
+    expect(
+      units.find(unit => unit.file === 'kravhantering-nginx.container')
+        ?.content,
+    ).toContain('PodmanArgs=--group-add=keep-groups')
     expect(
       units.find(unit => unit.file === 'kravhantering-sqlserver.container')
         ?.content,
@@ -385,7 +396,7 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('PidsLimit=192')
     expect(nginx).toContain('TasksMax=224')
     expect(nginx).toContain(
-      'Tmpfs=/var/cache/nginx:rw,size=96M,mode=0750,uid=101,gid=101,nosuid,nodev,noexec',
+      'Tmpfs=/var/cache/nginx:rw,size=96M,mode=1777,nosuid,nodev,noexec',
     )
   })
 
@@ -536,6 +547,28 @@ describe('kravhantering Quadlet helper', () => {
     expect(result.stderr).toContain(
       'single-node memory limits leave less than 8 GiB',
     )
+  })
+
+  it('requires crun for TLS key group access but not for HTTP', () => {
+    const tlsFixture = createFixture(releaseEnv())
+    writePodmanProbe(tlsFixture.podmanPath, 'runc')
+    const tlsResult = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      tlsFixture,
+    )
+
+    const httpFixture = createFixture(releaseEnv())
+    writePodmanProbe(httpFixture.podmanPath, 'runc')
+    const httpResult = runHelper(
+      ['verify-host', '--topology', 'app-node-http'],
+      httpFixture,
+    )
+
+    expect(tlsResult.status).not.toBe(0)
+    expect(tlsResult.stderr).toContain(
+      'TLS topology requires the crun OCI runtime (reported: runc)',
+    )
+    expect(httpResult.status).toBe(0)
   })
 
   it('rejects journald automatic sizing as an explicit retention bound', () => {

@@ -97,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y jq podman skopeo libnss3-tools
+          sudo apt-get install -y crun jq podman skopeo libnss3-tools
           sudo sysctl net.ipv4.ip_unprivileged_port_start=0
           echo "127.0.0.1 kravhantering.test" | sudo tee -a /etc/hosts
           podman --version

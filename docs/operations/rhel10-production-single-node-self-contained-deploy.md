@@ -184,10 +184,15 @@ Install the host as a minimal RHEL 10 server. Recommended baseline:
 Install runtime packages as an administrator:
 
 ```bash
-sudo dnf install -y podman tar gzip coreutils jq
+sudo dnf install -y podman crun tar gzip coreutils jq
 podman --version
 podman info --format '{{.Host.CgroupsVersion}}'
+podman info --format '{{.Host.OCIRuntime.Name}}'
 ```
+
+The reported cgroup version must be `v2`, and the OCI runtime must be `crun`.
+The rootless nginx service uses crun supplementary-group preservation to read
+the group-restricted TLS private key without making it world-readable.
 
 Create a dedicated rootless service user:
 

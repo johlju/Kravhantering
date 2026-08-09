@@ -374,10 +374,15 @@ verify_host_enforcement() {
 
   "$systemctl_bin" --user show-environment >/dev/null 2>&1 || \
     fail 'user systemd manager is unavailable'
-  podman_info="$("$podman_bin" info --format '{{.Host.Security.Rootless}} {{.Host.CgroupsVersion}}' 2>/dev/null)" || \
+  local podman_cgroups podman_rootless podman_runtime
+  podman_info="$("$podman_bin" info --format '{{.Host.Security.Rootless}} {{.Host.CgroupsVersion}} {{.Host.OCIRuntime.Name}}' 2>/dev/null)" || \
     fail 'rootless Podman is unavailable'
-  [[ "$podman_info" == 'true v2' ]] || \
+  read -r podman_rootless podman_cgroups podman_runtime <<<"$podman_info"
+  [[ "$podman_rootless $podman_cgroups" == 'true v2' ]] || \
     fail "rootless Podman with cgroup v2 is required (reported: $podman_info)"
+  if [[ "$TOPOLOGY" != app-node-http && "$podman_runtime" != crun ]]; then
+    fail "TLS topology requires the crun OCI runtime (reported: ${podman_runtime:-unknown})"
+  fi
   verify_rootless_networking "$podman_bin"
   total_memory_mib="$(awk '/^MemTotal:/ { print int($2 / 1024) }' "$meminfo_file")"
   [[ "$total_memory_mib" =~ ^[0-9]+$ ]] || \

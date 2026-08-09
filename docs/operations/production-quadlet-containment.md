@@ -49,7 +49,10 @@ file is still created with mode `0700` and `0600`, respectively.
 
 nginx writes generated configuration to `/etc/nginx/conf.d`, request and proxy
 buffers to `/var/cache/nginx`, and its PID to `/run/nginx.pid`. Access and error
-logs go to stdout and stderr; `/var/log/nginx` is not writable.
+logs go to stdout and stderr; `/var/log/nginx` is not writable. Its three
+container-local tmpfs roots also use mode `1777` for Podman 4.9 compatibility.
+TLS topologies require the crun OCI runtime so nginx UID 101 can preserve the
+rootless service user's group access to the host's `0640` private key.
 
 ## Validated overrides
 

@@ -19,9 +19,10 @@ PublishPort=@@NGINX_HTTPS_PUBLISH@@
 Network=kravhantering-single-node-edge.network
 Network=kravhantering-single-node-identity.network
 PodmanArgs=--network-alias=nginx
-Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec
-Tmpfs=/var/cache/nginx:rw,size=@@NGINX_CACHE_TMPFS_MIB@@M,mode=0750,uid=101,gid=101,nosuid,nodev,noexec
-Tmpfs=/run:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec
+PodmanArgs=--group-add=keep-groups
+Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=1777,nosuid,nodev,noexec
+Tmpfs=/var/cache/nginx:rw,size=@@NGINX_CACHE_TMPFS_MIB@@M,mode=1777,nosuid,nodev,noexec
+Tmpfs=/run:rw,size=1M,mode=1777,nosuid,nodev,noexec
 Volume=@@BUNDLE_ROOT@@/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 Volume=@@BUNDLE_ROOT@@/nginx/templates/single-node-tls.conf.template:/etc/nginx/templates/default.conf.template:ro
 Volume=@@BUNDLE_ROOT@@/nginx/templates/api-docs-security-headers.conf:/etc/nginx/snippets/api-docs-security-headers.conf:ro
