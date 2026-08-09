@@ -59,6 +59,20 @@ service_systemctl() {
   as_service systemctl --user "$@"
 }
 
+ensure_user_quadlet_generator() {
+  local system_generator
+  local user_generator
+  system_generator='/usr/lib/systemd/system-generators/podman-system-generator'
+  user_generator='/usr/lib/systemd/user-generators/podman-user-generator'
+  [[ -x "$user_generator" ]] && return
+  [[ -x "$system_generator" ]] || \
+    fail 'Podman Quadlet generator is unavailable'
+  [[ ! -e "$user_generator" && ! -L "$user_generator" ]] || \
+    fail "Podman user Quadlet generator is not executable: $user_generator"
+  sudo install -d -m 0755 "$(dirname "$user_generator")"
+  sudo ln -s ../system-generators/podman-system-generator "$user_generator"
+}
+
 prepare_service_user() {
   local uid
   local minimum_free_kib=$(( 5 * 1024 * 1024 ))
@@ -73,6 +87,7 @@ prepare_service_user() {
     fail "service user has no subordinate UID range: $SERVICE_USER"
   grep -Eq "^${SERVICE_USER}:[0-9]+:[0-9]+$" /etc/subgid || \
     fail "service user has no subordinate GID range: $SERVICE_USER"
+  ensure_user_quadlet_generator
   uid="$(service_uid)"
   sudo loginctl enable-linger "$SERVICE_USER"
   sudo systemctl start "user@${uid}.service"
