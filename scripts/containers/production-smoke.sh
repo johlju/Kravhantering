@@ -39,7 +39,14 @@ as_service() {
   local uid
   uid="$(service_uid)"
   sudo -u "$SERVICE_USER" env \
+    -u CONTAINERS_CONF \
+    -u CONTAINERS_REGISTRIES_CONF \
+    -u CONTAINERS_STORAGE_CONF \
+    -u REGISTRY_AUTH_FILE \
     HOME="$SERVICE_HOME" \
+    XDG_CACHE_HOME="$SERVICE_HOME/.cache" \
+    XDG_CONFIG_HOME="$SERVICE_HOME/.config" \
+    XDG_DATA_HOME="$SERVICE_HOME/.local/share" \
     XDG_RUNTIME_DIR="/run/user/$uid" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
     "$@"
@@ -168,11 +175,7 @@ load_project_image() {
     as_service podman load --input "$archive"
   else
     docker image inspect "$reference" >/dev/null
-    docker save "$reference" |
-      sudo -u "$SERVICE_USER" env \
-        HOME="$SERVICE_HOME" \
-        XDG_RUNTIME_DIR="/run/user/$(service_uid)" \
-        podman load
+    docker save "$reference" | as_service podman load
   fi
   as_service podman image exists "$reference" || \
     fail "loaded image does not provide expected reference: $reference"

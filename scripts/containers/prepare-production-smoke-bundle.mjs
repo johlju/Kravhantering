@@ -84,15 +84,19 @@ export function prepareProductionSmokeBundle(values, options = {}) {
   const execFileSync = options.execFileSync ?? childProcess.execFileSync
   const now = options.now ?? (() => new Date())
   const stageBundle = options.stageBundle ?? stageProductionDeploymentBundle
+  const buildJsonPath = path.resolve(
+    cwd,
+    options.buildJsonPath ?? 'public/build.json',
+  )
   const stackLockPath = path.resolve(cwd, values['stack-lock'])
   const stackLock = JSON.parse(fsImpl.readFileSync(stackLockPath, 'utf8'))
   const { metadata, plan } = buildSmokeBundleInputs(values, {
-    buildJsonPath: path.resolve(cwd, 'public/build.json'),
+    buildJsonPath,
     fsImpl,
   })
   const outputDir = path.resolve(cwd, values['output-dir'])
   const result = stageBundle({
-    buildJsonPath: path.resolve(cwd, 'public/build.json'),
+    buildJsonPath,
     cwd,
     generatedAt: now().toISOString(),
     metadata,

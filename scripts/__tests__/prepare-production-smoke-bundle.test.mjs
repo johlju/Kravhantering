@@ -194,13 +194,19 @@ describe('production smoke bundle preparation', () => {
   it('builds the archive with the production staging and tar adapters', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'production-smoke-'))
     try {
+      const buildJsonPath = path.join(root, 'build.json')
       const stackLockPath = path.join(root, 'container-stack.lock.json')
+      fs.writeFileSync(
+        buildJsonPath,
+        JSON.stringify({ expectedDatabaseSchemaVersion: 'Schema123' }),
+      )
       fs.writeFileSync(stackLockPath, JSON.stringify(stackLock()))
       const result = prepareProductionSmokeBundle(
         values({
           'output-dir': path.join(root, 'deployment'),
           'stack-lock': stackLockPath,
         }),
+        { buildJsonPath },
       )
 
       expect(fs.statSync(result.archivePath).size).toBeGreaterThan(0)
