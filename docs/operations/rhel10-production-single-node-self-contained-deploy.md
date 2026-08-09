@@ -214,7 +214,10 @@ Site-specific environment files, certificates and realm files live under
 The single-node Quadlet units store SQL Server database files in the named
 Podman volume `kravhantering-sqlserver-data`, mounted inside the SQL Server
 container at `/var/opt/mssql`. Keycloak uses the separate
-`kravhantering-keycloak-data` volume for its runtime state.
+`kravhantering-keycloak-data` volume for its runtime state. On container start,
+Podman initializes both named volumes for the non-root user declared by the
+corresponding image. Do not share either volume with another container that
+expects different ownership.
 
 Because the stack runs as the rootless `kravhantering` user, default Podman
 storage normally places the SQL Server volume data on the host at:

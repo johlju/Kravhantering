@@ -10,7 +10,7 @@ Image=@@SQLSERVER_IMAGE_REF@@
 EnvironmentFile=/etc/kravhantering/sqlserver.env
 Network=kravhantering-single-node-database.network
 PodmanArgs=--network-alias=sqlserver
-Volume=kravhantering-sqlserver-data.volume:/var/opt/mssql
+Volume=kravhantering-sqlserver-data.volume:/var/opt/mssql:U
 
 [Service]
 Restart=always

@@ -237,6 +237,21 @@ describe('kravhantering Quadlet helper', () => {
     expect(allContent).toContain('NetworkName=kravhantering-single-node_edge')
     expect(allContent).toContain('VolumeName=kravhantering-sqlserver-data')
     expect(allContent).toContain('VolumeName=kravhantering-keycloak-data')
+    expect(
+      units.find(unit => unit.file === 'kravhantering-sqlserver.container')
+        ?.content,
+    ).toContain(
+      'Volume=kravhantering-sqlserver-data.volume:/var/opt/mssql:U',
+    )
+    const keycloak = units.find(
+      unit => unit.file === 'kravhantering-keycloak.container',
+    )?.content
+    expect(keycloak).toContain(
+      'Volume=kravhantering-keycloak-data.volume:/opt/keycloak/data:U',
+    )
+    expect(keycloak).toContain(
+      'Tmpfs=/tmp:rw,size=512M,mode=1777,nosuid,nodev,noexec',
+    )
     expect(allContent).toContain(
       'PodmanArgs=--add-host=kravhantering.example.internal:host-gateway',
     )

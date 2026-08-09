@@ -12,7 +12,8 @@ EnvironmentFile=/etc/kravhantering/keycloak.env
 Network=kravhantering-single-node-identity.network
 PodmanArgs=--network-alias=keycloak
 Volume=/etc/kravhantering/keycloak/realm-kravhantering-production.json:/opt/keycloak/data/import/realm-kravhantering-production.json:ro
-Volume=kravhantering-keycloak-data.volume:/opt/keycloak/data
+Volume=kravhantering-keycloak-data.volume:/opt/keycloak/data:U
+Tmpfs=/tmp:rw,size=512M,mode=1777,nosuid,nodev,noexec
 
 [Service]
 Restart=always
