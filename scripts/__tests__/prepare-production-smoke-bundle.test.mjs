@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildSmokeBundleInputs,
+  main,
   parseArgs,
+  prepareProductionSmokeBundle,
 } from '../containers/prepare-production-smoke-bundle.mjs'
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`
@@ -22,6 +27,32 @@ function values(overrides = {}) {
   }
 }
 
+function stackLock() {
+  const service = (name, role) => ({
+    image: `registry.example/${name}`,
+    imageId: `sha256:${name}-image`,
+    manifestDigest: `sha256:${name}-manifest`,
+    name,
+    role,
+    source: 'test',
+    tag: '1.0.0',
+  })
+  return {
+    commitSha: '1234567890abcdef',
+    generatedAt: '2026-08-09T10:00:00.000Z',
+    generatedBy: 'scripts/containers/generate-stack-lock.mjs',
+    releaseVersion: '0.1.0-pr.42',
+    schemaVersion: 2,
+    services: [
+      service('app-runtime', 'application'),
+      service('db-job', 'database-job'),
+      service('nginx', 'tls-proxy'),
+      service('sqlserver', 'database'),
+      service('keycloak', 'identity-provider'),
+    ],
+  }
+}
+
 describe('production smoke bundle preparation', () => {
   it('parses the explicit production archive contract', () => {
     expect(
@@ -29,6 +60,9 @@ describe('production smoke bundle preparation', () => {
         Object.entries(values()).flatMap(([key, value]) => [`--${key}`, value]),
       ),
     ).toEqual(values())
+    expect(() => parseArgs(['version', '1.0.0'])).toThrow(
+      'Invalid option near version.',
+    )
   })
 
   it('builds release-shaped metadata from exact candidate image IDs', () => {
@@ -72,5 +106,108 @@ describe('production smoke bundle preparation', () => {
         },
       }),
     ).toThrow('Invalid image ID: latest')
+  })
+
+  it('stages and archives the release-shaped bundle', () => {
+    const execFileSync = vi.fn()
+    const stageBundle = vi.fn(() => ({
+      archiveName: 'kravhantering-production-deploy-0.1.0-pr.42.tar.gz',
+      bundleName: 'kravhantering-production-deploy-0.1.0-pr.42',
+    }))
+    const fsImpl = {
+      readFileSync: vi.fn(file =>
+        String(file).endsWith('public/build.json')
+          ? JSON.stringify({ expectedDatabaseSchemaVersion: 'Schema123' })
+          : JSON.stringify({ schemaVersion: 2 }),
+      ),
+    }
+
+    const result = prepareProductionSmokeBundle(values(), {
+      cwd: '/repo',
+      execFileSync,
+      fsImpl,
+      now: () => new Date('2026-08-09T10:00:00.000Z'),
+      stageBundle,
+    })
+
+    expect(result.archivePath).toBe(
+      '/repo/tmp/production-smoke/kravhantering-production-deploy-0.1.0-pr.42.tar.gz',
+    )
+    expect(stageBundle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generatedAt: '2026-08-09T10:00:00.000Z',
+        outputDir: '/repo/tmp/production-smoke/deployment',
+        stackLock: { schemaVersion: 2 },
+        stackLockPath: '/repo/container-stack.lock.json',
+      }),
+    )
+    expect(execFileSync).toHaveBeenCalledWith(
+      'tar',
+      [
+        '-C',
+        '/repo/tmp/production-smoke/deployment',
+        '-czf',
+        result.archivePath,
+        'kravhantering-production-deploy-0.1.0-pr.42',
+      ],
+      { cwd: '/repo', stdio: 'inherit' },
+    )
+  })
+
+  it('reports CLI success and validation failures', async () => {
+    const consoleObj = { error: vi.fn(), log: vi.fn() }
+    const dependencies = {
+      consoleObj,
+      cwd: '/repo',
+      execFileSync: vi.fn(),
+      fsImpl: {
+        readFileSync: vi.fn(file =>
+          String(file).endsWith('public/build.json')
+            ? JSON.stringify({ expectedDatabaseSchemaVersion: 'Schema123' })
+            : JSON.stringify({ schemaVersion: 2 }),
+        ),
+      },
+      now: () => new Date('2026-08-09T10:00:00.000Z'),
+      stageBundle: vi.fn(() => ({
+        archiveName: 'bundle.tar.gz',
+        bundleName: 'bundle',
+      })),
+    }
+    const args = Object.entries(values()).flatMap(([key, value]) => [
+      `--${key}`,
+      value,
+    ])
+
+    await expect(main(args, dependencies)).resolves.toBe(0)
+    expect(consoleObj.log).toHaveBeenCalledWith(
+      '/repo/tmp/production-smoke/bundle.tar.gz',
+    )
+
+    await expect(main(['--version', '1.0.0'], dependencies)).resolves.toBe(1)
+    expect(consoleObj.error).toHaveBeenCalledWith('Missing --commit-sha.')
+    expect(consoleObj.error).toHaveBeenCalledWith(
+      expect.stringContaining('Usage:'),
+    )
+  })
+
+  it('builds the archive with the production staging and tar adapters', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'production-smoke-'))
+    try {
+      const stackLockPath = path.join(root, 'container-stack.lock.json')
+      fs.writeFileSync(stackLockPath, JSON.stringify(stackLock()))
+      const result = prepareProductionSmokeBundle(
+        values({
+          'output-dir': path.join(root, 'deployment'),
+          'stack-lock': stackLockPath,
+        }),
+      )
+
+      expect(fs.statSync(result.archivePath).size).toBeGreaterThan(0)
+      expect(
+        fs.existsSync(path.join(root, 'deployment', result.bundleName)),
+      ).toBe(true)
+    } finally {
+      fs.rmSync(root, { force: true, recursive: true })
+    }
   })
 })

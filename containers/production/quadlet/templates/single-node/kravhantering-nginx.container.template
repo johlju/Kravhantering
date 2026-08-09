@@ -19,7 +19,6 @@ PublishPort=@@NGINX_HTTPS_PUBLISH@@
 Network=kravhantering-single-node-edge.network
 Network=kravhantering-single-node-identity.network
 NetworkAlias=nginx
-NetworkAlias=@@PUBLIC_HOSTNAME@@
 Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec
 Tmpfs=/var/cache/nginx:rw,size=@@NGINX_CACHE_TMPFS_MIB@@M,mode=0750,uid=101,gid=101,nosuid,nodev,noexec
 Tmpfs=/run:rw,size=1M,mode=0755,uid=101,gid=101,nosuid,nodev,noexec

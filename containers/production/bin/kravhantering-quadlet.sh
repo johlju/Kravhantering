@@ -265,35 +265,56 @@ quadlet_generator() {
 }
 
 verify_journal_retention() {
-  local configured=false file line value
-  local -a files=()
+  local configured=false config file key line section='' value
+  local systemd_analyze_bin="${KRAVHANTERING_SYSTEMD_ANALYZE_BIN:-systemd-analyze}"
+  declare -A effective=()
   if [[ -n "${KRAVHANTERING_JOURNAL_CONFIG_DIR-}" ]]; then
-    while IFS= read -r file; do files+=("$file"); done < <(
-      find "$KRAVHANTERING_JOURNAL_CONFIG_DIR" -maxdepth 1 -type f -name '*.conf' -print 2>/dev/null | sort
-    )
+    config="$(
+      while IFS= read -r file; do
+        cat -- "$file"
+        printf '\n'
+      done < <(
+        find "$KRAVHANTERING_JOURNAL_CONFIG_DIR" -maxdepth 1 \
+          -type f -name '*.conf' -print 2>/dev/null | sort
+      )
+    )"
   else
-    [[ -f /etc/systemd/journald.conf ]] && files+=(/etc/systemd/journald.conf)
-    while IFS= read -r file; do files+=("$file"); done < <(
-      find /etc/systemd/journald.conf.d -maxdepth 1 -type f -name '*.conf' -print 2>/dev/null | sort
-    )
+    config="$("$systemd_analyze_bin" cat-config systemd/journald.conf 2>/dev/null)" || \
+      fail 'cannot evaluate effective journald configuration'
   fi
 
-  for file in "${files[@]}"; do
-    while IFS= read -r line; do
-      value="${line#*=}"
-      value="${value//[[:space:]]/}"
-      if [[ "$value" =~ ^[1-9][0-9]*(K|M|G|T|P|E)?$ ]]; then
-        configured=true
-      fi
-    done < <(grep -E '^[[:space:]]*(SystemMaxUse|SystemKeepFree|RuntimeMaxUse|RuntimeKeepFree)[[:space:]]*=' "$file" || true)
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* || "$line" == \;* ]] && continue
+    if [[ "$line" == \[*\] ]]; then
+      section="${line:1:${#line}-2}"
+      continue
+    fi
+    [[ "$section" == Journal && "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    key="${key//[[:space:]]/}"
+    case "$key" in
+      SystemMaxUse | SystemKeepFree | RuntimeMaxUse | RuntimeKeepFree)
+        value="${line#*=}"
+        effective["$key"]="${value//[[:space:]]/}"
+        ;;
+    esac
+  done <<<"$config"
+
+  for value in "${effective[@]-}"; do
+    if [[ "$value" =~ ^[1-9][0-9]*(K|M|G|T|P|E)?$ ]]; then
+      configured=true
+    fi
   done
   [[ "$configured" == true ]] || \
     fail 'finite journald retention is not configured'
 }
 
 verify_rootless_networking() {
-  local podman_bin="$1" network_name network_internal
+  local podman_bin="$1" network_name network_internal probe_name
   network_name="kravhantering-preflight-$(id -u)-$$"
+  probe_name="${network_name}-host-route"
   "$podman_bin" network create --internal "$network_name" >/dev/null 2>&1 || \
     fail 'rootless Podman cannot create the required bridge networks'
   network_internal="$(
@@ -303,6 +324,20 @@ verify_rootless_networking() {
     "$podman_bin" network rm "$network_name" >/dev/null 2>&1 || true
     fail 'rootless Podman cannot inspect the required bridge networks'
   }
+  if [[ "$TOPOLOGY" == single-node ]]; then
+    "$podman_bin" create --name "$probe_name" --pull=never \
+      --network "$network_name" \
+      --add-host "${PUBLIC_HOSTNAME}:host-gateway" \
+      "$APP_RUNTIME_IMAGE_REF" true >/dev/null 2>&1 || {
+      "$podman_bin" rm --force "$probe_name" >/dev/null 2>&1 || true
+      "$podman_bin" network rm "$network_name" >/dev/null 2>&1 || true
+      fail 'rootless Podman cannot map the public issuer through its host gateway'
+    }
+    "$podman_bin" rm "$probe_name" >/dev/null 2>&1 || {
+      "$podman_bin" network rm "$network_name" >/dev/null 2>&1 || true
+      fail 'rootless Podman cannot remove the host-gateway preflight container'
+    }
+  fi
   "$podman_bin" network rm "$network_name" >/dev/null 2>&1 || \
     fail 'rootless Podman cannot remove a temporary bridge network'
   [[ "$network_internal" == true ]] || \

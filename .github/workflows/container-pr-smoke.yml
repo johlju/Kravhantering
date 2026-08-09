@@ -282,6 +282,9 @@ jobs:
 
           app_image_id="$(docker image inspect "${APP_RUNTIME_IMAGE_REF}" --format '{{.Id}}')"
           db_job_image_id="$(docker image inspect "${DB_JOB_IMAGE_REF}" --format '{{.Id}}')"
+          demo_seed_image_id="$(docker image inspect "${DEMO_SEED_IMAGE_REF}" --format '{{.Id}}')"
+          hsa_directory_mock_image_id="$(docker image inspect "${HSA_DIRECTORY_MOCK_IMAGE_REF}" --format '{{.Id}}')"
+          hsa_adapter_image_id="$(docker image inspect "${HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF}" --format '{{.Id}}')"
           node scripts/containers/generate-stack-lock.mjs generate \
             --app-image "${APP_RUNTIME_IMAGE}" \
             --app-tag "${APP_RUNTIME_TAG}" \
@@ -298,6 +301,9 @@ jobs:
           {
             echo "APP_RUNTIME_IMAGE_ID=${app_image_id}"
             echo "DB_JOB_IMAGE_ID=${db_job_image_id}"
+            echo "DEMO_SEED_IMAGE_ID=${demo_seed_image_id}"
+            echo "HSA_DIRECTORY_MOCK_IMAGE_ID=${hsa_directory_mock_image_id}"
+            echo "HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID=${hsa_adapter_image_id}"
           } >> "${GITHUB_ENV}"
 
       - name: Prune BuildKit cache before production smoke

@@ -177,6 +177,13 @@ load_project_image() {
     fail "loaded image does not provide expected reference: $reference"
 }
 
+verify_project_image_id() {
+  local reference="$1" expected="$2" actual
+  actual="$(as_service podman image inspect "$reference" --format '{{.Id}}')"
+  [[ "${actual#sha256:}" == "${expected#sha256:}" ]] || \
+    fail "loaded image ID for $reference does not match the candidate"
+}
+
 prepare_images() {
   load_project_image "$APP_RUNTIME_IMAGE_REF" "${APP_RUNTIME_OCI_ARCHIVE-}"
   load_project_image "$DB_JOB_IMAGE_REF" "${DB_JOB_OCI_ARCHIVE-}"
@@ -189,7 +196,19 @@ prepare_images() {
   as_service podman pull "$SQLSERVER_IMAGE_REF"
   as_service podman pull "$KEYCLOAK_IMAGE_REF"
   as_service podman pull "$KONG_IMAGE_REF"
-  as_service "$INSTALL_ROOT/current/bin/kravhantering-images.sh" verify
+  verify_project_image_id "$APP_RUNTIME_IMAGE_REF" "$APP_RUNTIME_IMAGE_ID"
+  verify_project_image_id "$DB_JOB_IMAGE_REF" "$DB_JOB_IMAGE_ID"
+  verify_project_image_id "$DEMO_SEED_IMAGE_REF" "$DEMO_SEED_IMAGE_ID"
+  verify_project_image_id \
+    "$HSA_DIRECTORY_MOCK_IMAGE_REF" "$HSA_DIRECTORY_MOCK_IMAGE_ID"
+  verify_project_image_id \
+    "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF" \
+    "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID"
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-images.sh" \
+    --topology single-node \
+    --lock-file "$INSTALL_ROOT/current/container-stack.lock.json" \
+    --env-file "$CONFIG_ROOT/release.env" \
+    verify
 }
 
 render_ci_overlay() {
@@ -251,7 +270,8 @@ container_networks() {
 
 verify_network_contract() {
   local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
-  local purpose network expected_internal actual_internal
+  local purpose network expected_internal actual_internal host_gateway_ip
+  local public_hostname_ip
   for purpose in edge identity database egress; do
     network="$(as_service "$helper" print-network \
       --topology single-node --purpose "$purpose")"
@@ -276,6 +296,16 @@ verify_network_contract() {
   fi
   if as_service podman exec kravhantering-app-runtime getent hosts keycloak; then
     fail 'app-runtime unexpectedly resolves the direct identity peer'
+  fi
+  host_gateway_ip="$(as_service podman exec kravhantering-app-runtime \
+    getent ahostsv4 host.containers.internal | awk 'NR == 1 { print $1 }')"
+  public_hostname_ip="$(as_service podman exec kravhantering-app-runtime \
+    getent ahostsv4 kravhantering.test | awk 'NR == 1 { print $1 }')"
+  [[ -n "$host_gateway_ip" && "$public_hostname_ip" == "$host_gateway_ip" ]] || \
+    fail 'the public OIDC hostname does not resolve through the host-published nginx route'
+  if as_service podman exec kravhantering-nginx \
+    wget -T 2 -qO /dev/null http://1.1.1.1; then
+    fail 'nginx unexpectedly reached an external address from internal networks'
   fi
 }
 
@@ -331,14 +361,28 @@ verify_containment() {
     4294967296 544 '300000 100000'
   verify_service_cgroup kravhantering-nginx.service \
     536870912 160 '100000 100000'
-  as_service podman exec kravhantering-app-runtime sh -c \
-    'dd if=/dev/zero of=/run/kravhantering/export/capacity-probe bs=1M count=768 status=none && rm /run/kravhantering/export/capacity-probe'
+  as_service podman exec kravhantering-app-runtime sh -ec '
+    i=1
+    while [ "$i" -le 5 ]; do
+      dd if=/dev/zero of="/run/kravhantering/export/csv-$i" bs=1M count=100 status=none &
+      i=$((i + 1))
+    done
+    i=1
+    while [ "$i" -le 3 ]; do
+      dd if=/dev/zero of="/run/kravhantering/export/pdf-$i" bs=1M count=50 status=none &
+      i=$((i + 1))
+    done
+    wait
+    rm -f /run/kravhantering/export/csv-* /run/kravhantering/export/pdf-*
+  '
 }
 
 up() {
   local archive="$1"
   required_env DEMO_SEED_IMAGE_REF HSA_DIRECTORY_MOCK_IMAGE_REF \
-    HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF KONG_IMAGE_REF
+    HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF KONG_IMAGE_REF \
+    APP_RUNTIME_IMAGE_ID DB_JOB_IMAGE_ID DEMO_SEED_IMAGE_ID \
+    HSA_DIRECTORY_MOCK_IMAGE_ID HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID
   prepare_service_user
   install_archive "$archive"
   render_runtime_configuration
@@ -424,13 +468,24 @@ evidence() {
   service_systemctl show kravhantering-nginx.service \
     >"$EVIDENCE_DIR/nginx-systemd.txt" 2>&1 || true
   as_service journalctl --user -u 'kravhantering-*' --since=-30min \
-    --no-pager >"$EVIDENCE_DIR/journal.txt" 2>&1 || true
+    --no-pager 2>&1 |
+    node --input-type=module -e '
+      import { redactSensitiveText } from "./scripts/containers/collect-status.mjs"
+      let value = ""
+      for await (const chunk of process.stdin) value += chunk
+      process.stdout.write(redactSensitiveText(value))
+    ' >"$EVIDENCE_DIR/journal.redacted.txt" || true
 }
 
 boundaries() {
-  local marker captured suppressed
+  local marker captured normal_suppressed suppressed
   [[ "$(service_systemctl show kravhantering-app-runtime.service \
     --property=NRestarts --value)" == 0 ]]
+  normal_suppressed="$(as_service journalctl --user-unit \
+    kravhantering-app-runtime.service --since=-30min --no-pager |
+    grep -Eic 'suppress(ed|ing).*(message|log)|message.*suppress' || true)"
+  (( normal_suppressed == 0 )) || \
+    fail 'normal application smoke unexpectedly triggered journal suppression'
   if as_service podman exec kravhantering-app-runtime sh -c \
     'dd if=/dev/zero of=/run/kravhantering/export/must-not-fit bs=1M count=1100 status=none'; then
     as_service podman exec kravhantering-app-runtime \
@@ -440,9 +495,37 @@ boundaries() {
   as_service podman exec kravhantering-app-runtime \
     rm -f /run/kravhantering/export/must-not-fit
 
+  if as_service podman run --rm --network none --memory 48m \
+    --memory-swap 48m "$APP_RUNTIME_IMAGE_REF" \
+    node -e 'Buffer.alloc(256 * 1024 * 1024).fill(1)'; then
+    fail 'disposable memory boundary did not terminate an over-limit process'
+  fi
+  if as_service podman run --rm --network none --pids-limit 8 \
+    "$APP_RUNTIME_IMAGE_REF" node -e '
+      const { spawn } = require("node:child_process")
+      const children = []
+      let denied = false
+      for (let i = 0; i < 32; i += 1) {
+        const child = spawn("sleep", ["5"])
+        child.once("error", () => { denied = true })
+        children.push(child)
+      }
+      setTimeout(() => {
+        for (const child of children) child.kill()
+        process.exit(denied ? 23 : 0)
+      }, 500)
+    '; then
+    fail 'disposable PID boundary allowed every requested process'
+  fi
+  printf '%s\n' \
+    'memory-limit-violation=passed' \
+    'pid-limit-violation=passed' \
+    'tmpfs-limit-violation=passed' \
+    >"$EVIDENCE_DIR/resource-boundaries.txt"
+
   marker="kravhantering-log-boundary-$(date +%s)"
   as_service podman exec kravhantering-app-runtime sh -c \
-    'i=0; while [ "$i" -lt 2500 ]; do printf "%s-%s\\n" "$1" "$i" > /proc/1/fd/1; i=$((i + 1)); done' \
+    'i=0; while [ "$i" -lt 2500 ]; do printf "%s-%s\n" "$1" "$i" > /proc/1/fd/1; i=$((i + 1)); done' \
     sh "$marker"
   sleep 2
   captured="$(as_service journalctl --user-unit \
@@ -452,6 +535,8 @@ boundaries() {
     fail "journald rate boundary was not observable (captured $captured of 2500)"
   suppressed="$(as_service journalctl --user --since=-1min --no-pager |
     grep -Eic 'suppress(ed|ing).*(message|log)|message.*suppress' || true)"
+  (( suppressed > 0 )) || \
+    fail 'journald did not emit an observable suppression record'
   printf 'sent=2500\ncaptured=%s\nsuppression-messages=%s\n' \
     "$captured" "$suppressed" >"$EVIDENCE_DIR/log-boundary.txt"
 }

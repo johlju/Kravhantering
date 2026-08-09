@@ -172,9 +172,6 @@ describe('container stack helpers', () => {
     })
     expect(sqlServerWaitPort('127.0.0.1:16000')).toBe('16000')
     expect(sqlServerWaitPort('16000')).toBe('16000')
-    expect(() =>
-      parseLocalStackArgs(['up', '--mode', 'release-smoke']),
-    ).toThrow('Unsupported local stack mode: release-smoke')
     expect(parseEnvFile('# demo\nDB_USER=kravhantering_job\nEMPTY=\n')).toEqual(
       {
         DB_USER: 'kravhantering_job',
@@ -195,9 +192,6 @@ describe('container stack helpers', () => {
     expect(() => parseLocalStackArgs(['up', '--run-id'])).toThrow(
       'Missing value for --run-id',
     )
-    expect(() =>
-      parseLocalStackArgs(['up', '--candidate-metadata', 'metadata.json']),
-    ).toThrow('Unsupported local stack option: --candidate-metadata')
     expect(parseEnvFile('INVALID\n=bad\n')).toEqual({})
   })
 

@@ -209,7 +209,7 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).not.toContain('fullchain.pem')
   })
 
-  it('renders single-node service names, persistent volumes and hostname alias', () => {
+  it('renders single-node services, volumes and the public issuer host route', () => {
     const fixture = createFixture(releaseEnv())
     const units = render('single-node', fixture)
     const allContent = units.map(unit => unit.content).join('\n')
@@ -230,7 +230,12 @@ describe('kravhantering Quadlet helper', () => {
     expect(allContent).toContain('NetworkName=kravhantering-single-node_edge')
     expect(allContent).toContain('VolumeName=kravhantering-sqlserver-data')
     expect(allContent).toContain('VolumeName=kravhantering-keycloak-data')
-    expect(allContent).toContain('NetworkAlias=kravhantering.example.internal')
+    expect(allContent).toContain(
+      'PodmanArgs=--add-host=kravhantering.example.internal:host-gateway',
+    )
+    expect(allContent).not.toContain(
+      'NetworkAlias=kravhantering.example.internal',
+    )
     expect(allContent).toContain(
       'Volume=/etc/kravhantering/tls/ca.crt:/run/kravhantering/tls/ca.crt:ro',
     )
@@ -477,6 +482,28 @@ describe('kravhantering Quadlet helper', () => {
     fs.writeFileSync(
       path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
       '[Journal]\nSystemMaxUse=auto\n',
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'finite journald retention is not configured',
+    )
+  })
+
+  it('uses the final journald drop-in values when checking retention', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.renameSync(
+      path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
+      path.join(fixture.root, 'journald.conf.d', '10-limits.conf'),
+    )
+    fs.writeFileSync(
+      path.join(fixture.root, 'journald.conf.d', '90-automatic.conf'),
+      '[Journal]\nSystemMaxUse=auto\nSystemKeepFree=auto\n',
     )
 
     const result = runHelper(

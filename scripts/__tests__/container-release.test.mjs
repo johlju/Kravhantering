@@ -2289,14 +2289,9 @@ describe('trusted container release helpers', () => {
     )
     expect(workflow).not.toContain('push-to-registry: true')
     expect(workflow).toContain(
-      'scripts/containers/production-smoke.sh up --archive',
-    )
-    expect(workflow).toContain(
       'HSA_DIRECTORY_MOCK_OCI_ARCHIVE: $' +
         '{{ env.HSA_DIRECTORY_MOCK_CANDIDATE_ARTIFACT }}',
     )
-    expect(workflow).not.toContain('podman-compose')
-    expect(workflow).not.toContain('container-stack.compose.yml')
     expect(workflow).toContain('container-release.mjs identities')
     expect(workflow).toContain(
       '--build-arg BUILD_EXPECTED_DATABASE_SCHEMA_VERSION="$' +

@@ -116,6 +116,13 @@ joins `edge`, `database`, and `egress`, Keycloak joins `identity`, and SQL
 Server joins `database`. Temporary database jobs join only `database`. Only
 nginx publishes a host port.
 
+On single-node, the application maps the public hostname to Podman's host
+gateway so its OIDC discovery and token requests traverse the published
+`443`-to-`8443` nginx route. This is the only `PodmanArgs` compatibility use:
+Podman 4.9 lacks the newer Quadlet `AddHost` key. It does not grant a
+capability or add a writable path, and incompatible generators fail during
+the helper preflight.
+
 Podman bridge membership does not provide directional, per-port, or DNS-name
 egress policy. The host firewall, an approved egress proxy, and upstream ACLs
 remain responsible for source CIDR restrictions and destination allowlists.
