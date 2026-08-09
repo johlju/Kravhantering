@@ -481,8 +481,9 @@ describe('container stack helpers', () => {
     ).toThrow('Standalone server dependencies are missing: mssql.')
   })
 
-  it('starts app-runtime before nginx so the static upstream is resolvable', async () => {
+  it('uses the configured Compose file and starts app-runtime before nginx', async () => {
     const commands = []
+    const composeFile = 'tmp/custom-stack.compose.yml'
     const dependencies = {
       consoleObj: {
         error: vi.fn(),
@@ -528,7 +529,15 @@ describe('container stack helpers', () => {
 
     await expect(
       runLocalStackMain(
-        ['up', '--mode', 'test', '--run-id', 'order'],
+        [
+          'up',
+          '--mode',
+          'test',
+          '--run-id',
+          'order',
+          '--compose-file',
+          composeFile,
+        ],
         dependencies,
       ),
     ).resolves.toBe(0)
@@ -548,7 +557,10 @@ describe('container stack helpers', () => {
     )
 
     expect(commands).toContain(
-      'podman compose -f container-stack.compose.yml --project-name kravhantering-container-stack-test-order up -d sqlserver keycloak',
+      `node scripts/containers/generate-compose.mjs --mode test --lock-file container-stack.lock.json --output ${composeFile} --network-name kravhantering-internal --project-name kravhantering-container-stack-test-order --sqlserver-volume-name kravhantering-container-stack-test-order-sqlserver-data --sqlserver-host-port 127.0.0.1:15433 --tls-dir ./tmp/container-tls`,
+    )
+    expect(commands).toContain(
+      `podman compose -f ${composeFile} --project-name kravhantering-container-stack-test-order up -d sqlserver keycloak`,
     )
     expect(
       commands.some(

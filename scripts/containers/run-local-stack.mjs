@@ -745,6 +745,8 @@ async function up(config, options = {}) {
       'test',
       '--lock-file',
       config.lockFile,
+      '--output',
+      config.composeFile,
       '--network-name',
       config.networkName,
       '--project-name',
