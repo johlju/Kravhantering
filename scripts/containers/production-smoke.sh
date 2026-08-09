@@ -38,18 +38,21 @@ service_uid() {
 as_service() {
   local uid
   uid="$(service_uid)"
-  sudo --chdir="$SERVICE_HOME" -u "$SERVICE_USER" env \
-    -u CONTAINERS_CONF \
-    -u CONTAINERS_REGISTRIES_CONF \
-    -u CONTAINERS_STORAGE_CONF \
-    -u REGISTRY_AUTH_FILE \
-    HOME="$SERVICE_HOME" \
-    XDG_CACHE_HOME="$SERVICE_HOME/.cache" \
-    XDG_CONFIG_HOME="$SERVICE_HOME/.config" \
-    XDG_DATA_HOME="$SERVICE_HOME/.local/share" \
-    XDG_RUNTIME_DIR="/run/user/$uid" \
-    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
-    "$@"
+  (
+    cd "$SERVICE_HOME"
+    sudo -u "$SERVICE_USER" env \
+      -u CONTAINERS_CONF \
+      -u CONTAINERS_REGISTRIES_CONF \
+      -u CONTAINERS_STORAGE_CONF \
+      -u REGISTRY_AUTH_FILE \
+      HOME="$SERVICE_HOME" \
+      XDG_CACHE_HOME="$SERVICE_HOME/.cache" \
+      XDG_CONFIG_HOME="$SERVICE_HOME/.config" \
+      XDG_DATA_HOME="$SERVICE_HOME/.local/share" \
+      XDG_RUNTIME_DIR="/run/user/$uid" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+      "$@"
+  )
 }
 
 service_systemctl() {
