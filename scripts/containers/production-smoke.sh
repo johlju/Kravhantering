@@ -38,7 +38,7 @@ service_uid() {
 as_service() {
   local uid
   uid="$(service_uid)"
-  sudo -u "$SERVICE_USER" env \
+  sudo --chdir="$SERVICE_HOME" -u "$SERVICE_USER" env \
     -u CONTAINERS_CONF \
     -u CONTAINERS_REGISTRIES_CONF \
     -u CONTAINERS_STORAGE_CONF \
