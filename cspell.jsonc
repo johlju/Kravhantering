@@ -93,6 +93,7 @@
     "noncanonical",
     "nonblank",
     "nodev",
+    "notmpcopyup",
     "nosuid",
     "nullrang",
     "octocat",

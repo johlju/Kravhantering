@@ -189,13 +189,13 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('LogDriver=journald')
     expect(nginx).toContain('PodmanArgs=--group-add=keep-groups')
     expect(nginx).toContain(
-      'Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=0755,U,nosuid,nodev,noexec',
+      'Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=0755,U,notmpcopyup,nosuid,nodev,noexec',
     )
     expect(nginx).toContain(
-      'Tmpfs=/var/cache/nginx:rw,size=64M,mode=0750,U,nosuid,nodev,noexec',
+      'Tmpfs=/var/cache/nginx:rw,size=64M,mode=0750,U,notmpcopyup,nosuid,nodev,noexec',
     )
     expect(nginx).toContain(
-      'Tmpfs=/run:rw,size=1M,mode=0755,U,nosuid,nodev,noexec',
+      'Tmpfs=/run:rw,size=1M,mode=0755,U,notmpcopyup,nosuid,nodev,noexec',
     )
     expect(nginx).toContain('MemoryMax=512M')
     expect(nginx).toContain('CPUQuota=100%')
@@ -396,7 +396,7 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('PidsLimit=192')
     expect(nginx).toContain('TasksMax=224')
     expect(nginx).toContain(
-      'Tmpfs=/var/cache/nginx:rw,size=96M,mode=0750,U,nosuid,nodev,noexec',
+      'Tmpfs=/var/cache/nginx:rw,size=96M,mode=0750,U,notmpcopyup,nosuid,nodev,noexec',
     )
   })
 
