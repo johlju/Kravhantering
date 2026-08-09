@@ -118,10 +118,14 @@ these locations:
 npm run test:release-smoke
 ```
 
-The suite signs in as the bundled `rita.reviewer` and `ada.admin` demo users
-through the production-shaped Keycloak realm and verifies HTTPS, nginx,
-session reuse, seeded SQL Server reads, one CSRF-protected write, static
-assets, `/build.json` and HSA lookup through Kong plus the HSA directory mock.
+The suite signs in as the bundled `rita.reviewer`, `olle.areaowner`, and
+`ada.admin` demo users through the production-shaped Keycloak realm and
+verifies HTTPS, nginx, session reuse, seeded SQL Server reads, one
+CSRF-protected write, static assets, `/build.json` and HSA lookup through Kong
+plus the HSA directory mock.
+
+To reproduce a failed Container PR Smoke run in a local Ubuntu systemd host,
+follow the [production-smoke debug workflow](../docs/development/production-smoke-debug.md).
 
 In the devcontainer, stack startup trusts the generated container CA for Node
 and Chromium. Other runners must trust `tmp/container-tls/ca.crt` themselves.

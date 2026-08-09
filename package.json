@@ -67,6 +67,7 @@
     "container:local:down": "node scripts/containers/run-local-stack.mjs down",
     "container:oci:export": "node scripts/containers/export-oci-archives.mjs export",
     "container:oci:verify": "node scripts/containers/export-oci-archives.mjs verify",
+    "container:production-smoke:debug": "node scripts/containers/production-smoke-debug.mjs",
     "container:release": "node scripts/release/container-release.mjs",
     "container:status": "node scripts/containers/collect-status.mjs",
     "container:hashes": "node scripts/containers/write-hashes.mjs",

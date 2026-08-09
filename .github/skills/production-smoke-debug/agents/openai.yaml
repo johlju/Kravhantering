@@ -1,0 +1,6 @@
+interface:
+  display_name: "Production Smoke Debug"
+  short_description: "Reproduce Container PR Smoke locally"
+  default_prompt: "Use $production-smoke-debug to reproduce and inspect this Container PR Smoke run locally."
+policy:
+  allow_implicit_invocation: false
