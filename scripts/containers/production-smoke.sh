@@ -60,17 +60,24 @@ service_systemctl() {
 }
 
 ensure_user_quadlet_generator() {
+  local generator_dir
   local system_generator
   local user_generator
   system_generator='/usr/lib/systemd/system-generators/podman-system-generator'
-  user_generator='/usr/lib/systemd/user-generators/podman-user-generator'
+  generator_dir='/run/systemd/user-generators'
+  user_generator="$generator_dir/podman-user-generator"
+  [[ -x /usr/lib/systemd/user-generators/podman-user-generator ]] && return
   [[ -x "$user_generator" ]] && return
   [[ -x "$system_generator" ]] || \
     fail 'Podman Quadlet generator is unavailable'
   [[ ! -e "$user_generator" && ! -L "$user_generator" ]] || \
     fail "Podman user Quadlet generator is not executable: $user_generator"
-  sudo install -d -m 0755 "$(dirname "$user_generator")"
-  sudo ln -s ../system-generators/podman-system-generator "$user_generator"
+  sudo install -d -m 0755 "$generator_dir"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    "exec $system_generator --user \"\$@\"" |
+    sudo tee "$user_generator" >/dev/null
+  sudo chmod 0755 "$user_generator"
 }
 
 prepare_service_user() {
