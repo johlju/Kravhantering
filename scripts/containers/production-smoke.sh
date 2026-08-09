@@ -319,6 +319,20 @@ wait_for_url() {
   done
 }
 
+report_target_start_failure() {
+  local unit
+  service_systemctl list-units 'kravhantering-*' --state=failed --no-pager \
+    >&2 || true
+  for unit in kravhantering-app-runtime.service \
+    kravhantering-keycloak.service kravhantering-nginx.service \
+    kravhantering-sqlserver.service; do
+    if ! service_systemctl is-active --quiet "$unit"; then
+      service_systemctl status "$unit" --no-pager >&2 || true
+    fi
+  done
+  fail 'single-node target failed to start'
+}
+
 verify_service_cgroup() {
   local service="$1" expected_memory="$2" expected_tasks="$3"
   local expected_cpu="$4" control_group cgroup_root
@@ -480,7 +494,9 @@ up() {
   as_service podman run --rm --pull=never --network "$database_network" \
     --env-file "$CONFIG_ROOT/db-job.env" "$DEMO_SEED_IMAGE_REF"
   service_systemctl start kravhantering-ci-hsa.target
-  service_systemctl enable --now kravhantering-single-node.target
+  service_systemctl enable kravhantering-single-node.target
+  service_systemctl start kravhantering-single-node.target || \
+    report_target_start_failure
   wait_for_url https://kravhantering.test/api/health
   wait_for_url https://kravhantering.test/api/ready
   verify_containment

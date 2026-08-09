@@ -152,7 +152,7 @@ describe('kravhantering Quadlet helper', () => {
     expect(appRuntime).toContain('PidsLimit=512')
     expect(appRuntime).toContain('LogDriver=journald')
     expect(appRuntime).toContain(
-      'Tmpfs=/run/kravhantering/export:rw,size=1024M,mode=0700,uid=1000,gid=1000,nosuid,nodev,noexec',
+      'Tmpfs=/run/kravhantering/export:rw,size=1024M,mode=1777,nosuid,nodev,noexec',
     )
     expect(appRuntime).toContain(
       'Tmpfs=/tmp:rw,size=64M,mode=1777,nosuid,nodev,noexec',

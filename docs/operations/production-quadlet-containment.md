@@ -42,7 +42,10 @@ The application export tmpfs is sized above the built-in maximum concurrent
 output reservation: five 100 MiB CSV outputs plus three 50 MiB PDF outputs,
 650 MiB in total. Tmpfs pages count against the service memory cgroup. Capacity
 tests must therefore exercise the configured concurrent export maximum after
-changing either limit.
+changing either limit. Podman 4.9 does not accept `uid` or `gid` options on a
+`Tmpfs=` mount, so the dedicated mount uses mode `1777`. The app remains the
+only workload in the container, and each generated operation directory and
+file is still created with mode `0700` and `0600`, respectively.
 
 nginx writes generated configuration to `/etc/nginx/conf.d`, request and proxy
 buffers to `/var/cache/nginx`, and its PID to `/run/nginx.pid`. Access and error
