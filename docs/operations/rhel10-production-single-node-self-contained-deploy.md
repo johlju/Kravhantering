@@ -1373,6 +1373,7 @@ set -a
 set +a
 
 systemctl --user start kravhantering-single-node-edge-network.service
+systemctl --user start kravhantering-single-node-identity-network.service
 EDGE_RESOLVER="$(
   bin/kravhantering-quadlet.sh print-resolver \
     --topology single-node --purpose edge
@@ -1392,10 +1393,11 @@ Update both values before starting nginx:
 ```bash
 # Replace these examples with the printed resolver IPs.
 EDGE_RESOLVER=10.89.0.1
-ID_DNS=10.89.1.1
+IDENTITY_RESOLVER=10.89.1.1
 sudo sed -i \
   -e "s#^NGINX_RESOLVER=.*#NGINX_RESOLVER=${EDGE_RESOLVER}#" \
-  -e "s#^NGINX_IDENTITY_RESOLVER=.*#NGINX_IDENTITY_RESOLVER=${ID_DNS}#" \
+  -e "s#^NGINX_IDENTITY_RESOLVER=.*#\
+NGINX_IDENTITY_RESOLVER=${IDENTITY_RESOLVER}#" \
   /etc/kravhantering/release.env
 ```
 

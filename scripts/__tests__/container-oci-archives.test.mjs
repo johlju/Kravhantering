@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   archiveFileName,
   buildArchivePlans,
@@ -88,6 +88,10 @@ function fakeFs(existingArchives = ['.oci.tar.gz']) {
 }
 
 describe('container OCI archive helpers', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('plans project image archive paths and parses CLI options', () => {
     const lock = stackLock()
     const plans = buildArchivePlans(lock, 'tmp/oci')
@@ -138,6 +142,7 @@ describe('container OCI archive helpers', () => {
   })
 
   it('exports separate compressed OCI archives with Podman', () => {
+    vi.stubEnv('STORAGE_DRIVER', 'runner-defined-driver')
     const fsImpl = fakeFs()
     const commands = []
     const spawnSync = vi.fn((command, args, options) => {

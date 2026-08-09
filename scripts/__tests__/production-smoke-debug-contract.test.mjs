@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { waitForSystemd } from '../containers/production-smoke-debug.mjs'
 import {
   buildSmokeEnvironment,
   DEFAULT_REPOSITORY,
@@ -7,6 +8,7 @@ import {
   selectOciManifest,
   selectRunArtifacts,
   serviceImageReference,
+  validateDownloadedArtifactCache,
 } from '../containers/production-smoke-debug-contract.mjs'
 
 const digest = character => `sha256:${character.repeat(64)}`
@@ -82,6 +84,80 @@ describe('production smoke debug contract', () => {
         '123',
       ),
     ).toThrow('has expired')
+  })
+
+  it('clears an incomplete downloaded artifact cache', () => {
+    const artifactRoot = '/cache/run/artifacts'
+    const requiredPaths = [
+      '/cache/run/artifacts/oci/app.oci.tar',
+      '/cache/run/artifacts/runtime/build.json',
+    ]
+    const rmSync = vi.fn()
+    const completeFs = {
+      existsSync: vi.fn(() => true),
+      rmSync,
+      statSync: vi.fn(() => ({ size: 1 })),
+    }
+    validateDownloadedArtifactCache({
+      artifactRoot,
+      fsImpl: completeFs,
+      requiredPaths,
+    })
+    expect(rmSync).not.toHaveBeenCalled()
+
+    const incompleteFs = {
+      existsSync: vi.fn(path => path !== requiredPaths[1]),
+      rmSync,
+      statSync: vi.fn(() => ({ size: 1 })),
+    }
+    expect(() =>
+      validateDownloadedArtifactCache({
+        artifactRoot,
+        fsImpl: incompleteFs,
+        requiredPaths,
+      }),
+    ).toThrow(`cleared incomplete cache at ${artifactRoot}`)
+    expect(rmSync).toHaveBeenCalledWith(artifactRoot, {
+      force: true,
+      recursive: true,
+    })
+
+    expect(() =>
+      validateDownloadedArtifactCache({
+        artifactRoot,
+        fsImpl: {
+          existsSync: vi.fn(() => true),
+          rmSync,
+          statSync: vi.fn(() => ({ size: 0 })),
+        },
+        requiredPaths,
+      }),
+    ).toThrow(`Downloaded run artifact is incomplete: ${requiredPaths[0]}`)
+  })
+
+  it('paces unsuccessful systemd readiness probes', () => {
+    const runCommand = vi
+      .fn()
+      .mockReturnValueOnce({ stdout: '' })
+      .mockReturnValueOnce({ stdout: 'starting' })
+      .mockReturnValueOnce({ stdout: 'degraded' })
+    const waitAfterFailure = vi.fn()
+
+    waitForSystemd({ runCommand, waitAfterFailure })
+
+    expect(runCommand).toHaveBeenCalledTimes(3)
+    expect(waitAfterFailure).toHaveBeenCalledTimes(2)
+
+    const failingRunCommand = vi.fn(() => ({ stdout: 'failed' }))
+    const failingWait = vi.fn()
+    expect(() =>
+      waitForSystemd({
+        runCommand: failingRunCommand,
+        waitAfterFailure: failingWait,
+      }),
+    ).toThrow('did not start systemd')
+    expect(failingRunCommand).toHaveBeenCalledTimes(60)
+    expect(failingWait).toHaveBeenCalledTimes(60)
   })
 
   it('reads one runnable OCI image identity', () => {

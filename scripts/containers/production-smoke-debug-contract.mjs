@@ -63,6 +63,25 @@ export function selectRunArtifacts(artifacts, runId) {
   return selected
 }
 
+export function validateDownloadedArtifactCache({
+  artifactRoot,
+  fsImpl,
+  requiredPaths,
+}) {
+  for (const requiredPath of requiredPaths) {
+    if (
+      fsImpl.existsSync(requiredPath) &&
+      fsImpl.statSync(requiredPath).size > 0
+    ) {
+      continue
+    }
+    fsImpl.rmSync(artifactRoot, { force: true, recursive: true })
+    throw new Error(
+      `Downloaded run artifact is incomplete: ${requiredPath}; cleared incomplete cache at ${artifactRoot}.`,
+    )
+  }
+}
+
 function assertDigest(value, context) {
   if (!DIGEST_PATTERN.test(value ?? '')) {
     throw new Error(`${context} must be a sha256 digest.`)

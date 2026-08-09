@@ -341,6 +341,7 @@ configure_nginx_resolvers() {
 wait_for_url() {
   local url="$1" attempts=0 target_state
   until curl --fail --silent --show-error \
+    --connect-timeout 2 --max-time 5 \
     --cacert tmp/container-tls/ca.crt "$url" >/dev/null; do
     target_state="$(service_systemctl is-active \
       kravhantering-single-node.target 2>/dev/null || true)"
@@ -450,9 +451,11 @@ verify_containment() {
         .[0].HostConfig.PidsLimit > 0 and
         .[0].HostConfig.LogConfig.Type == "journald"' >/dev/null ||
       fail "$name inspect did not prove its containment contract"
-    effective_caps="$(as_service podman top "$name" capeff | tail -n 1)"
-    [[ "$effective_caps" == none ]] ||
+    effective_caps="$(as_service podman top "$name" capeff | tail -n +2)"
+    if [[ -z "$effective_caps" ]] ||
+      grep -Fvxq none <<<"$effective_caps"; then
       fail "$name retained effective capabilities: $effective_caps"
+    fi
   done
   as_service podman inspect kravhantering-app-runtime |
     jq -e '([(

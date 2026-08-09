@@ -103,11 +103,13 @@ export function buildArchivePlans(stackLock, outputDir) {
 
 function podmanEnv(options = {}) {
   const storageDriver = readNonEmpty(options.storageDriver)
-  return {
+  const environment = {
     ...process.env,
-    ...(storageDriver ? { STORAGE_DRIVER: storageDriver } : {}),
     ...options.env,
   }
+  delete environment.STORAGE_DRIVER
+  if (storageDriver) environment.STORAGE_DRIVER = storageDriver
+  return environment
 }
 
 function runPodman(args, options = {}) {

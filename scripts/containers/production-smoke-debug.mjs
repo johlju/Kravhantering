@@ -12,7 +12,9 @@ import {
   DEBUG_CONTAINER_NAME,
   parseDebugArgs,
   parseOciImageMetadata,
+  selectOciManifest,
   selectRunArtifacts,
+  validateDownloadedArtifactCache,
 } from './production-smoke-debug-contract.mjs'
 
 const USAGE = `Usage:
@@ -154,11 +156,11 @@ function downloadRunArtifacts({ repository, runId }) {
     path.join(runtimeDirectory, 'build.json'),
     path.join(runtimeDirectory, 'container-stack.lock.json'),
   ]
-  for (const requiredPath of requiredPaths) {
-    if (!fs.existsSync(requiredPath) || fs.statSync(requiredPath).size === 0) {
-      throw new Error(`Downloaded run artifact is incomplete: ${requiredPath}`)
-    }
-  }
+  validateDownloadedArtifactCache({
+    artifactRoot: path.join(root, 'artifacts'),
+    fsImpl: fs,
+    requiredPaths,
+  })
   return { ociDirectory, root, runtimeDirectory }
 }
 
@@ -168,21 +170,10 @@ function readArchiveJson(archivePath, archiveEntry) {
 
 function readOciMetadata(archivePath) {
   const index = readArchiveJson(archivePath, 'index.json')
-  const descriptor = index.manifests?.find(candidate => {
-    const platform = candidate.platform
-    return (
-      !candidate.annotations?.['vnd.docker.reference.type'] &&
-      (!platform ||
-        (platform.os === 'linux' && platform.architecture === 'amd64'))
-    )
-  })
-  const digest = descriptor?.digest
-  if (!/^sha256:[a-f0-9]{64}$/u.test(digest ?? '')) {
-    throw new Error(`Cannot locate the image manifest in ${archivePath}.`)
-  }
+  const descriptor = selectOciManifest(index)
   const manifest = readArchiveJson(
     archivePath,
-    `blobs/sha256/${digest.slice('sha256:'.length)}`,
+    `blobs/sha256/${descriptor.digest.slice('sha256:'.length)}`,
   )
   return parseOciImageMetadata(index, manifest)
 }
@@ -256,9 +247,12 @@ function dockerExec(args, options = {}) {
   )
 }
 
-function waitForSystemd() {
+export function waitForSystemd(options = {}) {
+  const runCommand = options.runCommand ?? run
+  const waitAfterFailure =
+    options.waitAfterFailure ?? (() => run('sleep', ['1'], { capture: true }))
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    const result = run(
+    const result = runCommand(
       'docker',
       [
         'exec',
@@ -270,6 +264,7 @@ function waitForSystemd() {
       { allowFailure: true, capture: true },
     )
     if (['running', 'degraded'].includes(result.stdout.trim())) return
+    waitAfterFailure()
   }
   throw new Error('The Ubuntu debug host did not start systemd.')
 }
