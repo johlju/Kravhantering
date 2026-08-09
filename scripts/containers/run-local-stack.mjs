@@ -45,7 +45,8 @@ const USAGE = `Usage:
 Options:
   --compose-file <path>  Generated Compose file path
   --lock-file <path>     Stack lock file path
-  --network-name <name>   Internal Compose network name
+  --mode test            Local developer Compose stack
+  --network-name <name>  Internal Compose network name
   --prune-docker-after-load
                          Remove Docker build cache and unused images after
                          loading local images into Podman
@@ -53,8 +54,8 @@ Options:
   --skip-build           Reuse already built Docker images and load them into Podman
   --state-file <path>    Local state file path
   --sqlserver-host-port <value>
-  --tls-dir <path>       Runtime TLS directory
-  --mode test            Local developer Compose stack`
+                         SQL Server host bind, for example 127.0.0.1:15433
+  --tls-dir <path>       Runtime TLS directory`
 
 function readNonEmpty(value) {
   if (typeof value !== 'string') return undefined
@@ -669,11 +670,10 @@ function runNginx(config, options = {}) {
 }
 
 async function up(config, options = {}) {
-  const runtimeConfig = config
   runCommand('podman', ['--version'], options)
   runCommand('podman', ['compose', 'version'], options)
   runCommand('podman', ['info'], options)
-  const cleanedProjects = cleanupConflictingTestStacks(runtimeConfig, options)
+  const cleanedProjects = cleanupConflictingTestStacks(config, options)
   const consoleObj = options.consoleObj ?? console
   for (const projectName of cleanedProjects) {
     consoleObj.log(`Removed previous local ephemeral stack (${projectName}).`)
@@ -681,11 +681,7 @@ async function up(config, options = {}) {
   ensureEnvLocalFiles(options)
   runCommand(
     'node',
-    [
-      'scripts/containers/generate-tls.mjs',
-      '--output-dir',
-      runtimeConfig.tlsDir,
-    ],
+    ['scripts/containers/generate-tls.mjs', '--output-dir', config.tlsDir],
     options,
   )
   runCommand(
@@ -693,30 +689,21 @@ async function up(config, options = {}) {
     ['run', 'openapi:hsa-person-lookup:generate:public'],
     options,
   )
-  if (!runtimeConfig.skipBuild) {
+  if (!config.skipBuild) {
     runCommand('npm', ['run', 'container:build:app-runtime'], options)
     runCommand('npm', ['run', 'container:build:db-job'], options)
   }
-  await loadDockerImageIntoPodman(
-    runtimeConfig.appRuntimeImageReference,
-    options,
-  )
-  await loadDockerImageIntoPodman(runtimeConfig.dbJobImageReference, options)
+  await loadDockerImageIntoPodman(config.appRuntimeImageReference, options)
+  await loadDockerImageIntoPodman(config.dbJobImageReference, options)
 
-  const appImageId = inspectImageId(
-    runtimeConfig.appRuntimeImageReference,
-    options,
-  )
+  const appImageId = inspectImageId(config.appRuntimeImageReference, options)
   const appManifestDigest = inspectManifestDigest(
-    runtimeConfig.appRuntimeImageReference,
+    config.appRuntimeImageReference,
     options,
   )
-  const dbJobImageId = inspectImageId(
-    runtimeConfig.dbJobImageReference,
-    options,
-  )
+  const dbJobImageId = inspectImageId(config.dbJobImageReference, options)
   const dbJobManifestDigest = inspectManifestDigest(
-    runtimeConfig.dbJobImageReference,
+    config.dbJobImageReference,
     options,
   )
   runCommand(
@@ -725,31 +712,31 @@ async function up(config, options = {}) {
       'scripts/containers/generate-stack-lock.mjs',
       'generate',
       '--lock-file',
-      runtimeConfig.lockFile,
+      config.lockFile,
       '--app-image',
-      runtimeConfig.appRuntimeImage.image,
+      config.appRuntimeImage.image,
       '--app-tag',
-      runtimeConfig.appRuntimeImage.tag,
+      config.appRuntimeImage.tag,
       '--app-manifest-digest',
       appManifestDigest,
       '--app-image-id',
       appImageId,
       '--app-source',
-      runtimeConfig.appRuntimeImage.source,
+      config.appRuntimeImage.source,
       '--db-job-image',
-      runtimeConfig.dbJobImage.image,
+      config.dbJobImage.image,
       '--db-job-tag',
-      runtimeConfig.dbJobImage.tag,
+      config.dbJobImage.tag,
       '--db-job-manifest-digest',
       dbJobManifestDigest,
       '--db-job-image-id',
       dbJobImageId,
       '--db-job-source',
-      runtimeConfig.dbJobImage.source,
+      config.dbJobImage.source,
     ],
     options,
   )
-  pruneDockerAfterLoad(runtimeConfig, options)
+  pruneDockerAfterLoad(config, options)
   runCommand(
     'node',
     [
@@ -757,47 +744,47 @@ async function up(config, options = {}) {
       '--mode',
       'test',
       '--lock-file',
-      runtimeConfig.lockFile,
+      config.lockFile,
       '--network-name',
-      runtimeConfig.networkName,
+      config.networkName,
       '--project-name',
-      runtimeConfig.projectName,
+      config.projectName,
       '--sqlserver-volume-name',
-      runtimeConfig.sqlServerVolumeName,
+      config.sqlServerVolumeName,
       '--sqlserver-host-port',
-      runtimeConfig.sqlServerHostPort,
+      config.sqlServerHostPort,
       '--tls-dir',
-      runtimeConfig.tlsDir,
+      config.tlsDir,
     ],
     options,
   )
 
-  writeState(runtimeConfig, options)
+  writeState(config, options)
   runCommand(
     'podman',
-    podmanComposeArgs(runtimeConfig, ['up', '-d', 'sqlserver', 'keycloak']),
+    podmanComposeArgs(config, ['up', '-d', 'sqlserver', 'keycloak']),
     options,
   )
-  assertContainerRunning(runtimeConfig, 'sqlserver', options)
-  runWait('sqlserver', runtimeConfig, options)
+  assertContainerRunning(config, 'sqlserver', options)
+  runWait('sqlserver', config, options)
 
   for (const service of ['db-bootstrap', 'db-migrate', 'db-seed-required']) {
-    runDatabaseJob(service, runtimeConfig, options)
+    runDatabaseJob(service, config, options)
   }
-  runAppRuntime(runtimeConfig, options)
-  runNginx(runtimeConfig, options)
-  runWait('nginx', runtimeConfig, options)
-  runWait('keycloak', runtimeConfig, options)
-  runWait('health', runtimeConfig, options)
-  runWait('ready', runtimeConfig, options)
+  runAppRuntime(config, options)
+  runNginx(config, options)
+  runWait('nginx', config, options)
+  runWait('keycloak', config, options)
+  runWait('health', config, options)
+  runWait('ready', config, options)
   runCommand(
     'node',
     [
       'scripts/containers/collect-status.mjs',
       '--compose-file',
-      runtimeConfig.composeFile,
+      config.composeFile,
       '--project-name',
-      runtimeConfig.projectName,
+      config.projectName,
     ],
     options,
   )

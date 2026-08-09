@@ -265,8 +265,9 @@ quadlet_generator() {
 }
 
 verify_journal_retention() {
-  local configured=false config file key line section='' value
+  local configured=false config file key line section='' storage value
   local systemd_analyze_bin="${KRAVHANTERING_SYSTEMD_ANALYZE_BIN:-systemd-analyze}"
+  local -a retention_keys=()
   declare -A effective=()
   if [[ -n "${KRAVHANTERING_JOURNAL_CONFIG_DIR-}" ]]; then
     config="$(
@@ -295,14 +296,21 @@ verify_journal_retention() {
     key="${line%%=*}"
     key="${key//[[:space:]]/}"
     case "$key" in
-      SystemMaxUse | SystemKeepFree | RuntimeMaxUse | RuntimeKeepFree)
+      Storage | SystemMaxUse | SystemKeepFree | RuntimeMaxUse | RuntimeKeepFree)
         value="${line#*=}"
         effective["$key"]="${value//[[:space:]]/}"
         ;;
     esac
   done <<<"$config"
 
-  for value in "${effective[@]-}"; do
+  storage="${effective[Storage]:-auto}"
+  if [[ "$storage" == persistent || "$storage" == auto ]]; then
+    retention_keys=(SystemMaxUse SystemKeepFree)
+  else
+    retention_keys=(RuntimeMaxUse RuntimeKeepFree)
+  fi
+  for key in "${retention_keys[@]}"; do
+    value="${effective[$key]-}"
     if [[ "$value" =~ ^[1-9][0-9]*(K|M|G|T|P|E)?$ ]]; then
       configured=true
     fi
@@ -346,6 +354,7 @@ verify_rootless_networking() {
 
 verify_host_enforcement() {
   local rendered_dir="$1" controller controllers missing='' podman_info generator
+  local generator_output
   local controllers_file="${KRAVHANTERING_CGROUP_CONTROLLERS_FILE:-/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/cgroup.controllers}"
   local meminfo_file="${KRAVHANTERING_MEMINFO_FILE:-/proc/meminfo}"
   local podman_bin="${KRAVHANTERING_PODMAN_BIN:-podman}"
@@ -383,9 +392,10 @@ verify_host_enforcement() {
   verify_journal_retention
 
   generator="$(quadlet_generator)"
-  env QUADLET_UNIT_DIRS="$rendered_dir" \
-    "$generator" --user --dryrun >/dev/null 2>&1 || \
-    fail 'Quadlet generator rejected the rendered production units'
+  generator_output="$(
+    env QUADLET_UNIT_DIRS="$rendered_dir" \
+      "$generator" --user --dryrun 2>&1
+  )" || fail "Quadlet generator rejected the rendered production units: ${generator_output:-no output}"
 }
 
 render_template() {

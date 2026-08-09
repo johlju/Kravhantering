@@ -725,12 +725,13 @@ describe('GitHub Actions workflow security', () => {
   })
 
   it('runs PR and main smoke through the same Ubuntu production Quadlet seam', () => {
-    for (const fileName of [
-      'container-pr-smoke.yml',
-      'container-release.yml',
+    for (const [fileName, jobId] of [
+      ['container-pr-smoke.yml', 'container-smoke'],
+      ['container-release.yml', 'trusted-release'],
     ]) {
       const workflow = readWorkflowYaml(fileName)
-      const job = Object.values(workflow.jobs ?? {})[0]
+      const job = workflow.jobs?.[jobId]
+      expect(job, `${fileName} must define ${jobId}`).toBeDefined()
       const steps = job?.steps ?? []
       const stepNames = steps.map(step => step.name)
 

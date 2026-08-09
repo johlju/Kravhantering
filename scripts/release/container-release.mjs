@@ -1624,7 +1624,7 @@ export function renderReleaseNotes(
     '',
     '## Production Deployment Bundle',
     '',
-    'The same rootless Podman Quadlet deployment archive passes production smoke validation before promotion.',
+    'The rootless Podman Quadlet deployment archive passes production smoke validation before promotion.',
     '',
     `- ${codeLink(deploymentArchive, releaseAssetDownloadUrl(plan, deploymentArchive))}`,
     `- ${codeLink(deploymentChecksum, releaseAssetDownloadUrl(plan, deploymentChecksum))}`,

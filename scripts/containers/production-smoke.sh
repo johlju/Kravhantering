@@ -349,22 +349,17 @@ verify_containment() {
     fail 'application read-only root probe unexpectedly succeeded'
   fi
   verify_network_contract
-  [[ "$(service_systemctl show kravhantering-app-runtime.service \
-    --property=MemoryMax --value)" == 4294967296 ]]
-  [[ "$(service_systemctl show kravhantering-app-runtime.service \
-    --property=TasksMax --value)" == 544 ]]
-  [[ "$(service_systemctl show kravhantering-nginx.service \
-    --property=MemoryMax --value)" == 536870912 ]]
-  [[ "$(service_systemctl show kravhantering-nginx.service \
-    --property=TasksMax --value)" == 160 ]]
-  [[ "$(service_systemctl show kravhantering-app-runtime.service \
-    --property=LogRateLimitIntervalUSec --value)" == 30s ]]
-  [[ "$(service_systemctl show kravhantering-app-runtime.service \
-    --property=LogRateLimitBurst --value)" == 2000 ]]
-  [[ "$(service_systemctl show kravhantering-nginx.service \
-    --property=LogRateLimitIntervalUSec --value)" == 30s ]]
-  [[ "$(service_systemctl show kravhantering-nginx.service \
-    --property=LogRateLimitBurst --value)" == 6000 ]]
+  assert_service_property kravhantering-app-runtime.service MemoryMax 4294967296
+  assert_service_property kravhantering-app-runtime.service TasksMax 544
+  assert_service_property kravhantering-nginx.service MemoryMax 536870912
+  assert_service_property kravhantering-nginx.service TasksMax 160
+  assert_service_property \
+    kravhantering-app-runtime.service LogRateLimitIntervalUSec 30s
+  assert_service_property \
+    kravhantering-app-runtime.service LogRateLimitBurst 2000
+  assert_service_property \
+    kravhantering-nginx.service LogRateLimitIntervalUSec 30s
+  assert_service_property kravhantering-nginx.service LogRateLimitBurst 6000
   verify_service_cgroup kravhantering-app-runtime.service \
     4294967296 544 '300000 100000'
   verify_service_cgroup kravhantering-nginx.service \
@@ -383,6 +378,14 @@ verify_containment() {
     wait
     rm -f /run/kravhantering/export/csv-* /run/kravhantering/export/pdf-*
   '
+}
+
+assert_service_property() {
+  local service="$1" property="$2" expected="$3" observed
+  observed="$(service_systemctl show "$service" \
+    --property="$property" --value)"
+  [[ "$observed" == "$expected" ]] || \
+    fail "$service $property expected $expected (observed: $observed)"
 }
 
 up() {
@@ -425,7 +428,9 @@ up() {
     install --topology "$TOPOLOGY"
   service_systemctl daemon-reload
   service_systemctl stop kravhantering-single-node.target
-  ! service_systemctl is-active --quiet kravhantering-single-node.target
+  if service_systemctl is-active --quiet kravhantering-single-node.target; then
+    fail 'single-node target remained active after stop'
+  fi
   service_systemctl start kravhantering-single-node.target
   wait_for_url https://kravhantering.test/api/ready
   printf '%s\n' \
@@ -569,17 +574,31 @@ boundaries() {
 }
 
 down() {
+  local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
+  local network purpose volume volume_status
   id "$SERVICE_USER" >/dev/null 2>&1 || return 0
   mkdir -p "$EVIDENCE_DIR"
   service_systemctl disable --now kravhantering-single-node.target || true
   service_systemctl stop kravhantering-ci-hsa.target || true
-  as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
-    remove --topology "$TOPOLOGY" \
-    >"$EVIDENCE_DIR/removal.txt" 2>&1
-  as_service podman volume exists kravhantering-sqlserver-data
-  as_service podman volume exists kravhantering-keycloak-data
-  printf '%s\n' 'named-volumes-survived-helper-removal=passed' >> \
-    "$EVIDENCE_DIR/removal.txt"
+  if [[ -x "$helper" ]]; then
+    if as_service "$helper" remove --topology "$TOPOLOGY" \
+      >"$EVIDENCE_DIR/removal.txt" 2>&1; then
+      printf '%s\n' 'quadlet-helper-removal=passed' >>"$EVIDENCE_DIR/removal.txt"
+    else
+      printf '%s\n' 'quadlet-helper-removal=failed' >>"$EVIDENCE_DIR/removal.txt"
+    fi
+  else
+    printf '%s\n' 'quadlet-helper-removal=skipped-helper-missing' \
+      >"$EVIDENCE_DIR/removal.txt"
+  fi
+  for volume in kravhantering-sqlserver-data kravhantering-keycloak-data; do
+    volume_status=failed
+    if as_service podman volume exists "$volume"; then
+      volume_status=passed
+    fi
+    printf 'named-volume-%s-survived-helper-removal=%s\n' \
+      "$volume" "$volume_status" >>"$EVIDENCE_DIR/removal.txt"
+  done
   as_service find "$SERVICE_HOME/.config/containers/systemd" \
     -maxdepth 1 -type f -name 'kravhantering-ci-*' -delete || true
   as_service find "$SERVICE_HOME/.config/systemd/user" \
@@ -588,9 +607,8 @@ down() {
   as_service podman rm --all --force || true
   as_service podman volume rm kravhantering-ci-hsa-mtls-certs \
     kravhantering-sqlserver-data kravhantering-keycloak-data || true
-  local purpose network
   for purpose in edge identity database egress; do
-    network="$(as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+    network="$(as_service "$helper" \
       print-network --topology single-node --purpose "$purpose" 2>/dev/null)" || \
       continue
     as_service podman network rm "$network" || true

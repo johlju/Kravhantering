@@ -18,6 +18,17 @@ export const DEFAULT_SQLSERVER_HOST_PORT = '127.0.0.1:1433'
 export const DEFAULT_INTERNAL_NETWORK_NAME = 'kravhantering-internal'
 export const PROJECT_SERVICE_NAMES = new Set(['app-runtime', 'db-job'])
 export const VENDOR_SERVICE_NAMES = new Set(['nginx', 'sqlserver', 'keycloak'])
+const COMPOSE_VALUE_OPTIONS = new Set([
+  'lock-file',
+  'mode',
+  'network-name',
+  'output',
+  'project-name',
+  'sqlserver-host-port',
+  'sqlserver-volume-name',
+  'template',
+  'tls-dir',
+])
 
 const USAGE = `Usage:
   node scripts/containers/generate-compose.mjs --mode test [options]
@@ -57,6 +68,9 @@ export function parseArgs(args) {
     }
 
     const key = arg.slice(2)
+    if (!COMPOSE_VALUE_OPTIONS.has(key)) {
+      throw new Error(`Unsupported Compose option: --${key}`)
+    }
     const value = args[index + 1]
     if (!value || value.startsWith('--')) {
       throw new Error(`Missing value for --${key}.`)
@@ -77,7 +91,7 @@ function requireService(stackLock, name) {
   return service
 }
 
-export function imageReference(service, mode) {
+export function imageReference(service) {
   if (VENDOR_SERVICE_NAMES.has(service.name)) {
     return `${service.image}@${service.manifestDigest}`
   }
@@ -88,16 +102,11 @@ export function imageReference(service, mode) {
     )
   }
 
-  if (mode === 'test') {
-    return `${service.image}:${service.tag}`
-  }
-
-  throw new Error(`Unsupported Compose generation mode: ${mode}`)
+  return `${service.image}:${service.tag}`
 }
 
 export function buildComposeValues(stackLock, options = {}) {
   assertStackLockSchema(stackLock)
-  const mode = options.mode ?? 'test'
   const services = {
     appRuntime: requireService(stackLock, 'app-runtime'),
     dbJob: requireService(stackLock, 'db-job'),
@@ -107,19 +116,17 @@ export function buildComposeValues(stackLock, options = {}) {
   }
 
   return {
-    appRuntimeImage: imageReference(services.appRuntime, mode),
-    dbJobImage: imageReference(services.dbJob, mode),
-    demoSeedImage:
-      readNonEmpty(options.demoSeedImage) ??
-      imageReference(services.dbJob, mode),
-    keycloakImage: imageReference(services.keycloak, mode),
+    appRuntimeImage: imageReference(services.appRuntime),
+    dbJobImage: imageReference(services.dbJob),
+    demoSeedImage: imageReference(services.dbJob),
+    keycloakImage: imageReference(services.keycloak),
     networkName:
       readNonEmpty(options.networkName) ?? DEFAULT_INTERNAL_NETWORK_NAME,
-    nginxImage: imageReference(services.nginx, mode),
+    nginxImage: imageReference(services.nginx),
     projectName: readNonEmpty(options.projectName) ?? DEFAULT_PROJECT_NAME,
     sqlServerHostPort:
       readNonEmpty(options.sqlServerHostPort) ?? DEFAULT_SQLSERVER_HOST_PORT,
-    sqlServerImage: imageReference(services.sqlserver, mode),
+    sqlServerImage: imageReference(services.sqlserver),
     sqlServerVolumeName:
       readNonEmpty(options.sqlServerVolumeName) ??
       DEFAULT_SQLSERVER_VOLUME_NAME,
@@ -157,7 +164,6 @@ export function generateCompose(template, stackLock, options = {}) {
   return renderTemplate(
     template,
     buildComposeValues(stackLock, {
-      mode,
       networkName: options.networkName,
       projectName: options.projectName,
       sqlServerHostPort: options.sqlServerHostPort,

@@ -1499,7 +1499,7 @@ describe('trusted container release helpers', () => {
       notes.indexOf('## Production Deployment Bundle'),
     )
     expect(notes).toContain(
-      'The same rootless Podman Quadlet deployment archive passes production smoke validation before promotion.',
+      'The rootless Podman Quadlet deployment archive passes production smoke validation before promotion.',
     )
     expect(notes).not.toContain('## Checksums')
     expect(notes).not.toContain('abc123  container-stack.lock.json')
@@ -2088,9 +2088,23 @@ describe('trusted container release helpers', () => {
       expect(quadletTemplates).toContain(
         'NetworkName=kravhantering-single-node_database',
       )
-      expect(quadletTemplates).toContain('DropCapability=all')
-      expect(quadletTemplates).toContain('ReadOnlyTmpfs=false')
-      expect(quadletTemplates).toContain('MemoryMax=')
+      const statelessContainerTemplates = result.files.filter(file =>
+        /\/kravhantering-(?:app-runtime|nginx)\.container\.template$/u.test(
+          file,
+        ),
+      )
+      expect(statelessContainerTemplates).toHaveLength(6)
+      for (const file of statelessContainerTemplates) {
+        const template = fs.readFileSync(
+          path.join(result.bundleRoot, file),
+          'utf8',
+        )
+        expect(template).toContain('DropCapability=all')
+        expect(template).toContain('ReadOnlyTmpfs=false')
+        expect(template).toMatch(
+          /^MemoryMax=@@(?:APP_RUNTIME|NGINX)_MEMORY_LIMIT_MIB@@M$/mu,
+        )
+      }
       expect(quadletTemplates).toContain(
         '/api-docs:/usr/share/nginx/html/api-docs:ro',
       )

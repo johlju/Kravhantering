@@ -1,3 +1,4 @@
+import childProcess from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -206,6 +207,18 @@ describe('production smoke bundle preparation', () => {
       expect(
         fs.existsSync(path.join(root, 'deployment', result.bundleName)),
       ).toBe(true)
+      const archiveEntries = childProcess
+        .execFileSync('tar', ['-tzf', result.archivePath], { encoding: 'utf8' })
+        .trim()
+        .split('\n')
+      for (const entry of [
+        'DEPLOYMENT-MANIFEST.json',
+        'bin/kravhantering-quadlet.sh',
+        'quadlet/templates/single-node/kravhantering-app-runtime.container.template',
+        'release-metadata.json',
+      ]) {
+        expect(archiveEntries).toContain(`${result.bundleName}/${entry}`)
+      }
     } finally {
       fs.rmSync(root, { force: true, recursive: true })
     }

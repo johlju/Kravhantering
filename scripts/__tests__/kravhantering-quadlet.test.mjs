@@ -10,10 +10,11 @@ const SCRIPT_PATH = path.resolve(
 )
 const PODMAN_USER_GENERATOR =
   '/usr/lib/systemd/user-generators/podman-user-generator'
-const PODMAN_GENERATOR_VERSION =
-  childProcess.spawnSync(PODMAN_USER_GENERATOR, ['--version'], {
-    encoding: 'utf8',
-  }).stdout ?? ''
+const PODMAN_GENERATOR_VERSION = fs.existsSync(PODMAN_USER_GENERATOR)
+  ? (childProcess.spawnSync(PODMAN_USER_GENERATOR, ['--version'], {
+      encoding: 'utf8',
+    }).stdout ?? '')
+  : ''
 const temporaryDirectories = []
 
 function createFixture(releaseEnv) {
@@ -330,8 +331,10 @@ describe('kravhantering Quadlet helper', () => {
   })
 
   it('renders bounded resource and disk-backed export overrides', () => {
-    const exportPath = path.join(os.tmpdir(), 'kh-export-private')
-    fs.mkdirSync(exportPath, { recursive: true, mode: 0o700 })
+    const exportPath = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'kh-export-private-'),
+    )
+    fs.chmodSync(exportPath, 0o700)
     temporaryDirectories.push(exportPath)
     const fixture = createFixture(
       releaseEnv({
@@ -559,6 +562,59 @@ describe('kravhantering Quadlet helper', () => {
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain(
       'finite journald retention is not configured',
+    )
+  })
+
+  it('requires system retention bounds for persistent journal storage', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.writeFileSync(
+      path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
+      '[Journal]\nStorage=persistent\nRuntimeMaxUse=1G\n',
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'finite journald retention is not configured',
+    )
+  })
+
+  it('accepts runtime retention bounds for volatile journal storage', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.writeFileSync(
+      path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
+      '[Journal]\nStorage=volatile\nRuntimeKeepFree=1G\n',
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).toBe(0)
+  })
+
+  it('reports Quadlet generator output when rendered units are rejected', () => {
+    const fixture = createFixture(releaseEnv())
+    const generatorPath = path.join(fixture.root, 'podman-user-generator')
+    fs.writeFileSync(
+      generatorPath,
+      '#!/usr/bin/env bash\nprintf "unsupported Quadlet key\\n" >&2\nexit 1\n',
+      { mode: 0o755 },
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'Quadlet generator rejected the rendered production units: unsupported Quadlet key',
     )
   })
 

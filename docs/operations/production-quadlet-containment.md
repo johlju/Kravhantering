@@ -90,7 +90,8 @@ UID and GID 1000 through the service user's rootless mapping. Prepare it as
 root, then establish the mapped owner as the service user:
 
 ```bash
-sudo install -d -m 0700 /srv/kravhantering/export
+sudo install -d -m 0700 -o kravhantering -g kravhantering \
+  /srv/kravhantering/export
 sudo -iu kravhantering podman unshare \
   chown 1000:1000 /srv/kravhantering/export
 ```

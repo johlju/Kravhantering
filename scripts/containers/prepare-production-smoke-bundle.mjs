@@ -96,7 +96,6 @@ export function prepareProductionSmokeBundle(values, options = {}) {
     cwd,
     generatedAt: now().toISOString(),
     metadata,
-    metadataPath: path.join(outputDir, 'release-metadata.json'),
     outputDir,
     plan,
     stackLock,

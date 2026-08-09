@@ -326,6 +326,9 @@ test.describe('Release smoke container flow', () => {
   test('runs the configured maximum CSV and PDF output concurrency', async ({
     baseURL: configuredBaseUrl,
   }) => {
+    test.setTimeout(120_000)
+    const csvRequestCount = 5
+    const pdfRequestCount = 3
     const baseURL = releaseSmokeBaseUrl(configuredBaseUrl)
     const adminRequest = await playwrightRequest.newContext({
       baseURL,
@@ -337,10 +340,10 @@ test.describe('Release smoke container flow', () => {
     })
 
     try {
-      const csvRequests = Array.from({ length: 5 }, () =>
+      const csvRequests = Array.from({ length: csvRequestCount }, () =>
         adminRequest.get('/api/admin/audit-events?format=csv&locale=en'),
       )
-      const pdfRequests = Array.from({ length: 3 }, () =>
+      const pdfRequests = Array.from({ length: pdfRequestCount }, () =>
         adminRequest.get('/sv/requirements/reports/pdf/list?locale=sv'),
       )
       const responses = await Promise.all([...csvRequests, ...pdfRequests])
@@ -349,11 +352,20 @@ test.describe('Release smoke container flow', () => {
         expect(response.ok(), `generated output ${index + 1}`).toBe(true)
         expect((await response.body()).length).toBeGreaterThan(0)
       }
-      for (const response of responses.slice(0, 5)) {
-        expect(response.headers()['content-type']).toContain('text/csv')
+      for (const response of responses.slice(0, csvRequestCount)) {
+        expect(
+          response.headers()['content-type'],
+          'CSV output content type',
+        ).toContain('text/csv')
       }
-      for (const response of responses.slice(5)) {
-        expect(response.headers()['content-type']).toContain('application/pdf')
+      for (const response of responses.slice(
+        csvRequestCount,
+        csvRequestCount + pdfRequestCount,
+      )) {
+        expect(
+          response.headers()['content-type'],
+          'PDF output content type',
+        ).toContain('application/pdf')
       }
     } finally {
       await adminRequest.dispose()

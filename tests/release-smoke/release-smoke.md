@@ -13,7 +13,7 @@ documentation, without duplicating the full integration suite.
 <!-- markdownlint-disable MD013 -->
 | Property | Source | Purpose |
 | --- | --- | --- |
-| `storageState` | `tests/release-smoke/global-setup.ts` | Reuses the bundled `rita.reviewer` and `ada.admin` demo-user browser sessions. |
+| `storageState` | `tests/release-smoke/global-setup.ts` | Global setup generates the `rita.reviewer` and `ada.admin` browser sessions under `test-results/release-smoke/auth/`. |
 | `RELEASE_SMOKE_RUN_ID` | Environment | Optional stable prefix for created smoke requirements. |
 | `build.json` | `/build.json` | Public build metadata embedded in the app image. |
 | API docs | `public/api-docs/` | Static Swagger UI mounted directly into nginx. |

@@ -21,6 +21,7 @@
     "bwrap",
     "conmon",
     "delfil",
+    "dryrun",
     "datetimeoffset",
     "dialogfaser",
     "dialogfaserna",
