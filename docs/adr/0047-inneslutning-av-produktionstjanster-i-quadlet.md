@@ -21,7 +21,7 @@ en operatör använder och kör den riktiga Quadlet-livscykeln på en fullständ
 Ubuntu-runner. HSA-flödet verifieras genom en separat CI-only Quadlet-overlay
 med Kong, adaptern och katalogmocken; overlayen ingår inte i
 produktionsarkivet eller produktionstopologin. HSA-gränsen och de separata
-stödlåsen ägs fortsatt av
+stödtjänsterna ägs fortsatt av
 [ADR 0029](0029-hsa-personuppslag-som-restgrans-mot-integrationsplattform.md).
 RHEL-kvalificering kompletterar detta med SELinux, firewalld, RHEL:s
 Podman-version och verklig omstartsbeständighet. Compose är endast ett lokalt
