@@ -314,14 +314,19 @@ wait_for_url() {
   local url="$1" attempts=0
   until curl --fail --silent --show-error \
     --cacert tmp/container-tls/ca.crt "$url" >/dev/null; do
+    if ! service_systemctl is-active --quiet \
+      kravhantering-single-node.target; then
+      report_target_failure \
+        "single-node target stopped while waiting for $url"
+    fi
     attempts="$(( attempts + 1 ))"
     (( attempts < 90 )) || fail "timed out waiting for $url"
     sleep 2
   done
 }
 
-report_target_start_failure() {
-  local unit
+report_target_failure() {
+  local message="$1" unit
   service_systemctl list-units 'kravhantering-*' --state=failed --no-pager \
     >&2 || true
   for unit in kravhantering-app-runtime.service \
@@ -331,7 +336,7 @@ report_target_start_failure() {
       service_systemctl status "$unit" --no-pager >&2 || true
     fi
   done
-  fail 'single-node target failed to start'
+  fail "$message"
 }
 
 verify_service_cgroup() {
@@ -497,7 +502,7 @@ up() {
   service_systemctl start kravhantering-ci-hsa.target
   service_systemctl enable kravhantering-single-node.target
   service_systemctl start kravhantering-single-node.target || \
-    report_target_start_failure
+    report_target_failure 'single-node target failed to start'
   wait_for_url https://kravhantering.test/api/health
   wait_for_url https://kravhantering.test/api/ready
   verify_containment

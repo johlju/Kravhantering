@@ -177,7 +177,7 @@ configure_containment() {
     tmpfs)
       [[ -z "${APP_RUNTIME_EXPORT_HOST_PATH-}" ]] || \
         fail 'invalid APP_RUNTIME_EXPORT_HOST_PATH: only valid with bind storage'
-      APP_RUNTIME_EXPORT_MOUNT="Tmpfs=/run/kravhantering/export:rw,size=${APP_RUNTIME_EXPORT_TMPFS_MIB}M,mode=1777,nosuid,nodev,noexec"
+      APP_RUNTIME_EXPORT_MOUNT="Tmpfs=/run/kravhantering/export:rw,size=${APP_RUNTIME_EXPORT_TMPFS_MIB}M,mode=0700,U,nosuid,nodev,noexec"
       ;;
     bind)
       local export_path="${APP_RUNTIME_EXPORT_HOST_PATH-}" export_mode
