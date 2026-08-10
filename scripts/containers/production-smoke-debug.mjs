@@ -375,11 +375,7 @@ function runDebug(values) {
       ],
       { environment: inputs.environment },
     )
-    dockerExec(['bash', '.devcontainer/trust-container-ca.sh'])
-    dockerExec(['npm', 'run', 'test:release-smoke'], {
-      environment: { ...inputs.environment, CI: 'true' },
-    })
-    dockerExec(['scripts/containers/production-smoke.sh', 'boundaries'], {
+    dockerExec(['scripts/containers/production-smoke.sh', 'verify'], {
       environment: inputs.environment,
     })
     collectEvidence(inputs.environment)

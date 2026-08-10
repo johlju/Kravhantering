@@ -2365,7 +2365,6 @@ describe('trusted container release helpers', () => {
       /gh\s+pr\s+merge\s+"\$\{pr_number\}"\s+--squash\s+--auto/u,
     )
     expect(workflow).not.toContain('git push origin HEAD:main')
-    expect(workflow).toContain('npm run test:release-smoke')
     expect(workflow).not.toContain('pull_request_target')
   })
 

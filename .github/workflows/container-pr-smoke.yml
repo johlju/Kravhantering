@@ -350,9 +350,6 @@ jobs:
           scripts/containers/production-smoke.sh up --archive \
             "tmp/container-pr-artifacts/kravhantering-production-deploy-${BUILD_VERSION}.tar.gz"
 
-      - name: Trust generated CA for browser runner
-        run: bash .devcontainer/trust-container-ca.sh
-
       - name: Report OCI verification disk layout
         run: |
           "${RUNNER_TEMP}/report-disk-layout.sh" "before OCI verification"
@@ -365,13 +362,8 @@ jobs:
             --output-dir tmp/container-pr-artifacts/oci \
             --verify-root "/tmp/kh-oci-${CONTAINER_STACK_RUN_ID}"
 
-      - name: Run release smoke tests
-        run: npm run test:release-smoke
-        env:
-          CI: true
-
-      - name: Probe disposable containment boundaries
-        run: scripts/containers/production-smoke.sh boundaries
+      - name: Verify production stack
+        run: scripts/containers/production-smoke.sh verify
 
       - name: Collect production Quadlet evidence
         if: always()

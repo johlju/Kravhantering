@@ -328,16 +328,8 @@ jobs:
           scripts/containers/production-smoke.sh up --archive \
             "tmp/container-release-artifacts/kravhantering-production-deploy-${RELEASE_VERSION}.tar.gz"
 
-      - name: Trust generated CA for browser runner
-        run: bash .devcontainer/trust-container-ca.sh
-
-      - name: Run release smoke tests
-        run: npm run test:release-smoke
-        env:
-          CI: true
-
-      - name: Probe disposable containment boundaries
-        run: scripts/containers/production-smoke.sh boundaries
+      - name: Verify production stack
+        run: scripts/containers/production-smoke.sh verify
 
       - name: Collect production Quadlet evidence
         if: always()

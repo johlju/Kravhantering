@@ -39,9 +39,10 @@ It then:
 1. builds and starts a privileged Ubuntu 24.04 systemd debug host;
 2. installs the repository-pinned Playwright Chromium build and its Ubuntu
    runtime libraries inside that disposable host;
-3. installs the production archive with the existing
-   `production-smoke.sh` entry point;
-4. runs the real Playwright release-smoke tests and containment boundaries; and
+3. installs the production archive with the existing `production-smoke.sh`
+   entry point;
+4. calls its canonical `verify` command to trust the generated CA, run the real
+   Playwright release-smoke tests, and probe containment boundaries; and
 5. writes redacted evidence below
    `tmp/production-smoke-debug/<run-id>/evidence/`.
 

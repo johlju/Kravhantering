@@ -678,7 +678,7 @@ describe('GitHub Actions workflow security', () => {
     expect(String(policyStep?.run)).toContain('--images')
     expect(String(policyStep?.run)).toContain('--metadata')
 
-    const smokeIndex = indexOf('Run release smoke tests')
+    const smokeIndex = indexOf('Verify production stack')
     const loginIndex = indexOf('Log in to GHCR after validation gates')
     const promotionIndex = indexOf(
       'Promote unchanged candidate OCI artifacts and verify digests',
@@ -753,15 +753,21 @@ describe('GitHub Actions workflow security', () => {
       expect(job, `${fileName} must define ${jobId}`).toBeDefined()
       const steps = job?.steps ?? []
       const stepNames = steps.map(step => step.name)
+      const verification = steps.find(
+        step => step.name === 'Verify production stack',
+      )
 
       expect(job?.['runs-on']).toBe('ubuntu-24.04')
       expect(stepNames).toEqual(
         expect.arrayContaining([
           'Install production archive with rootless Quadlet',
-          'Probe disposable containment boundaries',
+          'Verify production stack',
           'Collect production Quadlet evidence',
           'Remove production Quadlet stack',
         ]),
+      )
+      expect(verification?.run).toBe(
+        'scripts/containers/production-smoke.sh verify',
       )
     }
   })

@@ -689,6 +689,12 @@ boundaries() {
     >"$EVIDENCE_DIR/resource-boundaries.txt"
 }
 
+verify() {
+  bash .devcontainer/trust-container-ca.sh
+  CI=true npm run test:release-smoke
+  boundaries
+}
+
 down() {
   local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
   local network purpose uid user_search_path volume volume_status
@@ -745,8 +751,9 @@ case "$COMMAND" in
       fail 'usage: production-smoke.sh up --archive <path>'
     up "$3"
     ;;
+  verify) verify ;;
   boundaries) boundaries ;;
   evidence) evidence ;;
   down) down ;;
-  *) fail 'expected up, boundaries, evidence, or down' ;;
+  *) fail 'expected up, verify, boundaries, evidence, or down' ;;
 esac
