@@ -5,6 +5,8 @@
 <!-- cSpell:words readlink -->
 <!-- cSpell:words ipv4 -->
 <!-- cSpell:words serverAuth subjectAltName -->
+<!-- cSpell:words authorityKeyIdentifier basicConstraints cRLSign genpkey -->
+<!-- cSpell:words keyCertSign pathlen subjectKeyIdentifier -->
 <!-- cSpell:words Mountpoint -->
 <!-- cSpell:words fcontext graphroot restorecon semanage tempdb -->
 <!-- cSpell:words invalid_client_credentials -->
@@ -112,7 +114,8 @@ verification.
 | `DB_PASSWORD` | `app.env` and `db-job.env` | Maps to `DB_JOB_PASSWORD` in `db-job.env` and `APP_DB_PASSWORD` in `app.env` | No separate value to plan; verify each file receives the correct password. |
 | `DB_PORT` | `DB_PORT` in `app.env` and `db-job.env` | `1433` | Plan only if the Quadlet network or SQL Server service changes. |
 | `DB_ENCRYPT` | `DB_ENCRYPT` in `app.env` and `db-job.env` | `true` | Plan only if the SQL Server contract deliberately differs. |
-| `DB_TRUST_SERVER_CERTIFICATE` | `DB_TRUST_SERVER_CERTIFICATE` in `app.env` and `db-job.env` | `true` | Plan only if the internal SQL Server container is replaced with a certificate trusted by the container trust store. |
+| `DB_TRUST_SERVER_CERTIFICATE` | `DB_TRUST_SERVER_CERTIFICATE` in `app.env` and `db-job.env` | `false` | Keep certificate-chain and service-name verification enabled. Do not use an insecure trust override. |
+| `SQLSERVER_SERVICE_HOST` | SQL Server certificate CN and SAN, `DB_HOST` in `app.env` and `db-job.env` | `sqlserver` | Keep the stable Quadlet DNS alias. Issue the SQL Server certificate with `DNS:sqlserver`. |
 | `DB_CONNECTION_TIMEOUT_MS` | `DB_CONNECTION_TIMEOUT_MS` in `db-job.env` | `15000` | Plan only if the host, storage or startup timing needs a different connection timeout. |
 | `DB_REQUEST_TIMEOUT_MS` | `DB_REQUEST_TIMEOUT_MS` in `db-job.env` | `30000` | Plan only if bootstrap, migrations or required seed need a different SQL statement timeout. |
 | `AUTH_OIDC_ISSUER_URL` | `AUTH_OIDC_ISSUER_URL` in `app.env` | `https://<APP_HOST>/auth/realms/kravhantering-production` | Verify after choosing `APP_HOST`; plan only if the realm or public auth path changes. |
@@ -831,7 +834,8 @@ DB_NAME=kravhantering
 DB_CONNECTION_TIMEOUT_MS=15000
 DB_REQUEST_TIMEOUT_MS=30000
 DB_ENCRYPT=true
-DB_TRUST_SERVER_CERTIFICATE=true
+DB_TRUST_SERVER_CERTIFICATE=false
+NODE_EXTRA_CA_CERTS=/run/kravhantering/sqlserver-ca.crt
 DB_USER=kravhantering_job
 DB_PASSWORD=<db-job-password>
 DB_BOOTSTRAP_ADMIN_USER=sa
@@ -887,7 +891,7 @@ DB_NAME=kravhantering
 DB_USER=kravhantering_app
 DB_PASSWORD=<same-as-DB_BOOTSTRAP_APP_PASSWORD>
 DB_ENCRYPT=true
-DB_TRUST_SERVER_CERTIFICATE=true
+DB_TRUST_SERVER_CERTIFICATE=false
 AUTH_OIDC_ISSUER_URL=https://kravhantering.example.internal/auth/realms/kravhantering-production
 AUTH_OIDC_REDIRECT_URI=https://kravhantering.example.internal/api/auth/callback
 AUTH_OIDC_POST_LOGOUT_REDIRECT_URI=https://kravhantering.example.internal/
@@ -1283,7 +1287,39 @@ exit
 
 ## TLS Materials
 
-Install the server certificate, private key and issuing CA certificate:
+Obtain two server certificates from the approved internal CA:
+
+- the public nginx certificate for `APP_HOST`
+- the internal SQL Server certificate with CN `sqlserver`, SAN
+  `DNS:sqlserver`, and the Server Authentication extended key usage
+
+The SQL Server name is the stable Quadlet network alias used by `DB_HOST`.
+Do not add container IDs, host IP addresses, `localhost`, or public app names
+to this certificate. The CA bundle may contain more than one issuing chain when
+the public and database certificates use different approved CAs.
+
+Before installation, verify the SQL Server certificate, private-key match,
+service identity, validity period, and server-auth purpose:
+
+```bash
+set -euo pipefail
+
+openssl verify -purpose sslserver -verify_hostname sqlserver \
+  -CAfile ca.crt sqlserver-server.crt
+openssl x509 -in sqlserver-server.crt -noout \
+  -checkhost sqlserver -dates -ext extendedKeyUsage,subjectAltName
+CERT_PUBLIC_KEY_SHA256="$(
+  openssl x509 -in sqlserver-server.crt -pubkey -noout |
+    openssl pkey -pubin -outform DER | sha256sum
+)"
+PRIVATE_KEY_PUBLIC_SHA256="$(
+  openssl pkey -in sqlserver-server.key -pubout -outform DER | sha256sum
+)"
+test "$CERT_PUBLIC_KEY_SHA256" = "$PRIVATE_KEY_PUBLIC_SHA256"
+```
+
+Install the public server certificate, SQL Server certificate, private keys,
+and issuing CA bundle:
 
 ```bash
 sudo install -o root -g kravhantering -m 0640 fullchain.pem \
@@ -1292,6 +1328,12 @@ sudo install -o root -g kravhantering -m 0640 privkey.pem \
   /etc/kravhantering/tls/privkey.pem
 sudo install -o root -g kravhantering -m 0644 ca.crt \
   /etc/kravhantering/tls/ca.crt
+sudo install -d -o root -g kravhantering -m 0750 \
+  /etc/kravhantering/sqlserver-tls
+sudo install -o root -g kravhantering -m 0644 sqlserver-server.crt \
+  /etc/kravhantering/sqlserver-tls/server.crt
+sudo install -o root -g kravhantering -m 0640 sqlserver-server.key \
+  /etc/kravhantering/sqlserver-tls/server.key
 ```
 
 ### Certificate Files
@@ -1301,17 +1343,26 @@ sudo install -o root -g kravhantering -m 0644 ca.crt \
 | --- | --- |
 | `/etc/kravhantering/tls/fullchain.pem` | Public server certificate chain that nginx presents to browsers, health checks and other HTTPS clients. It contains the server certificate plus the intermediate CA certificates needed to verify it. |
 | `/etc/kravhantering/tls/privkey.pem` | Private key for the server certificate. nginx uses it to prove that this node owns the certificate. Keep it restricted; it must not be copied into app containers, logs or support bundles. |
-| `/etc/kravhantering/tls/ca.crt` | Public CA certificate that the Node.js app trusts through `NODE_EXTRA_CA_CERTS`. In the single-node stack it lets `app-runtime` verify the HTTPS Keycloak issuer exposed through nginx. |
+| `/etc/kravhantering/tls/ca.crt` | Public CA bundle that Node.js clients trust through `NODE_EXTRA_CA_CERTS`. It lets `app-runtime` verify Keycloak through nginx and lets app/database-job clients verify SQL Server. |
+| `/etc/kravhantering/sqlserver-tls/server.crt` | SQL Server leaf certificate and any required intermediate chain. Its trusted identity is `DNS:sqlserver`. |
+| `/etc/kravhantering/sqlserver-tls/server.key` | SQL Server private key. Keep it restricted to root and the `kravhantering` group; never include it in evidence or backups. |
 <!-- markdownlint-enable MD013 -->
 
-`fullchain.pem` and `privkey.pem` are mounted by nginx. `ca.crt` is mounted by
-`app-runtime` through `NODE_EXTRA_CA_CERTS`. Keep `privkey.pem` restricted to
-`0640`. Install `ca.crt` as `0644` because it is public trust material and the
-non-root Node.js process inside `app-runtime` must be able to read it.
+`fullchain.pem` and `privkey.pem` are mounted by nginx. SQL Server reads its
+certificate and key through the release-owned `sqlserver/mssql.conf`, which
+also forces encrypted connections. `ca.crt` is mounted by `app-runtime` and
+each database-job container through `NODE_EXTRA_CA_CERTS`. Keep both private
+keys restricted to `0640`. Although `fullchain.pem` is a public certificate
+chain, install it as `0640` as shown above. Install the other public
+certificates and `ca.crt` as `0644` so the non-root processes can read them.
 
-For a temporary isolated lab host, Appendix A shows how to create these files
-with a local root CA. Do not use that local self-signed flow for a shared
-production service unless the deployment explicitly approves the exception.
+For a temporary isolated lab host,
+[Appendix A](#appendix-a-local-self-signed-public-tls-certificate) shows how to
+create the public nginx certificate files with a local root CA.
+[Appendix B](#appendix-b-local-self-signed-microsoft-sql-server-tls-set)
+provides a standalone procedure for the SQL Server certificate set. Do not use
+either local self-signed flow for a shared production service unless the
+deployment explicitly approves the exception.
 
 ## SELinux Labels for Bind Mounts
 
@@ -1321,6 +1372,7 @@ realm JSON and installing TLS files, label those paths for container reads:
 
 ```bash
 sudo chcon -R -t container_file_t /etc/kravhantering/keycloak
+sudo chcon -R -t container_file_t /etc/kravhantering/sqlserver-tls
 sudo chcon -R -t container_file_t /etc/kravhantering/tls
 ```
 
@@ -1418,9 +1470,12 @@ STACK_NETWORK="$(
   bin/kravhantering-quadlet.sh print-network \
     --topology single-node --purpose database
 )"
+DB_CA_SOURCE=/etc/kravhantering/tls/ca.crt
+DB_CA_TARGET=/run/kravhantering/sqlserver-ca.crt
 
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   --env DB_USER="${DB_BOOTSTRAP_ADMIN_USER:-sa}" \
   --env DB_PASSWORD="$DB_BOOTSTRAP_ADMIN_PASSWORD" \
   --env DB_NAME=master \
@@ -1443,30 +1498,38 @@ STACK_NETWORK="$(
   bin/kravhantering-quadlet.sh print-network \
     --topology single-node --purpose database
 )"
+DB_CA_SOURCE=/etc/kravhantering/tls/ca.crt
+DB_CA_TARGET=/run/kravhantering/sqlserver-ca.crt
 EVIDENCE_DIR="/var/tmp/kravhantering-deploy-${VERSION}-evidence"
 mkdir -p "$EVIDENCE_DIR"
 
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   "$DB_JOB_IMAGE_REF" bootstrap
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   "$DB_JOB_IMAGE_REF" migration-status \
   > "$EVIDENCE_DIR/migration-status-before-${VERSION}.json"
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   "$DB_JOB_IMAGE_REF" migrate --json \
   > "$EVIDENCE_DIR/migration-run-${VERSION}.json"
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   "$DB_JOB_IMAGE_REF" migration-status \
   > "$EVIDENCE_DIR/migration-status-after-${VERSION}.json"
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   "$DB_JOB_IMAGE_REF" permission-status \
   > "$EVIDENCE_DIR/runtime-permissions-${VERSION}.json"
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   "$DB_JOB_IMAGE_REF" seed:required
 
 exit
@@ -1491,11 +1554,14 @@ STACK_NETWORK="$(
   bin/kravhantering-quadlet.sh print-network \
     --topology single-node --purpose database
 )"
+DB_CA_SOURCE=/etc/kravhantering/tls/ca.crt
+DB_CA_TARGET=/run/kravhantering/sqlserver-ca.crt
 DEMO_SEED_IMAGE_REF=ghcr.io/viscalyx/kravhantering-demo-seed:replace-with-release-tag
 
 podman pull "$DEMO_SEED_IMAGE_REF"
 podman run --rm --network "$STACK_NETWORK" \
   --env-file /etc/kravhantering/db-job.env \
+  --volume "${DB_CA_SOURCE}:${DB_CA_TARGET}:ro" \
   "$DEMO_SEED_IMAGE_REF"
 
 exit
@@ -1722,6 +1788,50 @@ through an explicitly approved destructive uninstall or restore procedure.
 The `db-job` image is not a long-running service; run database jobs with the
 documented `podman run --rm` commands.
 
+### SQL Server Certificate Renewal, Rotation, and Recovery
+
+Record the SQL Server certificate expiry in the site's certificate inventory.
+Renew it early enough to complete approval and a planned restart. Every renewal
+must retain CN `sqlserver`, SAN `DNS:sqlserver`, Server Authentication usage,
+and an issuing chain present in `/etc/kravhantering/tls/ca.crt`.
+
+Rotate the certificate during a maintenance window:
+
+1. Stage the renewed certificate and key outside `/etc/kravhantering`.
+2. Run the verification commands in [TLS Materials](#tls-materials).
+3. Save the current certificate and key in the approved secret store as the
+   short-lived rollback pair. Never put the key in deployment evidence.
+4. Stop `kravhantering-sqlserver.service` before replacing either file.
+5. Install both new files with the documented owner, group, modes, and SELinux
+   labels while the service remains stopped.
+6. Start `kravhantering-sqlserver.service` only after both files are complete.
+   SQL Server reads the mounted files only at process start.
+7. Run `db-job wait` with the CA mount, then check `/api/ready`. Record the old
+   and new certificate serials and expiry dates as evidence.
+
+When the issuing CA changes, install a CA bundle containing both old and new
+chains, restart `app-runtime`, verify both trust paths, rotate the SQL Server
+leaf certificate, and remove the old CA only after every client uses the new
+chain. Restart `app-runtime` again after removing the old CA because Node.js
+loads `NODE_EXTRA_CA_CERTS` at process start.
+
+If the new certificate prevents SQL Server startup or verified connections,
+stop SQL Server, restore the previous certificate and key as a complete pair
+from the secret store, restore the previous CA bundle when it also changes, and
+reapply labels. Start SQL Server only after both certificate files are complete,
+then restart `app-runtime`. If no valid rollback pair exists, stop the
+application, request a replacement `DNS:sqlserver` certificate from the
+approved CA, install it, and repeat the verification sequence. The SQL Server
+data volume does not contain the bind-mounted certificate files; database
+restore alone does not recover them.
+
+The production smoke workflow exercises issuance, renewal, rotation, and
+recovery. It rotates to a newly issued `DNS:sqlserver` leaf, installs a leaf
+with the wrong DNS identity, requires a certificate identity error, restores
+the saved certificate and key, and proves verified database and application
+connections recover. Its lifecycle and certificate evidence files record each
+successful transition without recording private key material.
+
 ## Upgrade And Rollback
 
 Use the standalone
@@ -1829,14 +1939,21 @@ uninstall procedure.
   `/etc/kravhantering/app.env`, and Keycloak should no longer log
   `invalid_client_credentials` for `kravhantering-app`.
 
-- If `db-job wait` fails with `self-signed certificate; if the root CA is
-  installed locally, try running Node.js with --use-system-ca`, confirm
-  `DB_TRUST_SERVER_CERTIFICATE=true` in both
-  `/etc/kravhantering/db-job.env` and `/etc/kravhantering/app.env`. The
-  single-node SQL Server container presents a self-signed certificate by
-  default, so this topology trusts the presented certificate directly unless
-  the internal SQL Server container has been replaced with a certificate trusted
-  by the container trust store.
+- If `db-job wait` reports an untrusted SQL Server certificate, keep
+  `DB_TRUST_SERVER_CERTIFICATE=false`. Verify that `ca.crt` contains the issuing
+  CA, `NODE_EXTRA_CA_CERTS` names the mounted
+  `/run/kravhantering/sqlserver-ca.crt`, and the temporary container includes
+  the documented CA bind mount.
+
+- If `db-job wait` reports a hostname mismatch, keep `DB_HOST=sqlserver` and
+  verify the certificate with this command:
+
+  ```bash
+  openssl x509 -in /etc/kravhantering/sqlserver-tls/server.crt \
+    -noout -checkhost sqlserver
+  ```
+
+  Reissue the certificate with `DNS:sqlserver`; do not bypass identity checks.
 
 - If `/api/health` and `/api/ready` return `502` after restarting
   `app-runtime` on an older release, restart nginx so it resolves the new
@@ -1864,7 +1981,7 @@ Keep these files with the deployment record:
 Do not archive `/etc/kravhantering/*.env`, private keys or raw container
 inspect output in general release evidence stores.
 
-## Appendix A: Local Self-Signed TLS Certificate
+## Appendix A: Local Self-Signed Public TLS Certificate
 
 Use this appendix only for an isolated lab or temporary validation host where
 an approved internal certificate is not available. Do not use a locally
@@ -1875,7 +1992,7 @@ The local root CA private key can issue certificates for internal names. Keep
 it on the lab host only, restrict it to root, and delete it when the temporary
 environment is retired.
 
-The generated files match the single-node production Quadlet mounts:
+The generated files match the single-node nginx Quadlet mounts:
 
 - `/etc/kravhantering/tls/fullchain.pem`
 - `/etc/kravhantering/tls/privkey.pem`
@@ -2000,3 +2117,271 @@ Browsers and client operating systems that connect to the site will warn until
 - Debian or Ubuntu: copy it to `/usr/local/share/ca-certificates/` and run
   `update-ca-certificates`.
 - Firefox: import it under Authorities in the Firefox certificate settings.
+
+## Appendix B: Local Self-Signed Microsoft SQL Server TLS Set
+
+Use this appendix only for an isolated lab, temporary validation host, or an
+explicitly approved production exception where the approved internal CA cannot
+issue the SQL Server certificate before deployment. Microsoft recommends a
+CA-issued certificate instead of a directly self-signed SQL Server certificate
+for production.
+
+This procedure creates a self-signed local root CA and a separate SQL Server
+leaf certificate signed by that CA. The leaf is not directly self-signed. This
+separation lets clients trust one local root while the SQL Server leaf is
+renewed or rotated. The resulting set is:
+
+- the local CA certificate that clients add to their trust bundle
+- the local CA private key, which stays outside every container mount
+- a SQL Server leaf certificate for `DNS:sqlserver`
+- the matching unencrypted SQL Server private key
+
+The leaf includes the Server Authentication extended key usage, key
+encipherment, a SHA-256 signature, and the fixed Quadlet service name in its
+subject alternative name. These properties implement Microsoft's
+[SQL Server on Linux certificate requirements](https://learn.microsoft.com/en-us/sql/linux/security/encrypted-connections?view=sql-server-ver17#requirements-for-certificates).
+The release already supplies `sqlserver/mssql.conf`, points SQL Server at the
+mounted certificate and key, and sets `forceencryption = 1`.
+
+### Create the Local SQL Server CA
+
+Run all commands in this appendix from the same administrative shell. If the
+shell session changes, set the variables again before continuing. Create a
+root-only CA directory and the runtime leaf directory. The CA directory is not
+mounted into SQL Server:
+
+```bash
+SQLSERVER_CA_DIR=/etc/kravhantering/sqlserver-ca
+SQLSERVER_TLS_DIR=/etc/kravhantering/sqlserver-tls
+
+sudo install -d -o root -g root -m 0700 "$SQLSERVER_CA_DIR"
+sudo install -d -o root -g kravhantering -m 0750 \
+  "$SQLSERVER_TLS_DIR"
+```
+
+Create a dedicated local SQL Server root CA:
+
+```bash
+SQLSERVER_CA_CERT="${SQLSERVER_CA_DIR}/local-root-ca.crt"
+SQLSERVER_CA_KEY="${SQLSERVER_CA_DIR}/local-root-ca.key"
+
+sudo tee "${SQLSERVER_CA_DIR}/root-ca.cnf" >/dev/null <<'EOF'
+[req]
+prompt = no
+default_md = sha256
+distinguished_name = dn
+x509_extensions = v3_ca
+
+[dn]
+C = SE
+O = Viscalyx
+CN = Kravhantering Local SQL Server Root CA
+
+[v3_ca]
+basicConstraints = critical, CA:true, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+EOF
+
+sudo openssl genpkey -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:4096 \
+  -out "$SQLSERVER_CA_KEY"
+sudo chmod 0600 "$SQLSERVER_CA_KEY"
+sudo openssl req -x509 -new -sha256 -days 3650 \
+  -key "$SQLSERVER_CA_KEY" \
+  -out "$SQLSERVER_CA_CERT" \
+  -config "${SQLSERVER_CA_DIR}/root-ca.cnf" \
+  -extensions v3_ca
+sudo chmod 0644 "$SQLSERVER_CA_CERT"
+```
+
+Keep `SQLSERVER_CA_KEY` in the approved secret store if this CA will issue
+renewals. Do not copy it into `/etc/kravhantering/sqlserver-tls`, a container,
+deployment evidence, or a general backup. The ten-year root and one-year leaf
+lifetimes shown here are examples; replace them with approved site lifetimes,
+record both expiry dates, and rotate before either certificate expires.
+
+### Issue and Install the SQL Server Leaf
+
+Create the leaf profile for the fixed service identity. Do not substitute the
+public application host, `localhost`, a container ID, or a host IP address for
+`sqlserver`:
+
+```bash
+sudo tee "${SQLSERVER_CA_DIR}/sqlserver.cnf" >/dev/null <<'EOF'
+[req]
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = server_cert
+
+[dn]
+CN = sqlserver
+
+[server_cert]
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = sqlserver
+EOF
+
+sudo openssl genpkey -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:2048 \
+  -out "${SQLSERVER_TLS_DIR}/server.key"
+sudo chmod 0600 "${SQLSERVER_TLS_DIR}/server.key"
+sudo openssl req -new -sha256 \
+  -key "${SQLSERVER_TLS_DIR}/server.key" \
+  -out "${SQLSERVER_CA_DIR}/sqlserver.csr" \
+  -config "${SQLSERVER_CA_DIR}/sqlserver.cnf"
+sudo openssl x509 -req -sha256 -days 365 \
+  -in "${SQLSERVER_CA_DIR}/sqlserver.csr" \
+  -CA "$SQLSERVER_CA_CERT" \
+  -CAkey "$SQLSERVER_CA_KEY" \
+  -CAcreateserial \
+  -extfile "${SQLSERVER_CA_DIR}/sqlserver.cnf" \
+  -extensions server_cert \
+  -out "${SQLSERVER_TLS_DIR}/server.crt"
+
+sudo chown root:kravhantering "${SQLSERVER_TLS_DIR}/server.key"
+sudo chmod 0640 "${SQLSERVER_TLS_DIR}/server.key"
+sudo chown root:kravhantering "${SQLSERVER_TLS_DIR}/server.crt"
+sudo chmod 0644 "${SQLSERVER_TLS_DIR}/server.crt"
+```
+
+SQL Server needs an unencrypted private key so the service can start without
+an interactive passphrase. File ownership, mode `0640`, the rootless service
+user's supplementary group, and the read-only Quadlet mount restrict access to
+that key.
+
+### Add the Local CA to Client Trust
+
+First check whether the current application CA bundle already contains this
+local root, for example when resuming an interrupted deployment:
+
+```bash
+sudo openssl verify -purpose sslserver -verify_hostname sqlserver \
+  -CAfile /etc/kravhantering/tls/ca.crt \
+  "${SQLSERVER_TLS_DIR}/server.crt"
+```
+
+If verification fails only because this new local root is absent, rebuild the
+bundle from the current bundle and the new local root. Stage the result so the
+live bundle is never partially written:
+
+```bash
+set -euo pipefail
+
+CURRENT_CA_BUNDLE=/etc/kravhantering/tls/ca.crt
+CURRENT_CA_DIRECTORY="$(dirname "$CURRENT_CA_BUNDLE")"
+CA_BUNDLE_STAGE="$(
+  sudo mktemp "${CURRENT_CA_DIRECTORY}/.ca.crt.XXXXXX"
+)"
+cleanup_ca_bundle_stage() {
+  if [[ -n "${CA_BUNDLE_STAGE:-}" ]]; then
+    sudo rm -f -- "$CA_BUNDLE_STAGE"
+  fi
+}
+trap cleanup_ca_bundle_stage EXIT
+
+sudo sh -c 'cat -- "$1" "$2" > "$3"' sh \
+  "$CURRENT_CA_BUNDLE" "$SQLSERVER_CA_CERT" "$CA_BUNDLE_STAGE"
+sudo chown root:kravhantering "$CA_BUNDLE_STAGE"
+sudo chmod 0644 "$CA_BUNDLE_STAGE"
+sudo mv -f -- "$CA_BUNDLE_STAGE" "$CURRENT_CA_BUNDLE"
+CA_BUNDLE_STAGE=''
+trap - EXIT
+```
+
+Do not append the same root repeatedly. For later CA changes, rebuild the
+bundle from the original approved CA files and follow the overlap procedure in
+[SQL Server Certificate Renewal, Rotation, and Recovery](#sql-server-certificate-renewal-rotation-and-recovery).
+
+Keep verified client connections enabled and configure the database-job trust
+path:
+
+```bash
+sudo sed -i \
+  's#^DB_TRUST_SERVER_CERTIFICATE=.*#DB_TRUST_SERVER_CERTIFICATE=false#' \
+  /etc/kravhantering/app.env /etc/kravhantering/db-job.env
+
+if sudo grep -q '^NODE_EXTRA_CA_CERTS=' \
+  /etc/kravhantering/db-job.env; then
+  SQLSERVER_CA_PATH=/run/kravhantering/sqlserver-ca.crt
+  sudo sed -i \
+    "s#^NODE_EXTRA_CA_CERTS=.*#NODE_EXTRA_CA_CERTS=${SQLSERVER_CA_PATH}#" \
+    /etc/kravhantering/db-job.env
+else
+  printf '%s\n' \
+    'NODE_EXTRA_CA_CERTS=/run/kravhantering/sqlserver-ca.crt' |
+    sudo tee -a /etc/kravhantering/db-job.env >/dev/null
+fi
+```
+
+`app-runtime` receives `/etc/kravhantering/tls/ca.crt` through its existing
+read-only CA mount. Every one-shot `db-job` command must also mount that file at
+`/run/kravhantering/sqlserver-ca.crt`, as shown in the deployment and upgrade
+job commands.
+
+### Verify and Activate the Set
+
+Verify the issuing chain, time validity, DNS identity, Server Authentication
+usage, private key, and certificate-key match before installing or starting
+the new SQL Server Quadlet unit:
+
+```bash
+set -euo pipefail
+
+sudo openssl verify -purpose sslserver -verify_hostname sqlserver \
+  -CAfile /etc/kravhantering/tls/ca.crt \
+  "${SQLSERVER_TLS_DIR}/server.crt"
+sudo openssl x509 -in "${SQLSERVER_TLS_DIR}/server.crt" \
+  -noout -subject -issuer -dates \
+  -ext subjectAltName,extendedKeyUsage,keyUsage,basicConstraints
+sudo openssl pkey -in "${SQLSERVER_TLS_DIR}/server.key" \
+  -check -noout
+
+CERT_PUBLIC_KEY_SHA256="$(
+  sudo openssl x509 -in "${SQLSERVER_TLS_DIR}/server.crt" -pubkey -noout |
+    openssl pkey -pubin -outform DER | sha256sum
+)"
+PRIVATE_KEY_PUBLIC_SHA256="$(
+  sudo openssl pkey -in "${SQLSERVER_TLS_DIR}/server.key" \
+    -pubout -outform DER | sha256sum
+)"
+test "$CERT_PUBLIC_KEY_SHA256" = "$PRIVATE_KEY_PUBLIC_SHA256"
+
+sudo chcon -R -t container_file_t "$SQLSERVER_TLS_DIR"
+sudo chcon -t container_file_t /etc/kravhantering/tls/ca.crt
+```
+
+Stop if any command fails or if the certificate output omits
+`TLS Web Server Authentication` and `DNS:sqlserver`. Do not set
+`DB_TRUST_SERVER_CERTIFICATE=true` as a fallback.
+
+For a first install, continue at
+[Start the Single-Node Stack](#start-the-single-node-stack). For an upgrade,
+return to step 8 of the
+[single-node planned-downtime upgrade](./rhel10-production-single-node-self-contained-upgrade.md#planned-downtime-upgrade),
+install the new Quadlet units, start SQL Server, and run `db-job wait` with the
+documented CA bind mount. The unit mounts the leaf and key at the paths used by
+Microsoft's
+[SQL Server Linux container TLS pattern](https://learn.microsoft.com/en-us/sql/linux/containers/security?view=sql-server-ver17#encrypt-connections-to-sql-server-linux-containers).
+
+A successful `db-job wait` with `DB_ENCRYPT=true`,
+`DB_TRUST_SERVER_CERTIFICATE=false`, and `DB_HOST=sqlserver` proves that the
+real client accepts the issuing chain and service identity. From an approved
+administration client using the same verified settings, confirm that SQL
+Server reports encryption for that session:
+
+```sql
+SELECT encrypt_option
+FROM sys.dm_exec_connections
+WHERE session_id = @@SPID;
+```
+
+The result must be `TRUE`.
