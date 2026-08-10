@@ -79,6 +79,9 @@ export default defineConfig({
         'lib/runtime/expo-sqlite-unavailable.ts',
         // Side-effect-only build orchestration with no importable logic seam.
         'scripts/prebuild.js',
+        // Side-effect-only local Docker/systemd orchestration. Its deterministic
+        // argument and artifact contract lives in the covered companion module.
+        'scripts/containers/production-smoke-debug.mjs',
       ],
       thresholds: {
         branches: 85,

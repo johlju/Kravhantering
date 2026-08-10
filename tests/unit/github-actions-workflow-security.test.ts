@@ -34,6 +34,7 @@ type WorkflowDocument = {
 type WorkflowJob = {
   if?: unknown
   name?: unknown
+  'runs-on'?: unknown
   steps?: WorkflowStep[]
   strategy?: unknown
 }
@@ -556,7 +557,8 @@ describe('GitHub Actions workflow security', () => {
       )
     }
     for (const stepName of [
-      'Stop container stack',
+      'Collect production Quadlet evidence',
+      'Remove production Quadlet stack',
       'Write artifact hashes',
       'Stage release artifacts',
     ]) {
@@ -579,7 +581,9 @@ describe('GitHub Actions workflow security', () => {
     const workflow = readWorkflowYaml('container-release.yml')
     const prWorkflow = readWorkflowYaml('container-pr-smoke.yml')
     const releaseJob = workflow.jobs?.['trusted-release']
+    const prJob = prWorkflow.jobs?.['container-smoke']
     const steps = releaseJob?.steps ?? []
+    const prSteps = prJob?.steps ?? []
     const stepNames = steps.map(step => step.name)
     const indexOf = (name: string) => {
       const index = stepNames.indexOf(name)
@@ -587,6 +591,9 @@ describe('GitHub Actions workflow security', () => {
       return index
     }
     const candidateBuilds = steps.filter(step =>
+      String(step.name).match(/^Build .+ candidate OCI artifact$/u),
+    )
+    const prCandidateBuilds = prSteps.filter(step =>
       String(step.name).match(/^Build .+ candidate OCI artifact$/u),
     )
     const gateAction = yaml.load(
@@ -601,6 +608,7 @@ describe('GitHub Actions workflow security', () => {
     )
 
     expect(candidateBuilds).toHaveLength(5)
+    expect(prCandidateBuilds).toHaveLength(5)
     expect(candidateSbomSteps).toHaveLength(5)
     for (const step of candidateSbomSteps) {
       expect(step.with?.format).toBe('spdx-json')
@@ -626,6 +634,21 @@ describe('GitHub Actions workflow security', () => {
       'hsa-person-lookup-adapter',
     ]) {
       expect(releaseGate?.with?.[inputName]).toMatch(/^oci-archive:/u)
+    }
+
+    const prGate = prSteps.find(
+      step =>
+        step.name === 'Gate PR images against release vulnerability policy',
+    )
+    expect(prGate?.uses).toBe('./.github/actions/container-vulnerability-gate')
+    for (const inputName of [
+      'app-runtime',
+      'db-job',
+      'demo-seed',
+      'hsa-directory-mock',
+      'hsa-person-lookup-adapter',
+    ]) {
+      expect(prGate?.with?.[inputName]).toMatch(/^oci-archive:/u)
     }
 
     const scanStep = gateSteps.find(
@@ -655,7 +678,7 @@ describe('GitHub Actions workflow security', () => {
     expect(String(policyStep?.run)).toContain('--images')
     expect(String(policyStep?.run)).toContain('--metadata')
 
-    const smokeIndex = indexOf('Run release smoke tests')
+    const smokeIndex = indexOf('Verify production stack')
     const loginIndex = indexOf('Log in to GHCR after validation gates')
     const promotionIndex = indexOf(
       'Promote unchanged candidate OCI artifacts and verify digests',
@@ -693,17 +716,15 @@ describe('GitHub Actions workflow security', () => {
       "success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'",
     )
 
-    const prSteps = prWorkflow.jobs?.['container-smoke']?.steps ?? []
     const prGateIndex = prSteps.findIndex(
       step =>
         step.name === 'Gate PR images against release vulnerability policy',
     )
     const prStartIndex = prSteps.findIndex(
-      step => step.name === 'Start container stack',
+      step => step.name === 'Install production archive with rootless Quadlet',
     )
     expect(prGateIndex).toBeGreaterThanOrEqual(0)
     expect(prGateIndex).toBeLessThan(prStartIndex)
-    const prGate = prSteps[prGateIndex]
     expect(prGate?.uses).toBe('./.github/actions/container-vulnerability-gate')
     expect(prGate?.with?.metadata).toBeUndefined()
     expect(prGate?.with?.['artifact-prefix']).toBe(
@@ -720,6 +741,35 @@ describe('GitHub Actions workflow security', () => {
     expect(uploadEvidence?.with?.path).toContain(
       'tmp/container-release-artifacts/sbom/',
     )
+  })
+
+  it('runs PR and main smoke through the same Ubuntu production Quadlet seam', () => {
+    for (const [fileName, jobId] of [
+      ['container-pr-smoke.yml', 'container-smoke'],
+      ['container-release.yml', 'trusted-release'],
+    ]) {
+      const workflow = readWorkflowYaml(fileName)
+      const job = workflow.jobs?.[jobId]
+      expect(job, `${fileName} must define ${jobId}`).toBeDefined()
+      const steps = job?.steps ?? []
+      const stepNames = steps.map(step => step.name)
+      const verification = steps.find(
+        step => step.name === 'Verify production stack',
+      )
+
+      expect(job?.['runs-on']).toBe('ubuntu-24.04')
+      expect(stepNames).toEqual(
+        expect.arrayContaining([
+          'Install production archive with rootless Quadlet',
+          'Verify production stack',
+          'Collect production Quadlet evidence',
+          'Remove production Quadlet stack',
+        ]),
+      )
+      expect(verification?.run).toBe(
+        'scripts/containers/production-smoke.sh verify',
+      )
+    }
   })
 
   it('rescans verified SBOMs for supported releases and safely synchronizes findings', () => {

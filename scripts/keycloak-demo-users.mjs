@@ -600,7 +600,8 @@ export async function main(args, dependencies = {}) {
 
 const isDirectRun =
   process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  fs.realpathSync(path.resolve(process.argv[1])) ===
+    fs.realpathSync(fileURLToPath(import.meta.url))
 
 if (isDirectRun) {
   process.exitCode = await main(process.argv.slice(2))

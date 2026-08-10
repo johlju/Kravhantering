@@ -42,27 +42,29 @@ devcontainer `app` service can reach the internal Admin API. Use
 or `npm run devcontainer:hsa-mock:verify` to post the REST person lookup
 through Kong at `http://kong:8000/hsa/person-records/lookup`.
 
-The local and release-smoke harnesses include a test-only `single-node-demo`
-overlay that starts Kong, the adapter, and the HSA directory mock on their
-internal Compose network. That overlay is not part of the production
-deployment bundle or the required production HSA integration path.
+Local Compose and devcontainer flows provide the test services for developers.
+PR and release smoke instead install the production archive and attach a
+separately named CI-only Quadlet overlay for Kong, the adapter, and the HSA
+directory mock. That overlay is not part of the production deployment bundle
+or the required production HSA integration path.
 
 ![HSA person lookup integration paths](../images/hsa-person-lookup_integration-paths.png)
 
 ## Runtime configuration
 
 The app calls the configured person lookup endpoint through
-`HSA_PERSON_LOOKUP_URL`. In devcontainer and `single-node-demo` this points at
-Kong on the internal Compose network. Production environments should point at
-the approved environment-specific Kong route or integration-platform REST
-facade. The browser must never receive this endpoint or call it directly.
+`HSA_PERSON_LOOKUP_URL`. In devcontainer it points at Kong on the internal
+Compose network; release smoke points at Kong on the CI-only egress network.
+Production environments should point at the approved environment-specific
+Kong route or integration-platform REST facade. The browser must never receive
+this endpoint or call it directly.
 
 `HSA_PERSON_LOOKUP_TIMEOUT_MS` controls the app-side timeout. Keep the default
 unless the approved integration path for an environment requires a different
 timeout.
 
-The devcontainer and `single-node-demo` route is internal to the Compose
-network and does not configure app-to-Kong mTLS or OAuth2. If
+The devcontainer and CI smoke routes are internal to their respective test
+networks and do not configure app-to-Kong mTLS or OAuth2. If
 `HSA_PERSON_LOOKUP_URL` points to an external Kong route or
 integrationsplattform, the app can add app-to-platform authentication without
 changing the URL knob. Set `HSA_PERSON_LOOKUP_CLIENT_CERT_PATH` and
@@ -145,9 +147,9 @@ sequenceDiagram
 
 ### Kong, adapter and HSA directory
 
-The repository-supported devcontainer and `single-node-demo` topology keeps
-Kong DB-less and plain. Kong exposes only `POST /hsa/person-records/lookup`
-and routes that request to `hsa-person-lookup-adapter`. The adapter owns the
+The repository-supported devcontainer and CI-only Quadlet overlay keep Kong
+DB-less and plain. Kong exposes only `POST /hsa/person-records/lookup` and
+routes that request to `hsa-person-lookup-adapter`. The adapter owns the
 REST-to-SOAP transformation and authenticates to the HSA directory with an
 HSAWS client certificate. In dev and release smoke the directory is
 `hsa-directory-mock`; production can use a real HSA service behind the same

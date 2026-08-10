@@ -5,14 +5,15 @@
 This guide describes how to prepare and import disconnected release artifacts
 for the self-contained single-node RHEL 10 production topology, where nginx,
 `app-runtime`, SQL Server, Keycloak and `db-job` run in one rootless Podman
-Quadlet network.
+Quadlet deployment split across the edge, identity, database, and application
+egress networks.
 
 The default disconnected topology is `single-node`. The optional
-`single-node-demo` topology is test-only and adds Kong, the HSA person lookup
-adapter and the HSA directory mock from
-`container-hsa-integration-support.lock.json` and
-`container-test-support.lock.json`. Use `single-node-demo` only for release
-smoke, disposable demos or other non-production environments.
+`single-node-demo` selection is reserved for verifying and moving Kong, the HSA
+person lookup adapter, and the HSA directory mock from the support-image lock
+files. It is not a runnable production or Quadlet-helper topology. Release smoke
+uses the separately named CI-only Quadlet overlay, while production installation
+continues to use `single-node`.
 
 The standard `single-node` and `single-node-demo` disconnected image bundles do
 not include the optional `kravhantering-demo-seed` image. Treat demo seed as a

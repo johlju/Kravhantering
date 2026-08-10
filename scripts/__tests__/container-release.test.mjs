@@ -477,6 +477,11 @@ describe('trusted container release helpers', () => {
     ).toBe(true)
     expect(
       isReleaseRelevantPath(
+        'docs/operations/production-quadlet-containment.md',
+      ),
+    ).toBe(true)
+    expect(
+      isReleaseRelevantPath(
         'docs/operations/rhel10-production-disconnected.md',
       ),
     ).toBe(true)
@@ -1494,7 +1499,7 @@ describe('trusted container release helpers', () => {
       notes.indexOf('## Production Deployment Bundle'),
     )
     expect(notes).toContain(
-      'Production deployment uses rootless Podman Quadlet; the release-smoke harness remains Compose-based.',
+      'The rootless Podman Quadlet deployment archive passes production smoke validation before promotion.',
     )
     expect(notes).not.toContain('## Checksums')
     expect(notes).not.toContain('abc123  container-stack.lock.json')
@@ -1671,14 +1676,17 @@ describe('trusted container release helpers', () => {
     }
   })
 
-  it('requires the single-node Quadlet network for temporary containers', () => {
+  it('requires the purpose-specific Quadlet network for temporary containers', () => {
     const singleNodeGuide = readWorkspaceFile(
       'docs/operations/rhel10-production-single-node-self-contained-deploy.md',
     )
 
     expect(singleNodeGuide).toContain(
-      'NETWORK_UNIT=kravhantering-single-node-network.service',
+      'NETWORK_UNIT=kravhantering-single-node-identity-network.service',
     )
+    expect(singleNodeGuide).toContain('--purpose identity')
+    expect(singleNodeGuide).toContain('--purpose database')
+    expect(singleNodeGuide).toContain('--purpose edge')
     expect(singleNodeGuide).toContain('systemctl --user start "$NETWORK_UNIT"')
     expect(singleNodeGuide).not.toContain(
       'podman network create "$STACK_NETWORK"',
@@ -1714,6 +1722,7 @@ describe('trusted container release helpers', () => {
 
   it('ships nginx templates with dynamic upstream DNS resolution', () => {
     const nginxResolverPlaceholder = '$' + '{NGINX_RESOLVER}'
+    const nginxIdentityResolverPlaceholder = '$' + '{NGINX_IDENTITY_RESOLVER}'
     const templates = [
       'containers/production/nginx/templates/app-node-http.conf.template',
       'containers/production/nginx/templates/app-node-tls.conf.template',
@@ -1723,11 +1732,18 @@ describe('trusted container release helpers', () => {
     for (const template of templates) {
       const content = readWorkspaceFile(template)
       expectNginxTemplateSyntax(
-        content.replaceAll(nginxResolverPlaceholder, '10.89.0.1'),
+        content
+          .replaceAll(nginxResolverPlaceholder, '10.89.0.1')
+          .replaceAll(nginxIdentityResolverPlaceholder, '10.89.1.1'),
       )
       expect(content).toContain(
         `resolver ${nginxResolverPlaceholder} valid=10s ipv6=off;`,
       )
+      if (template.includes('single-node')) {
+        expect(content).toContain(
+          `resolver ${nginxIdentityResolverPlaceholder} valid=10s ipv6=off;`,
+        )
+      }
       expect(content).toContain('resolver_timeout 5s;')
       expect(content).toContain('server app-runtime:3000 resolve;')
       expect(content).toContain('proxy_pass http://app_runtime_upstream')
@@ -1965,6 +1981,9 @@ describe('trusted container release helpers', () => {
         'docs/operations/api-docs-edge-verification.md',
       )
       expect(result.files).toContain(
+        'docs/operations/production-quadlet-containment.md',
+      )
+      expect(result.files).toContain(
         'docs/operations/rhel10-production-disconnected.md',
       )
       expect(result.files).toContain(
@@ -2065,10 +2084,35 @@ describe('trusted container release helpers', () => {
         )
         .join('\n')
       expect(quadletTemplates).toContain('NGINX_RESOLVER')
-      expect(quadletTemplates).toContain('NetworkName=kravhantering-app-node')
       expect(quadletTemplates).toContain(
-        'NetworkName=kravhantering-single-node',
+        'NetworkName=kravhantering-app-node_edge',
       )
+      expect(quadletTemplates).toContain(
+        'NetworkName=kravhantering-app-node_egress',
+      )
+      expect(quadletTemplates).toContain(
+        'NetworkName=kravhantering-single-node_identity',
+      )
+      expect(quadletTemplates).toContain(
+        'NetworkName=kravhantering-single-node_database',
+      )
+      const statelessContainerTemplates = result.files.filter(file =>
+        /\/kravhantering-(?:app-runtime|nginx)\.container\.template$/u.test(
+          file,
+        ),
+      )
+      expect(statelessContainerTemplates).toHaveLength(6)
+      for (const file of statelessContainerTemplates) {
+        const template = fs.readFileSync(
+          path.join(result.bundleRoot, file),
+          'utf8',
+        )
+        expect(template).toContain('DropCapability=all')
+        expect(template).toContain('ReadOnlyTmpfs=false')
+        expect(template).toMatch(
+          /^MemoryMax=@@(?:APP_RUNTIME|NGINX)_MEMORY_LIMIT_MIB@@M$/mu,
+        )
+      }
       expect(quadletTemplates).toContain(
         '/api-docs:/usr/share/nginx/html/api-docs:ro',
       )
@@ -2267,13 +2311,8 @@ describe('trusted container release helpers', () => {
     )
     expect(workflow).not.toContain('push-to-registry: true')
     expect(workflow).toContain(
-      '--test-lock-file container-test-support.lock.json',
-    )
-    expect(workflow).toContain(
-      '--hsa-integration-lock-file container-hsa-integration-support.lock.json',
-    )
-    expect(workflow).toContain(
-      '--run-id "$' + '{CONTAINER_STACK_RUN_ID}" || true',
+      'HSA_DIRECTORY_MOCK_OCI_ARCHIVE: $' +
+        '{{ env.HSA_DIRECTORY_MOCK_CANDIDATE_ARTIFACT }}',
     )
     expect(workflow).toContain('container-release.mjs identities')
     expect(workflow).toContain(
@@ -2326,7 +2365,6 @@ describe('trusted container release helpers', () => {
       /gh\s+pr\s+merge\s+"\$\{pr_number\}"\s+--squash\s+--auto/u,
     )
     expect(workflow).not.toContain('git push origin HEAD:main')
-    expect(workflow).toContain('npm run test:release-smoke')
     expect(workflow).not.toContain('pull_request_target')
   })
 

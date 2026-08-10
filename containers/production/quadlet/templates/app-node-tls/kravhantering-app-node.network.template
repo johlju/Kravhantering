@@ -1,5 +1,0 @@
-[Unit]
-Description=Kravhantering app-node Podman network
-
-[Network]
-NetworkName=kravhantering-app-node_kravhantering-internal

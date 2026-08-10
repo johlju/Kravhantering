@@ -14,18 +14,25 @@ permissions:
 jobs:
   container-smoke:
     name: Build and Smoke Test Container Stack
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
 
     env:
       APP_RUNTIME_IMAGE: localhost/kravhantering/app-runtime
+      APP_RUNTIME_OCI_ARCHIVE: tmp/container-pr-artifacts/oci/app-runtime.oci.tar
       DB_JOB_IMAGE: localhost/kravhantering/db-job
+      DB_JOB_OCI_ARCHIVE: tmp/container-pr-artifacts/oci/db-job.oci.tar
       DEMO_SEED_IMAGE: localhost/kravhantering/demo-seed
+      DEMO_SEED_OCI_ARCHIVE: tmp/container-pr-artifacts/oci/demo-seed.oci.tar
       HSA_DIRECTORY_MOCK_IMAGE: localhost/kravhantering/hsa-directory-mock
+      HSA_DIRECTORY_MOCK_OCI_ARCHIVE: tmp/container-pr-artifacts/oci/hsa-directory-mock.oci.tar
       HSA_PERSON_LOOKUP_ADAPTER_IMAGE: localhost/kravhantering/hsa-person-lookup-adapter
+      HSA_PERSON_LOOKUP_ADAPTER_OCI_ARCHIVE: tmp/container-pr-artifacts/oci/hsa-person-lookup-adapter.oci.tar
+      KEYCLOAK_IMAGE_REF: quay.io/keycloak/keycloak:26.7.0-1
+      KONG_IMAGE_REF: docker.io/kong/kong-gateway:3.15.0.2-20260721-ubuntu
       NEXT_PUBLIC_SITE_URL: https://kravhantering.test
-      PODMAN_COMPOSE_PROVIDER: podman-compose
-      STORAGE_DRIVER: vfs
+      NGINX_IMAGE_REF: docker.io/library/nginx:1.31.3-alpine
+      SQLSERVER_IMAGE_REF: mcr.microsoft.com/mssql/server:2025-CU7-ubuntu-24.04
 
     steps:
       - name: Report initial disk layout
@@ -146,11 +153,10 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y podman podman-compose libnss3-tools
+          sudo apt-get install -y jq podman libnss3-tools
           sudo sysctl net.ipv4.ip_unprivileged_port_start=0
           echo "127.0.0.1 kravhantering.test" | sudo tee -a /etc/hosts
           podman --version
-          podman compose version
           podman info
           docker --version
           docker buildx version
@@ -163,6 +169,9 @@ jobs:
           docker buildx create --name kravhantering-pr-builder --use ||
             docker buildx use kravhantering-pr-builder
           docker buildx inspect --bootstrap
+
+      - name: Prepare candidate artifact directories
+        run: mkdir -p tmp/container-pr-artifacts/oci
 
       - name: Compute PR image metadata
         env:
@@ -177,118 +186,169 @@ jobs:
           {
             echo "APP_RUNTIME_SOURCE=pr-build"
             echo "APP_RUNTIME_TAG=${image_tag}"
+            echo "APP_RUNTIME_IMAGE_REF=${APP_RUNTIME_IMAGE}:${image_tag}"
             echo "BUILD_COMMIT_SHA=${GITHUB_SHA}"
             echo "BUILD_IMAGE_TAG=${APP_RUNTIME_IMAGE}:${image_tag}"
             echo "BUILD_TIME=${build_time}"
             echo "BUILD_VERSION=${package_version}-pr.${PR_NUMBER}.${GITHUB_RUN_ID}"
-            echo "CONTAINER_PROJECT_NAME=kravhantering-container-stack-release-smoke-${GITHUB_RUN_ID}"
             echo "CONTAINER_STACK_RUN_ID=${GITHUB_RUN_ID}"
             echo "DB_JOB_SOURCE=pr-build"
             echo "DB_JOB_TAG=${image_tag}"
+            echo "DB_JOB_IMAGE_REF=${DB_JOB_IMAGE}:${image_tag}"
             echo "DEMO_SEED_SOURCE=pr-build"
             echo "DEMO_SEED_TAG=${image_tag}"
+            echo "DEMO_SEED_IMAGE_REF=${DEMO_SEED_IMAGE}:${image_tag}"
             echo "HSA_DIRECTORY_MOCK_SOURCE=pr-build"
             echo "HSA_DIRECTORY_MOCK_TAG=${image_tag}"
+            echo "HSA_DIRECTORY_MOCK_IMAGE_REF=${HSA_DIRECTORY_MOCK_IMAGE}:${image_tag}"
             echo "HSA_PERSON_LOOKUP_ADAPTER_SOURCE=pr-build"
             echo "HSA_PERSON_LOOKUP_ADAPTER_TAG=${image_tag}"
+            echo "HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF=${HSA_PERSON_LOOKUP_ADAPTER_IMAGE}:${image_tag}"
             echo "RELEASE_SMOKE_RUN_ID=${GITHUB_RUN_ID}"
           } >> "${GITHUB_ENV}"
 
       - name: Write host build metadata artifact
         run: node scripts/prebuild.js
 
-      - name: Build app-runtime image
+      - name: Build app-runtime candidate OCI artifact
         run: |
           set -euo pipefail
           docker buildx build \
             --file containers/app/Dockerfile \
             --target app-runtime \
             --platform linux/amd64 \
+            --metadata-file tmp/container-pr-artifacts/oci/app-runtime-buildx.json \
             --tag "${APP_RUNTIME_IMAGE}:${APP_RUNTIME_TAG}" \
             --build-arg BUILD_VERSION="${BUILD_VERSION}" \
             --build-arg BUILD_COMMIT_SHA="${BUILD_COMMIT_SHA}" \
             --build-arg BUILD_TIME="${BUILD_TIME}" \
             --build-arg BUILD_IMAGE_TAG="${BUILD_IMAGE_TAG}" \
             --build-arg NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL}" \
-            --load \
+            --provenance=false \
+            --output "type=oci,dest=${APP_RUNTIME_OCI_ARCHIVE}" \
             .
 
-      - name: Build db-job image
+      - name: Build db-job candidate OCI artifact
         run: |
           set -euo pipefail
           docker buildx build \
             --file containers/app/Dockerfile \
             --target db-job \
             --platform linux/amd64 \
+            --metadata-file tmp/container-pr-artifacts/oci/db-job-buildx.json \
             --tag "${DB_JOB_IMAGE}:${DB_JOB_TAG}" \
-            --load \
+            --provenance=false \
+            --output "type=oci,dest=${DB_JOB_OCI_ARCHIVE}" \
             .
 
-      - name: Build demo seed image
+      - name: Build demo seed candidate OCI artifact
         run: |
           set -euo pipefail
           docker buildx build \
             --file containers/app/Dockerfile \
             --target demo-seed \
             --platform linux/amd64 \
+            --metadata-file tmp/container-pr-artifacts/oci/demo-seed-buildx.json \
             --tag "${DEMO_SEED_IMAGE}:${DEMO_SEED_TAG}" \
-            --load \
+            --provenance=false \
+            --output "type=oci,dest=${DEMO_SEED_OCI_ARCHIVE}" \
             .
 
-      - name: Build HSA directory mock image
+      - name: Build HSA directory mock candidate OCI artifact
         run: |
           set -euo pipefail
           docker buildx build \
             --file containers/hsa-directory-mock/Dockerfile \
             --platform linux/amd64 \
+            --metadata-file tmp/container-pr-artifacts/oci/hsa-directory-mock-buildx.json \
             --tag "${HSA_DIRECTORY_MOCK_IMAGE}:${HSA_DIRECTORY_MOCK_TAG}" \
-            --load \
+            --provenance=false \
+            --output "type=oci,dest=${HSA_DIRECTORY_MOCK_OCI_ARCHIVE}" \
             containers/hsa-directory-mock
 
-      - name: Build HSA person lookup adapter image
+      - name: Build HSA person lookup adapter candidate OCI artifact
         run: |
           set -euo pipefail
           docker buildx build \
             --file containers/hsa-person-lookup-adapter/Dockerfile \
             --platform linux/amd64 \
+            --metadata-file tmp/container-pr-artifacts/oci/hsa-person-lookup-adapter-buildx.json \
             --tag "${HSA_PERSON_LOOKUP_ADAPTER_IMAGE}:${HSA_PERSON_LOOKUP_ADAPTER_TAG}" \
-            --load \
+            --provenance=false \
+            --output "type=oci,dest=${HSA_PERSON_LOOKUP_ADAPTER_OCI_ARCHIVE}" \
             containers/hsa-person-lookup-adapter
 
       - name: Gate PR images against release vulnerability policy
         uses: ./.github/actions/container-vulnerability-gate
         with:
-          app-runtime: ${{ env.APP_RUNTIME_IMAGE }}:${{ env.APP_RUNTIME_TAG }}
+          app-runtime: oci-archive:${{ env.APP_RUNTIME_OCI_ARCHIVE }}
           artifact-prefix: tmp/container-pr-artifacts/vulnerability
-          db-job: ${{ env.DB_JOB_IMAGE }}:${{ env.DB_JOB_TAG }}
-          demo-seed: ${{ env.DEMO_SEED_IMAGE }}:${{ env.DEMO_SEED_TAG }}
-          hsa-directory-mock: ${{ env.HSA_DIRECTORY_MOCK_IMAGE }}:${{ env.HSA_DIRECTORY_MOCK_TAG }}
-          hsa-person-lookup-adapter: ${{ env.HSA_PERSON_LOOKUP_ADAPTER_IMAGE }}:${{ env.HSA_PERSON_LOOKUP_ADAPTER_TAG }}
+          db-job: oci-archive:${{ env.DB_JOB_OCI_ARCHIVE }}
+          demo-seed: oci-archive:${{ env.DEMO_SEED_OCI_ARCHIVE }}
+          hsa-directory-mock: oci-archive:${{ env.HSA_DIRECTORY_MOCK_OCI_ARCHIVE }}
+          hsa-person-lookup-adapter: oci-archive:${{ env.HSA_PERSON_LOOKUP_ADAPTER_OCI_ARCHIVE }}
 
       - name: Create per-container local env files
         run: npm run container:env:local
 
-      - name: Start container stack
+      - name: Generate production-smoke TLS
+        run: node scripts/containers/generate-tls.mjs --output-dir tmp/container-tls
+
+      - name: Prepare exact PR stack lock
         run: |
           set -euo pipefail
-          node scripts/containers/run-local-stack.mjs up \
-            --mode release-smoke \
-            --run-id "${CONTAINER_STACK_RUN_ID}" \
-            --skip-build \
-            --prune-docker-after-load
 
-      - name: Trust generated CA for browser runner
-        run: bash .devcontainer/trust-container-ca.sh
+          app_image_id="$(jq -er '."containerimage.config.digest"' tmp/container-pr-artifacts/oci/app-runtime-buildx.json)"
+          app_manifest_digest="$(jq -er '."containerimage.digest"' tmp/container-pr-artifacts/oci/app-runtime-buildx.json)"
+          db_job_image_id="$(jq -er '."containerimage.config.digest"' tmp/container-pr-artifacts/oci/db-job-buildx.json)"
+          db_job_manifest_digest="$(jq -er '."containerimage.digest"' tmp/container-pr-artifacts/oci/db-job-buildx.json)"
+          demo_seed_image_id="$(jq -er '."containerimage.config.digest"' tmp/container-pr-artifacts/oci/demo-seed-buildx.json)"
+          hsa_directory_mock_image_id="$(jq -er '."containerimage.config.digest"' tmp/container-pr-artifacts/oci/hsa-directory-mock-buildx.json)"
+          hsa_adapter_image_id="$(jq -er '."containerimage.config.digest"' tmp/container-pr-artifacts/oci/hsa-person-lookup-adapter-buildx.json)"
+          node scripts/containers/generate-stack-lock.mjs generate \
+            --app-image "${APP_RUNTIME_IMAGE}" \
+            --app-tag "${APP_RUNTIME_TAG}" \
+            --app-manifest-digest "${app_manifest_digest}" \
+            --app-image-id "${app_image_id}" \
+            --app-source pr-build \
+            --db-job-image "${DB_JOB_IMAGE}" \
+            --db-job-tag "${DB_JOB_TAG}" \
+            --db-job-manifest-digest "${db_job_manifest_digest}" \
+            --db-job-image-id "${db_job_image_id}" \
+            --db-job-source pr-build
+          node scripts/containers/generate-stack-lock.mjs check
 
-      - name: Report OCI export disk layout
-        run: |
-          "${RUNNER_TEMP}/report-disk-layout.sh" "before OCI export"
+          {
+            echo "APP_RUNTIME_IMAGE_ID=${app_image_id}"
+            echo "DB_JOB_IMAGE_ID=${db_job_image_id}"
+            echo "DEMO_SEED_IMAGE_ID=${demo_seed_image_id}"
+            echo "HSA_DIRECTORY_MOCK_IMAGE_ID=${hsa_directory_mock_image_id}"
+            echo "HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID=${hsa_adapter_image_id}"
+          } >> "${GITHUB_ENV}"
 
-      - name: Export OCI archives
+      - name: Prune BuildKit cache before production smoke
         run: |
           set -euo pipefail
-          trap 'bash "${RUNNER_TEMP}/report-disk-layout.sh" "after OCI export" || true' EXIT
-          npm run container:oci:export -- --output-dir tmp/container-pr-artifacts/oci
+          docker buildx prune --all --force
+          "${RUNNER_TEMP}/report-disk-layout.sh" "before production smoke"
+
+      - name: Build production deployment archive for PR
+        run: |
+          node scripts/containers/prepare-production-smoke-bundle.mjs \
+            --version "${BUILD_VERSION}" \
+            --commit-sha "${GITHUB_SHA}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --app-ref "${APP_RUNTIME_IMAGE_REF}" \
+            --app-image-id "${APP_RUNTIME_IMAGE_ID}" \
+            --db-job-ref "${DB_JOB_IMAGE_REF}" \
+            --db-job-image-id "${DB_JOB_IMAGE_ID}" \
+            --stack-lock container-stack.lock.json \
+            --output-dir tmp/container-pr-artifacts/deployment
+
+      - name: Install production archive with rootless Quadlet
+        run: |
+          scripts/containers/production-smoke.sh up --archive \
+            "tmp/container-pr-artifacts/kravhantering-production-deploy-${BUILD_VERSION}.tar.gz"
 
       - name: Report OCI verification disk layout
         run: |
@@ -302,32 +362,16 @@ jobs:
             --output-dir tmp/container-pr-artifacts/oci \
             --verify-root "/tmp/kh-oci-${CONTAINER_STACK_RUN_ID}"
 
-      - name: Run release smoke tests
-        run: npm run test:release-smoke
-        env:
-          CI: true
+      - name: Verify production stack
+        run: scripts/containers/production-smoke.sh verify
 
-      - name: Collect status before shutdown on failure
-        if: failure()
-        run: |
-          node scripts/containers/collect-status.mjs \
-            --project-name "${CONTAINER_PROJECT_NAME}" \
-            --output-text container-status-before-down.txt \
-            --output-json container-status-before-down.json \
-            --tail 160 || true
-
-      - name: Stop container stack
+      - name: Collect production Quadlet evidence
         if: always()
-        run: node scripts/containers/run-local-stack.mjs down --mode release-smoke || true
+        run: scripts/containers/production-smoke.sh evidence || true
 
-      - name: Collect status after shutdown on failure
-        if: failure()
-        run: |
-          node scripts/containers/collect-status.mjs \
-            --project-name "${CONTAINER_PROJECT_NAME}" \
-            --output-text container-status-after-down.txt \
-            --output-json container-status-after-down.json \
-            --tail 160 || true
+      - name: Remove production Quadlet stack
+        if: always()
+        run: scripts/containers/production-smoke.sh down
 
       - name: Write artifact hashes
         if: always()
@@ -335,17 +379,13 @@ jobs:
           node scripts/containers/write-hashes.mjs \
             --output hashes.sha256 \
             container-stack.lock.json \
-            container-stack.compose.yml \
-            container-status.txt \
-            container-status.json \
-            container-status-before-down.txt \
-            container-status-before-down.json \
-            container-status-after-down.txt \
-            container-status-after-down.json \
             public/build.json \
-            tmp/container-pr-artifacts/oci/app-runtime.oci.tar.gz \
-            tmp/container-pr-artifacts/oci/db-job.oci.tar.gz \
-            tmp/container-pr-artifacts/oci/hsa-directory-mock.oci.tar.gz || true
+            tmp/container-pr-artifacts/kravhantering-production-deploy-${BUILD_VERSION}.tar.gz \
+            "${APP_RUNTIME_OCI_ARCHIVE}" \
+            "${DB_JOB_OCI_ARCHIVE}" \
+            "${DEMO_SEED_OCI_ARCHIVE}" \
+            "${HSA_DIRECTORY_MOCK_OCI_ARCHIVE}" \
+            "${HSA_PERSON_LOOKUP_ADAPTER_OCI_ARCHIVE}" || true
 
       - name: Stage runtime artifacts
         if: always()
@@ -357,19 +397,18 @@ jobs:
 
           for file in \
             container-stack.lock.json \
-            container-stack.compose.yml \
-            container-status.txt \
-            container-status.json \
-            container-status-before-down.txt \
-            container-status-before-down.json \
-            container-status-after-down.txt \
-            container-status-after-down.json \
             public/build.json \
             hashes.sha256; do
             if [ -f "${file}" ]; then
               cp "${file}" tmp/container-pr-artifacts/runtime/
             fi
           done
+
+          if [ -d tmp/production-smoke-evidence ]; then
+            cp -R \
+              tmp/production-smoke-evidence \
+              tmp/container-pr-artifacts/runtime/production-smoke-evidence
+          fi
 
           if [ -d playwright-report-release-smoke ]; then
             cp -R \
@@ -414,6 +453,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: container-pr-oci-${{ github.run_id }}
-          path: tmp/container-pr-artifacts/oci/*.oci.tar.gz
+          path: tmp/container-pr-artifacts/oci/*.oci.tar
           if-no-files-found: ignore
           retention-days: 2

@@ -100,51 +100,30 @@ Start a fresh test stack without Playwright:
 npm run container:local:up
 ```
 
-Start a fresh release-smoke stack with demo seed data and HSA test support:
-
-```bash
-npm run container:release-smoke:up
-npm run test:release-smoke
-npm run container:release-smoke:down
-```
-
-Inside the devcontainer, `container:release-smoke:up` imports the generated
-`tmp/container-tls/ca.crt` into the runner's system CA bundle and Chromium NSS
-database. Outside the devcontainer, trust that CA for both Node and the browser
-runner before starting the Playwright suite.
-The release-smoke stack also starts Kong, the HSA person lookup adapter and the
-HSA directory mock on the internal network. The app runtime receives the
-internal HSA lookup URL through an explicit container environment override.
-
 Stop the most recent local stack:
 
 ```bash
 npm run container:local:down
 ```
 
-The test and release-smoke modes use run-specific SQL Server volumes and remove
-them during shutdown. To avoid colliding with the existing developer SQL
-Server on `1433`, local stack SQL Server binds to `127.0.0.1:15433` in test
-mode and `127.0.0.1:15435` in release-smoke mode by default.
+The test mode uses a run-specific SQL Server volume and removes it during
+shutdown. To avoid colliding with the existing developer SQL Server on `1433`,
+the local stack binds SQL Server to `127.0.0.1:15433` by default.
 The generated stack uses the shared internal network name
-`kravhantering-internal`. This Compose network is limited to local and
-release-smoke orchestration; production Quadlet topologies use their own
-stable network names. Run only one active local app-stack test or
-release-smoke stack at a time with this default network.
+`kravhantering-internal`. This Compose network is limited to local test
+orchestration; production Quadlet topologies use their own stable network
+names. Run only one active local app-stack test at a time with this default
+network.
 
 The local orchestration does the same explicit ordering intended for CI:
 
 1. Generate short-lived TLS files in `tmp/container-tls`.
-2. Build `app-runtime`, `db-job` and, for release-smoke, `demo-seed`, the HSA
-   person lookup adapter plus HSA directory mock with Docker Buildx.
-3. Load those local images into Podman.
+2. Build `app-runtime` and `db-job` with Docker Buildx.
+3. Load both local images into Podman.
 4. Generate `container-stack.lock.json` and `container-stack.compose.yml`.
 5. Start SQL Server and Keycloak.
 6. Run `db-bootstrap`, `db-migrate` and `db-seed-required`.
-7. Run `db-seed-demo` only for release-smoke mode.
-8. Start Kong, the HSA person lookup adapter and the HSA directory mock only
-   for release-smoke mode.
-9. Start `app-runtime` and nginx, then wait for nginx, Keycloak discovery,
+7. Start `app-runtime` and nginx, then wait for nginx, Keycloak discovery,
    `/api/health` and `/api/ready`.
 
 Status and hash artifacts are written to `container-status.txt`,
@@ -154,23 +133,10 @@ TLS private keys or raw container inspect output.
 
 ## PR Smoke Workflow
 
-The PR workflow in `.github/workflows/container-pr-smoke.yml` builds
-`app-runtime`, `db-job` and `demo-seed` with Docker Buildx, tags them with
-local `localhost/kravhantering/...:pr-<pr>-<run-id>-<sha>` references and then
-starts the release-smoke stack without rebuilding:
-
-```bash
-node scripts/containers/run-local-stack.mjs up \
-  --mode release-smoke \
-  --run-id "$GITHUB_RUN_ID" \
-  --skip-build
-```
-
-`--skip-build` only skips the local Buildx commands. The helper still loads the
-configured Docker tags into Podman, including the HSA person lookup adapter and
-HSA mock images for release-smoke, creates `container-stack.lock.json`,
-generates PR-mode Compose and runs the same explicit startup order as local
-release-smoke.
+The PR workflow builds the candidate images and installs the real production
+deployment archive under a dedicated rootless service account on Ubuntu. It
+starts the production `single-node` Quadlet topology plus a separately named
+CI-only HSA overlay; it does not use this local Compose orchestration.
 
 The workflow exports and verifies separate short-lived OCI archives for the
 project images:
@@ -190,7 +156,7 @@ one Podman graph root. Podman temp staging is scoped to the same per-service
 directory, and each isolated store prunes its loaded images before the directory
 is removed.
 Workflow uploads keep OCI archives separate from the longer-lived Playwright,
-status, Compose, stack-lock, build-metadata and hash artifacts.
+status, Quadlet, stack-lock, build-metadata and hash artifacts.
 
 ## Local Env Files
 

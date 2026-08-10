@@ -223,6 +223,12 @@ Production topologies use `container-stack.lock.json`. The test-only
 `single-node-demo` topology uses both `container-stack.lock.json` and
 `container-test-support.lock.json`.
 
+PR and release smoke validation installs the same production archive on Ubuntu
+24.04 and captures the generated systemd units, live containment and network
+inspection, database lifecycle, and restart/reinstall/removal evidence. This is
+an archive-parity gate, not a replacement for RHEL qualification of SELinux,
+firewalld, the supported RHEL Podman build, or persistence over a host reboot.
+
 Third-party upstream tags can move after release. Production sites should
 prefer release-specific internal mirror tags and treat the lock file as the
 source of truth.

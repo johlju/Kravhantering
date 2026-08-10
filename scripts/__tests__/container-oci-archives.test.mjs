@@ -1,6 +1,4 @@
-import fs from 'node:fs'
-import path from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   archiveFileName,
   buildArchivePlans,
@@ -78,9 +76,10 @@ function stackLock() {
   }
 }
 
-function fakeFs() {
+function fakeFs(existingArchives = ['.oci.tar.gz']) {
   return {
-    existsSync: filePath => String(filePath).endsWith('.oci.tar.gz'),
+    existsSync: filePath =>
+      existingArchives.some(extension => String(filePath).endsWith(extension)),
     mkdtempSync: vi.fn(() => '/tmp/kh-oci-verify/verify-ci'),
     mkdirSync: vi.fn(),
     readFileSync: vi.fn(() => JSON.stringify(stackLock())),
@@ -89,6 +88,10 @@ function fakeFs() {
 }
 
 describe('container OCI archive helpers', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('plans project image archive paths and parses CLI options', () => {
     const lock = stackLock()
     const plans = buildArchivePlans(lock, 'tmp/oci')
@@ -139,10 +142,12 @@ describe('container OCI archive helpers', () => {
   })
 
   it('exports separate compressed OCI archives with Podman', () => {
+    vi.stubEnv('STORAGE_DRIVER', 'runner-defined-driver')
     const fsImpl = fakeFs()
     const commands = []
-    const spawnSync = vi.fn((command, args) => {
+    const spawnSync = vi.fn((command, args, options) => {
       commands.push(`${command} ${args.join(' ')}`)
+      expect(options.env.STORAGE_DRIVER).toBeUndefined()
       return { status: 0 }
     })
 
@@ -207,6 +212,7 @@ describe('container OCI archive helpers', () => {
     ])
     expect(commandEnvs.every(env => env.TMP === env.TMPDIR)).toBe(true)
     expect(commandEnvs.every(env => env.TEMP === env.TMPDIR)).toBe(true)
+    expect(commandEnvs.every(env => env.STORAGE_DRIVER === 'vfs')).toBe(true)
     expect(fsImpl.rmSync).toHaveBeenCalledTimes(2)
     expect(fsImpl.rmSync).toHaveBeenCalledWith(
       '/workspace/tmp/verify-oci/app-runtime',
@@ -216,6 +222,36 @@ describe('container OCI archive helpers', () => {
       '/workspace/tmp/verify-oci/db-job',
       { force: true, recursive: true },
     )
+  })
+
+  it('verifies uncompressed Buildx OCI candidate archives', () => {
+    const fsImpl = fakeFs(['.oci.tar'])
+    const commands = []
+    const spawnSync = vi.fn((command, args) => {
+      commands.push(`${command} ${args.join(' ')}`)
+      return { status: 0 }
+    })
+    const execFileSync = vi.fn((_command, args) =>
+      args.join(' ').includes('db-job')
+        ? 'sha256:db-job\n'
+        : 'sha256:app-runtime\n',
+    )
+
+    const results = verifyOciArchives({
+      cwd: '/workspace',
+      execFileSync,
+      fsImpl,
+      outputDir: 'tmp/oci',
+      spawnSync,
+      verifyRoot: 'tmp/verify-oci',
+    })
+
+    expect(results.map(result => result.archivePath)).toEqual([
+      'tmp/oci/app-runtime.oci.tar',
+      'tmp/oci/db-job.oci.tar',
+    ])
+    expect(commands[0]).toContain('load --input tmp/oci/app-runtime.oci.tar')
+    expect(commands[2]).toContain('load --input tmp/oci/db-job.oci.tar')
   })
 
   it('does not let temporary Podman store cleanup failures mask image ID verification', () => {
@@ -320,100 +356,5 @@ describe('container OCI archive helpers', () => {
         verifyRoot: 'tmp/verify-oci',
       }),
     ).toThrow('image ID sha256:wrong does not match sha256:app-runtime')
-  })
-
-  it('keeps the PR workflow fork-safe and artifact-scoped', () => {
-    const workflow = fs.readFileSync(
-      path.join(process.cwd(), '.github/workflows/container-pr-smoke.yml'),
-      'utf8',
-    )
-    const stepIndex = stepName => {
-      const index = workflow.indexOf(stepName)
-      expect(index, `${stepName} should exist in the workflow`).toBeGreaterThan(
-        -1,
-      )
-      return index
-    }
-    const shellPrefix = '$'
-    const runIdExpression = `${shellPrefix}{CONTAINER_STACK_RUN_ID}`
-    const githubRunIdExpression = `${shellPrefix}{GITHUB_RUN_ID}`
-    const githubWorkspaceExpression = `${shellPrefix}{GITHUB_WORKSPACE}`
-    const runnerTempExpression = `${shellPrefix}{RUNNER_TEMP}`
-    const verifyRootFallbackExpression = `${shellPrefix}{CONTAINER_STACK_RUN_ID:-${githubRunIdExpression}}`
-    const targetExpression = `${shellPrefix}{target}`
-
-    expect(workflow).toContain('pull_request:')
-    expect(workflow).toContain('contents: read')
-    expect(workflow).toContain('persist-credentials: false')
-    expect(workflow).toContain('--skip-build')
-    expect(workflow).toContain('--prune-docker-after-load')
-    expect(workflow).toContain('container:oci:export')
-    expect(workflow).toContain(
-      'HSA_PERSON_LOOKUP_ADAPTER_IMAGE: localhost/kravhantering/hsa-person-lookup-adapter',
-    )
-    expect(workflow).toContain(
-      'echo "HSA_PERSON_LOOKUP_ADAPTER_SOURCE=pr-build"',
-    )
-    expect(workflow).toContain(
-      `echo "HSA_PERSON_LOOKUP_ADAPTER_TAG=${shellPrefix}{image_tag}"`,
-    )
-    expect(workflow).toContain(
-      `--tag "${shellPrefix}{HSA_PERSON_LOOKUP_ADAPTER_IMAGE}:${shellPrefix}{HSA_PERSON_LOOKUP_ADAPTER_TAG}"`,
-    )
-    expect(stepIndex('Report initial disk layout')).toBeLessThan(
-      stepIndex('Remove unused pre-installed runner toolchains'),
-    )
-    expect(
-      stepIndex('Remove unused pre-installed runner toolchains'),
-    ).toBeLessThan(stepIndex('Checkout code'))
-    expect(workflow).toContain('/usr/local/lib/android')
-    expect(workflow).toContain('/usr/local/.ghcup')
-    expect(workflow).toContain('/opt/hostedtoolcache/CodeQL')
-    expect(workflow).toContain('/opt/hostedtoolcache/Python')
-    expect(workflow).toContain('/usr/share/miniconda')
-    expect(workflow).toContain('/usr/share/swift')
-    expect(workflow).toContain('/usr/share/dotnet')
-    expect(workflow).not.toContain('/opt/hostedtoolcache/node')
-    expect(workflow).toContain('docker image prune --all --force')
-    expect(workflow).toContain(
-      `"${runnerTempExpression}/report-disk-layout.sh" "after runner toolchain cleanup"`,
-    )
-    expect(stepIndex('Build HSA person lookup adapter image')).toBeLessThan(
-      stepIndex('Start container stack'),
-    )
-    expect(workflow).toContain(
-      `cat > "${runnerTempExpression}/report-disk-layout.sh" <<'REPORT_DISK_LAYOUT'`,
-    )
-    expect(workflow).toContain(
-      `verify_root="/tmp/kh-oci-${verifyRootFallbackExpression}"`,
-    )
-    expect(workflow).toContain('df -hT')
-    expect(workflow).toContain('df -ihT')
-    expect(workflow).toContain(`findmnt -T "${targetExpression}"`)
-    expect(workflow).toContain('docker system df')
-    expect(workflow).toContain('podman system df')
-    expect(workflow).toContain(
-      `"${githubWorkspaceExpression}/tmp/container-pr-artifacts/oci"`,
-    )
-    expect(workflow).toContain('/var/lib/docker')
-    expect(stepIndex('Report OCI export disk layout')).toBeLessThan(
-      stepIndex('Export OCI archives'),
-    )
-    expect(workflow).toContain('after OCI export')
-    expect(stepIndex('Report OCI verification disk layout')).toBeLessThan(
-      stepIndex('Verify OCI archives'),
-    )
-    expect(workflow).toContain('after OCI verification')
-    expect(workflow).toContain('container:oci:verify')
-    expect(workflow).toContain(`--verify-root "/tmp/kh-oci-${runIdExpression}"`)
-    expect(workflow).not.toContain('--verify-root tmp/container-oci-verify')
-    expect(workflow).toContain('retention-days: 2')
-    expect(workflow).toContain('retention-days: 7')
-    expect(workflow).not.toContain('pull_request_target')
-    expect(workflow).not.toContain('packages: write')
-    expect(workflow).not.toContain('ghcr.io')
-    expect(workflow).not.toContain('cosign')
-    expect(workflow).not.toContain('.env.app.local')
-    expect(workflow).not.toContain('container-tls')
   })
 })

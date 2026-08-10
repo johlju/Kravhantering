@@ -101,8 +101,13 @@ podman ps --all --format '{{.Names}}\t{{.Status}}\t{{.Image}}' \
 systemctl --user disable --now kravhantering-app-node.target
 bin/kravhantering-quadlet.sh remove --topology "$TOPOLOGY"
 systemctl --user daemon-reload
-NETWORK="$(bin/kravhantering-quadlet.sh print-network --topology "$TOPOLOGY")"
-podman network exists "$NETWORK" && podman network rm "$NETWORK"
+for purpose in edge egress; do
+  NETWORK="$(
+    bin/kravhantering-quadlet.sh print-network \
+      --topology "$TOPOLOGY" --purpose "$purpose"
+  )"
+  podman network exists "$NETWORK" && podman network rm "$NETWORK"
+done
 
 exit
 ```

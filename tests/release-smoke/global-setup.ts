@@ -2,24 +2,8 @@ import type { FullConfig } from '@playwright/test'
 import {
   getPlaywrightBaseUrl,
   loginAndSaveStorageState,
-  type RoleSpec,
 } from '@/tests/support/playwright-auth'
-
-export const RELEASE_SMOKE_USER: RoleSpec = {
-  role: 'release-smoke-user',
-  username: 'release-smoke-user',
-  password: 'release-smoke-user-not-for-production',
-  filePath: 'test-results/release-smoke/auth/release-smoke-user.json',
-}
-
-export const RELEASE_SMOKE_ADMIN: RoleSpec = {
-  role: 'release-smoke-admin',
-  username: 'release-smoke-admin',
-  password: 'release-smoke-admin-not-for-production',
-  filePath: 'test-results/release-smoke/auth/release-smoke-admin.json',
-}
-
-const RELEASE_SMOKE_ROLES = [RELEASE_SMOKE_USER, RELEASE_SMOKE_ADMIN]
+import { RELEASE_SMOKE_ROLES } from './auth-roles'
 
 export default async function globalSetup(config: FullConfig): Promise<void> {
   if (process.env.PLAYWRIGHT_SKIP_AUTH_SETUP) {
@@ -40,7 +24,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     throw new Error(
-      `Failed to obtain release-smoke storageState via Keycloak. Make sure the container stack is running at ${baseUrl} and NODE_EXTRA_CA_CERTS points at tmp/container-tls/ca.crt. Original error: ${message}`,
+      `Failed to obtain release-smoke storageState via Keycloak. Make sure the production-smoke Quadlet target is running at ${baseUrl} and NODE_EXTRA_CA_CERTS points at tmp/container-tls/ca.crt. Original error: ${message}`,
     )
   }
 }

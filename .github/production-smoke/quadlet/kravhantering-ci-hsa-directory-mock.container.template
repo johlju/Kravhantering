@@ -1,0 +1,19 @@
+[Unit]
+Description=Kravhantering CI-only HSA directory mock
+Requires=kravhantering-ci-hsa-mtls-cert-generator.service
+After=kravhantering-ci-hsa-mtls-cert-generator.service
+Before=kravhantering-ci-hsa-person-lookup-adapter.service
+
+[Container]
+ContainerName=kravhantering-ci-hsa-directory-mock
+Image=@@HSA_DIRECTORY_MOCK_IMAGE_REF@@
+Environment=PORT=8443
+Network=kravhantering-single-node-egress.network
+PodmanArgs=--network-alias=hsa-directory-mock
+Volume=kravhantering-ci-hsa-mtls-certs.volume:/run/hsa-mtls:ro
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=120

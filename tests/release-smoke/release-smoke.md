@@ -2,23 +2,23 @@
 
 > Test flow documentation for [`release-smoke.spec.ts`](release-smoke.spec.ts)
 
-This suite is the narrow Playwright proof for the container stack. It runs
-against `https://kravhantering.test` after the Podman Compose stack is already
-started, signs in through Keycloak via nginx, and verifies the release-critical
-path, including nginx-served API documentation, without duplicating the full
-integration suite.
+This suite is the narrow Playwright proof for the installed production archive.
+It runs against `https://kravhantering.test` after the real rootless Quadlet
+topology and its CI-only HSA overlay are started, signs in through Keycloak via
+nginx, and verifies the release-critical path, including nginx-served API
+documentation, without duplicating the full integration suite.
 
 ## Data Model
 
 <!-- markdownlint-disable MD013 -->
 | Property | Source | Purpose |
 | --- | --- | --- |
-| `storageState` | `tests/release-smoke/global-setup.ts` | Reuses the `release-smoke-user` and `release-smoke-admin` browser sessions. |
+| `storageState` | `tests/release-smoke/global-setup.ts` | Global setup generates the `rita.reviewer`, `olle.areaowner`, and `ada.admin` browser sessions under `test-results/release-smoke/auth/`. |
 | `RELEASE_SMOKE_RUN_ID` | Environment | Optional stable prefix for created smoke requirements. |
 | `build.json` | `/build.json` | Public build metadata embedded in the app image. |
 | API docs | `public/api-docs/` | Static Swagger UI mounted directly into nginx. |
 | HSA fixture | `containers/hsa-directory-mock/fixtures/hsa-personer.json` | Provides deterministic person data through Kong and the adapter. |
-| `AUTHZ` requirement area | `typeorm/seed.mjs` | Gives the no-role smoke user a deterministic kravområdesmedförfattare assignment for the write proof. |
+| `AUTHZ` requirement area | `typeorm/seed.mjs` | Gives `olle.areaowner` a deterministic owner assignment for the write proof. |
 <!-- markdownlint-enable MD013 -->
 
 Example build metadata shape:
@@ -39,19 +39,21 @@ Example build metadata shape:
 flowchart TD
     A[Release smoke config] --> B[Global setup]
     B --> C[Login via nginx /auth]
-    C --> D[Store release-smoke-user storageState]
-    D --> E[Store release-smoke-admin storageState]
-    E --> F[GET /api/auth/me]
-    F --> G[Open /sv/requirements]
-    G --> H[Verify seeded SQL Server data]
-    H --> I[Verify Next static assets]
-    I --> J[Attach screenshot]
-    J --> K[GET /build.json]
-    K --> L[Attach build metadata]
-    L --> M[POST /api/requirements]
-    M --> N[GET /api/requirements/:id]
-    N --> O[Verify nginx API docs headers, assets, rendering and 404]
-    O --> P[Admin verifies HSA person through Kong and adapter]
+    C --> D[Store rita.reviewer storageState]
+    D --> E[Store olle.areaowner storageState]
+    E --> F[Store ada.admin storageState]
+    F --> G[GET /api/auth/me]
+    G --> H[Open /sv/requirements]
+    H --> I[Verify seeded SQL Server data]
+    I --> J[Verify Next static assets]
+    J --> K[Attach screenshot]
+    K --> L[GET /build.json]
+    L --> M[Attach build metadata]
+    M --> N[POST /api/requirements as olle.areaowner]
+    N --> O[GET /api/requirements/:id]
+    O --> P[Verify nginx API docs headers, assets, rendering and 404]
+    P --> Q[Admin verifies HSA person through Kong and adapter]
+    Q --> R[Run 5 CSV exports and 3 PDF reports concurrently]
 ```
 
 ## Test Setup
@@ -59,15 +61,13 @@ flowchart TD
 - `playwright.release-smoke.config.ts` points at
   `https://kravhantering.test`, writes output to `test-results/release-smoke`,
   and does not start a web server.
-- The runner must trust `tmp/container-tls/ca.crt` for both Node and Chromium
-  so the suite uses regular HTTPS verification. In the devcontainer,
-  `npm run container:release-smoke:up` runs
-  `.devcontainer/trust-container-ca.sh` after generating the CA.
-- `global-setup.ts` signs in as `release-smoke-user` and
-  `release-smoke-admin` with the committed non-production passwords from the
-  container Keycloak realm.
-- `container:release-smoke:up` starts Kong, the HSA person lookup adapter and
-  the HSA directory mock for the release-smoke stack. The app runtime receives
+- The runner trusts `tmp/container-tls/ca.crt` for both Node and Chromium so
+  the suite uses regular HTTPS verification.
+- `global-setup.ts` signs in as `rita.reviewer`, `olle.areaowner`, and
+  `ada.admin` with the committed non-production passwords merged into the
+  production realm.
+- The CI-only Quadlet overlay starts Kong, the HSA person lookup adapter and
+  the HSA directory mock. The app runtime receives
   `HSA_PERSON_LOOKUP_URL=http://kong:8000/hsa/person-records/lookup`.
 - The config adds same-origin and `X-Requested-With` headers so API mutations
   exercise the same CSRF path as the browser UI.
@@ -84,7 +84,7 @@ CSRF-protected requirement mutation.
 ### Browser Flow
 
 1. Request `/api/auth/me` with the stored session and verify
-   `release-smoke-user` is authenticated with the expected HSA-id.
+   `rita.reviewer` is authenticated with the expected HSA-id.
 2. Open `/sv/requirements` and wait for the app to fetch
    `/api/requirements`.
 3. Assert at least one seeded requirement is returned and visible in the page.
@@ -92,8 +92,8 @@ CSRF-protected requirement mutation.
 5. Attach a full-page screenshot as release smoke evidence.
 6. Request `/build.json`, validate all metadata fields including the expected
    database schema version, and attach the JSON.
-7. Request `/api/requirement-areas` and choose the seeded `AUTHZ` requirement
-   area assigned to the smoke user.
+7. Use the `olle.areaowner` session to request `/api/requirement-areas` and
+   choose the seeded `AUTHZ` requirement area assigned to that user.
 8. POST `/api/requirements` with a description beginning
    `release-smoke-<run-id>`.
 9. GET the created requirement by id and verify it matches the POST result.
@@ -116,18 +116,18 @@ sequenceDiagram
     KC-->>PW: Callback to /api/auth/callback
     PW->>APP: Store authenticated storageState
     PW->>APP: GET /api/auth/me
-    Note over PW,APP: ✓ release-smoke-user is authenticated
+    Note over PW,APP: ✓ rita.reviewer is authenticated
     PW->>APP: GET /sv/requirements
     APP->>DB: Read seeded requirements
     DB-->>APP: Requirement rows
     Note over PW,APP: ✓ seeded data and static assets are visible
     PW->>APP: GET /build.json
     Note over PW,APP: ✓ build metadata is valid and attached
-    PW->>APP: GET /api/requirement-areas
+    PW->>APP: GET /api/requirement-areas as olle.areaowner
     APP->>DB: Read requirement areas
     DB-->>APP: Requirement area rows
-    Note over PW,APP: Select AUTHZ requirement area assigned to smoke user
-    PW->>APP: POST /api/requirements release-smoke-<run-id>
+    Note over PW,APP: Select AUTHZ requirement area assigned to olle.areaowner
+    PW->>APP: POST /api/requirements as olle.areaowner
     APP->>DB: Persist release-smoke-<run-id> requirement
     PW->>APP: GET /api/requirements/:id
     APP->>DB: Read created requirement
@@ -185,7 +185,7 @@ kravområdesägare requires the `Admin` role.
 
 ### HSA Flow
 
-1. Create an API request context with the stored `release-smoke-admin`
+1. Create an API request context with the stored `ada.admin`
    `storageState`.
 2. POST `/api/requirement-responsibility-people/verify` with
    `mode=refresh`, `purpose=requirement_area_owner` and
@@ -214,3 +214,11 @@ sequenceDiagram
     APP->>DB: Upsert Kravansvarsperson
     APP-->>PW: Verified person payload
 ```
+
+## runs configured maximum generated-output concurrency
+
+This test starts five authenticated action-log CSV exports and three
+authenticated requirement-list PDF reports together, matching the configured
+per-node concurrency maxima. Every response must complete with its expected
+content type. The subsequent boundary harness confirms that the application
+did not restart or record a cgroup OOM kill during this normal load.

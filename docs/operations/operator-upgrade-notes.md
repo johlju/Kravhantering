@@ -181,21 +181,12 @@ must integrate with an approved person catalog, and can be an existing
 integration platform or a production-approved Kong route backed by
 `hsa-person-lookup-adapter`.
 
-The release adds a test-only `single-node-demo` topology for release smoke,
-disposable demos and other non-production environments. It layers Kong,
-`hsa-person-lookup-adapter`, the HSA directory mock and the demo HSA
-certificate generator on top of `single-node`. The mock, demo certificate
-generator, test support lock file, mock image, SBOM and attestation are relevant
-only for operators who mirror or validate that demo/test topology.
-
-Only use `single-node-demo` for release smoke, disposable demos or other
-test-only environments. Before starting that topology, set `KONG_IMAGE_REF` and
-`HSA_DIRECTORY_MOCK_IMAGE_REF` from `container-test-support.lock.json` or from
-your internal mirrored tags, and set the demo app runtime to
-`HSA_PERSON_LOOKUP_URL=http://kong:8000/hsa/person-records/lookup`. For
-disconnected demo/test hosts, export and load images with
-`bin/kravhantering-images.sh --topology single-node-demo --test-lock-file
-container-test-support.lock.json`.
+Release smoke now installs the production archive's supported `single-node`
+Quadlet topology on Ubuntu 24.04. Kong, `hsa-person-lookup-adapter`, the HSA
+directory mock, and the demo certificate generator run in a CI-only Quadlet
+overlay. That overlay is not included in the production archive and is not a
+supported RHEL production topology. Local development and integration Compose
+flows remain separate developer tooling.
 
 ### Before upgrading
 

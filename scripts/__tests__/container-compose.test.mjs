@@ -1,12 +1,15 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildComposeValues,
   DEFAULT_INTERNAL_NETWORK_NAME,
   DEFAULT_TEMPLATE_PATH,
   generateCompose,
   imageReference,
+  main,
+  parseArgs,
   renderTemplate,
 } from '../containers/generate-compose.mjs'
 
@@ -74,9 +77,9 @@ function stackLock() {
   }
 }
 
-describe('container Compose generation', () => {
-  it('uses local tags for project images in PR mode and manifest digests for vendors', () => {
-    const values = buildComposeValues(stackLock(), { mode: 'pr' })
+describe('local test Compose generation', () => {
+  it('uses local tags for project images and manifest digests for vendors', () => {
+    const values = buildComposeValues(stackLock())
 
     expect(values.appRuntimeImage).toBe(
       'localhost/kravhantering/app-runtime:pr-12-99-deadbeef',
@@ -99,31 +102,13 @@ describe('container Compose generation', () => {
     expect(values.networkName).toBe(DEFAULT_INTERNAL_NETWORK_NAME)
   })
 
-  it('uses manifest digest references for project images in release mode', () => {
-    const values = buildComposeValues(stackLock(), {
-      demoSeedImage: 'ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo',
-      mode: 'release',
-    })
-
-    expect(values.appRuntimeImage).toBe(
-      'localhost/kravhantering/app-runtime@sha256:app-manifest',
-    )
-    expect(values.dbJobImage).toBe(
-      'localhost/kravhantering/db-job@sha256:dbjob-manifest',
-    )
-    expect(values.demoSeedImage).toBe(
-      'ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo',
-    )
-  })
-
   it('renders the source-controlled template without leaking env values', () => {
     const template = fs.readFileSync(
       path.join(process.cwd(), DEFAULT_TEMPLATE_PATH),
       'utf8',
     )
     const compose = generateCompose(template, stackLock(), {
-      mode: 'release',
-      demoSeedImage: 'ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo',
+      mode: 'test',
       projectName: 'kravhantering-test-run',
       sqlServerHostPort: '127.0.0.1:15433',
       sqlServerVolumeName: 'kravhantering-test-sqlserver-data',
@@ -132,13 +117,10 @@ describe('container Compose generation', () => {
 
     expect(compose).toContain('name: "kravhantering-test-run"')
     expect(compose).toContain(
-      'image: "localhost/kravhantering/app-runtime@sha256:app-manifest"',
+      'image: "localhost/kravhantering/app-runtime:pr-12-99-deadbeef"',
     )
     expect(compose).toContain(
-      'image: "localhost/kravhantering/db-job@sha256:dbjob-manifest"',
-    )
-    expect(compose).toContain(
-      'image: "ghcr.io/viscalyx/kravhantering-demo-seed@sha256:demo"',
+      'image: "localhost/kravhantering/db-job:pr-12-99-deadbeef"',
     )
     expect(compose).toContain(
       'image: "docker.io/library/nginx@sha256:nginx-manifest"',
@@ -169,17 +151,117 @@ describe('container Compose generation', () => {
       'utf8',
     )
     const compose = generateCompose(template, stackLock(), {
-      mode: 'release',
+      mode: 'test',
       networkName: 'kravhantering-custom-internal',
     })
 
     expect(compose).toContain('name: "kravhantering-custom-internal"')
   })
 
-  it('rejects unknown modes and placeholders', () => {
-    expect(() => imageReference(stackLock().services[0], 'unknown')).toThrow(
-      'Unsupported Compose generation mode',
+  it('rejects unknown modes, options and placeholders', () => {
+    expect(() =>
+      generateCompose('{{appRuntimeImage}}', stackLock(), { mode: 'unknown' }),
+    ).toThrow('Unsupported Compose generation mode')
+    expect(() => parseArgs(['--demo-seed-image', 'ignored'])).toThrow(
+      'Unsupported Compose option: --demo-seed-image',
     )
+    expect(() => parseArgs(['mode', 'test'])).toThrow('Unexpected argument')
+    expect(() => parseArgs(['--mode'])).toThrow('Missing value for --mode')
+    expect(() =>
+      imageReference({ image: 'registry.example/other', name: 'other' }),
+    ).toThrow('Unsupported service in Compose generation')
     expect(() => renderTemplate('{{missing}}', {})).toThrow('has no value')
+    expect(() => renderTemplate('{{value}}', { value: '{{nested}}' })).toThrow(
+      'Template has unresolved placeholders',
+    )
+  })
+
+  it('writes a generated Compose file through the CLI seam', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'compose-cli-'))
+    const lockFile = path.join(root, 'lock.json')
+    const templateFile = path.join(root, 'template.yml')
+    const outputFile = path.join(root, 'generated', 'compose.yml')
+    const consoleObj = { error: vi.fn(), log: vi.fn() }
+    try {
+      fs.writeFileSync(lockFile, JSON.stringify(stackLock()))
+      fs.writeFileSync(
+        templateFile,
+        [
+          '{{appRuntimeImage}}',
+          '{{networkName}}',
+          '{{projectName}}',
+          '{{sqlServerHostPort}}',
+          '{{sqlServerVolumeName}}',
+          '{{tlsDir}}',
+        ].join('\n'),
+      )
+
+      await expect(
+        main(
+          [
+            '--lock-file',
+            lockFile,
+            '--mode',
+            'test',
+            '--network-name',
+            'custom-network',
+            '--output',
+            outputFile,
+            '--project-name',
+            'custom-project',
+            '--sqlserver-host-port',
+            '127.0.0.1:15433',
+            '--sqlserver-volume-name',
+            'custom-volume',
+            '--template',
+            templateFile,
+            '--tls-dir',
+            './custom-tls',
+          ],
+          { consoleObj, cwd: root },
+        ),
+      ).resolves.toBe(0)
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(
+        [
+          'localhost/kravhantering/app-runtime:pr-12-99-deadbeef',
+          'custom-network',
+          'custom-project',
+          '127.0.0.1:15433',
+          'custom-volume',
+          './custom-tls',
+        ].join('\n'),
+      )
+      expect(consoleObj.log).toHaveBeenCalledWith('Wrote generated/compose.yml')
+      expect(consoleObj.error).not.toHaveBeenCalled()
+    } finally {
+      fs.rmSync(root, { force: true, recursive: true })
+    }
+  })
+
+  it('reports CLI validation errors with usage', async () => {
+    const consoleObj = { error: vi.fn(), log: vi.fn() }
+
+    await expect(
+      main(['--demo-seed-image', 'ignored'], { consoleObj }),
+    ).resolves.toBe(1)
+    expect(consoleObj.error).toHaveBeenCalledWith(
+      expect.stringContaining('Unsupported Compose option'),
+    )
+    expect(consoleObj.error).toHaveBeenCalledWith(
+      expect.stringContaining('Usage:'),
+    )
+
+    const readFailureConsole = { error: vi.fn(), log: vi.fn() }
+    await expect(
+      main([], {
+        consoleObj: readFailureConsole,
+        fsImpl: {
+          readFileSync: () => {
+            throw 'lock read failed'
+          },
+        },
+      }),
+    ).resolves.toBe(1)
+    expect(readFailureConsole.error).toHaveBeenCalledWith('lock read failed')
   })
 })

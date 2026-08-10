@@ -8,15 +8,76 @@ const SCRIPT_PATH = path.resolve(
   process.cwd(),
   'containers/production/bin/kravhantering-quadlet.sh',
 )
+const PODMAN_USER_GENERATOR =
+  '/usr/lib/systemd/user-generators/podman-user-generator'
+const PODMAN_GENERATOR_VERSION = fs.existsSync(PODMAN_USER_GENERATOR)
+  ? (childProcess.spawnSync(PODMAN_USER_GENERATOR, ['--version'], {
+      encoding: 'utf8',
+    }).stdout ?? '')
+  : ''
 const temporaryDirectories = []
+
+function writePodmanProbe(filePath, runtime = 'crun') {
+  fs.writeFileSync(
+    filePath,
+    [
+      '#!/usr/bin/env bash',
+      'if [[ "$1" == info ]]; then',
+      `  printf 'true v2 ${runtime}\\n'`,
+      'elif [[ "$1 $2" == "network inspect" ]]; then',
+      "  printf 'true\\n'",
+      'elif [[ "$1" == run ]]; then',
+      '  case " $* " in',
+      "    *kravhantering-single-node_identity*) printf '10.91.1.1\\n' ;;",
+      "    *) printf '10.91.0.1\\n' ;;",
+      '  esac',
+      'fi',
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  )
+}
 
 function createFixture(releaseEnv) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kh-quadlet-'))
   temporaryDirectories.push(root)
+  const controllersPath = path.join(root, 'cgroup.controllers')
+  const generatorPath = path.join(root, 'podman-user-generator')
+  const journalConfigDir = path.join(root, 'journald.conf.d')
+  const meminfoPath = path.join(root, 'meminfo')
+  const podmanPath = path.join(root, 'podman')
+  const systemctlPath = path.join(root, 'systemctl')
   const releaseEnvPath = path.join(root, 'release.env')
   const outputDir = path.join(root, 'rendered')
+  fs.mkdirSync(journalConfigDir)
+  fs.writeFileSync(controllersPath, 'cpu memory pids\n')
+  fs.writeFileSync(meminfoPath, 'MemTotal:       33554432 kB\n')
+  fs.writeFileSync(
+    path.join(journalConfigDir, 'limits.conf'),
+    '[Journal]\nSystemMaxUse=1G\nSystemKeepFree=1G\n',
+  )
+  fs.writeFileSync(generatorPath, '#!/usr/bin/env bash\nexit 0\n', {
+    mode: 0o755,
+  })
+  writePodmanProbe(podmanPath)
+  fs.writeFileSync(systemctlPath, '#!/usr/bin/env bash\nexit 0\n', {
+    mode: 0o755,
+  })
   fs.writeFileSync(releaseEnvPath, releaseEnv)
-  return { outputDir, releaseEnvPath, root }
+  return {
+    outputDir,
+    podmanPath,
+    preflightEnv: {
+      KRAVHANTERING_CGROUP_CONTROLLERS_FILE: controllersPath,
+      KRAVHANTERING_JOURNAL_CONFIG_DIR: journalConfigDir,
+      KRAVHANTERING_MEMINFO_FILE: meminfoPath,
+      KRAVHANTERING_PODMAN_BIN: podmanPath,
+      KRAVHANTERING_QUADLET_GENERATOR: generatorPath,
+      KRAVHANTERING_SYSTEMCTL_BIN: systemctlPath,
+    },
+    releaseEnvPath,
+    root,
+  }
 }
 
 function releaseEnv(overrides = {}) {
@@ -26,6 +87,7 @@ function releaseEnv(overrides = {}) {
     KEYCLOAK_IMAGE_REF: 'registry.example/keycloak:26.7',
     NGINX_HTTP_BIND: '127.0.0.1:9080',
     NGINX_HTTPS_BIND: '8443:443',
+    NGINX_IDENTITY_RESOLVER: '10.91.1.1',
     NGINX_IMAGE_REF: 'registry.example/nginx:1.31',
     NGINX_RESOLVER: '10.91.0.1',
     PUBLIC_HOSTNAME: 'kravhantering.example.internal',
@@ -43,6 +105,7 @@ function runHelper(args, fixture, envOverrides = {}) {
     env: {
       ...process.env,
       KRAVHANTERING_RELEASE_ENV_FILE: fixture.releaseEnvPath,
+      ...fixture.preflightEnv,
       ...envOverrides,
     },
   })
@@ -76,20 +139,71 @@ describe('kravhantering Quadlet helper', () => {
     const units = render('app-node-tls', fixture)
 
     expect(units.map(unit => unit.file)).toEqual([
-      'kravhantering-app-node.network',
+      'kravhantering-app-node-edge.network',
+      'kravhantering-app-node-egress.network',
       'kravhantering-app-node.target',
       'kravhantering-app-runtime.container',
       'kravhantering-nginx.container',
     ])
     expect(
-      units.find(unit => unit.file.endsWith('.network'))?.content,
-    ).toContain('NetworkName=kravhantering-app-node_kravhantering-internal')
+      units.find(unit => unit.file === 'kravhantering-app-node-edge.network')
+        ?.content,
+    ).toContain('Internal=true')
+    expect(
+      units.find(unit => unit.file === 'kravhantering-app-node-egress.network')
+        ?.content,
+    ).not.toContain('Internal=true')
+    const appRuntime = units.find(
+      unit => unit.file === 'kravhantering-app-runtime.container',
+    )?.content
+    expect(appRuntime).toContain('DropCapability=all')
+    expect(appRuntime).toContain('NoNewPrivileges=true')
+    expect(appRuntime).toContain('ReadOnly=true')
+    expect(appRuntime).toContain('ReadOnlyTmpfs=false')
+    expect(appRuntime).toContain('PidsLimit=512')
+    expect(appRuntime).toContain('LogDriver=journald')
+    expect(appRuntime).toContain(
+      'Tmpfs=/run/kravhantering/export:rw,size=1024M,mode=0700,U,nosuid,nodev,noexec',
+    )
+    expect(appRuntime).toContain(
+      'Tmpfs=/tmp:rw,size=64M,mode=1777,nosuid,nodev,noexec',
+    )
+    expect(appRuntime).toContain(
+      'Environment=KRAVHANTERING_EXPORT_TEMP_DIR=/run/kravhantering/export',
+    )
+    expect(appRuntime).toContain('Network=kravhantering-app-node-edge.network')
+    expect(appRuntime).toContain(
+      'Network=kravhantering-app-node-egress.network',
+    )
+    expect(appRuntime).toContain('MemoryMax=4096M')
+    expect(appRuntime).toContain('CPUQuota=300%')
+    expect(appRuntime).toContain('TasksMax=544')
     const nginx = units.find(
       unit => unit.file === 'kravhantering-nginx.container',
     )?.content
     expect(nginx).toContain('Image=registry.example/nginx:1.31')
-    expect(nginx).toContain('PublishPort=8443:443')
+    expect(nginx).toContain('PublishPort=8443:8443')
     expect(nginx).toContain('Environment=NGINX_RESOLVER=10.91.0.1')
+    expect(nginx).toContain('User=101:101')
+    expect(nginx).toContain('DropCapability=all')
+    expect(nginx).toContain('NoNewPrivileges=true')
+    expect(nginx).toContain('ReadOnly=true')
+    expect(nginx).toContain('ReadOnlyTmpfs=false')
+    expect(nginx).toContain('PidsLimit=128')
+    expect(nginx).toContain('LogDriver=journald')
+    expect(nginx).toContain('PodmanArgs=--group-add=keep-groups')
+    expect(nginx).toContain(
+      'Tmpfs=/etc/nginx/conf.d:rw,size=1M,mode=0755,U,notmpcopyup,nosuid,nodev,noexec',
+    )
+    expect(nginx).toContain(
+      'Tmpfs=/var/cache/nginx:rw,size=64M,mode=0750,U,notmpcopyup,nosuid,nodev,noexec',
+    )
+    expect(nginx).toContain(
+      'Tmpfs=/run:rw,size=1M,mode=0755,U,notmpcopyup,nosuid,nodev,noexec',
+    )
+    expect(nginx).toContain('MemoryMax=512M')
+    expect(nginx).toContain('CPUQuota=100%')
+    expect(nginx).toContain('TasksMax=160')
     expect(units.map(unit => unit.content).join('\n')).not.toMatch(
       /(?:@@[A-Z_]+@@|\$\{[^}]+\})/u,
     )
@@ -108,9 +222,10 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('PublishPort=127.0.0.1:9080:8080')
     expect(nginx).toContain('app-node-http.conf.template')
     expect(nginx).not.toContain('fullchain.pem')
+    expect(nginx).not.toContain('keep-groups')
   })
 
-  it('renders single-node service names, persistent volumes and hostname alias', () => {
+  it('renders single-node services, volumes and the public issuer host route', () => {
     const fixture = createFixture(releaseEnv())
     const units = render('single-node', fixture)
     const allContent = units.map(unit => unit.content).join('\n')
@@ -120,23 +235,89 @@ describe('kravhantering Quadlet helper', () => {
       'kravhantering-keycloak-data.volume',
       'kravhantering-keycloak.container',
       'kravhantering-nginx.container',
-      'kravhantering-single-node.network',
+      'kravhantering-single-node-database.network',
+      'kravhantering-single-node-edge.network',
+      'kravhantering-single-node-egress.network',
+      'kravhantering-single-node-identity.network',
       'kravhantering-single-node.target',
       'kravhantering-sqlserver-data.volume',
       'kravhantering-sqlserver.container',
     ])
-    expect(allContent).toContain(
-      'NetworkName=kravhantering-single-node_kravhantering-internal',
-    )
+    expect(allContent).toContain('NetworkName=kravhantering-single-node_edge')
     expect(allContent).toContain('VolumeName=kravhantering-sqlserver-data')
     expect(allContent).toContain('VolumeName=kravhantering-keycloak-data')
-    expect(allContent).toContain('NetworkAlias=kravhantering.example.internal')
+    expect(
+      units.find(unit => unit.file === 'kravhantering-nginx.container')
+        ?.content,
+    ).toContain('PodmanArgs=--group-add=keep-groups')
+    expect(
+      units.find(unit => unit.file === 'kravhantering-sqlserver.container')
+        ?.content,
+    ).toContain('Volume=kravhantering-sqlserver-data.volume:/var/opt/mssql:U')
+    const keycloak = units.find(
+      unit => unit.file === 'kravhantering-keycloak.container',
+    )?.content
+    expect(keycloak).toContain(
+      'Volume=kravhantering-keycloak-data.volume:/opt/keycloak/data:U',
+    )
+    expect(keycloak).toContain(
+      'Tmpfs=/tmp:rw,size=512M,mode=1777,nosuid,nodev,noexec',
+    )
+    expect(allContent).toContain(
+      'PodmanArgs=--add-host=kravhantering.example.internal:host-gateway',
+    )
+    expect(allContent).toContain('Environment=NGINX_RESOLVER=10.91.0.1')
+    expect(allContent).toContain(
+      'Environment=NGINX_IDENTITY_RESOLVER=10.91.1.1',
+    )
     expect(allContent).toContain(
       'Volume=/etc/kravhantering/tls/ca.crt:/run/kravhantering/tls/ca.crt:ro',
     )
     expect(allContent).not.toMatch(
       /^(?:After|Requires)=.*\.(?:container|network|volume)(?:\s|$)/mu,
     )
+  })
+
+  it.runIf(
+    fs.existsSync(PODMAN_USER_GENERATOR) &&
+      PODMAN_GENERATOR_VERSION.includes('4.9.3'),
+  )('uses the Podman 4.9-compatible public issuer host mapping', () => {
+    const fixture = createFixture(releaseEnv())
+    render('single-node', fixture)
+    const generatorEnv = {
+      ...process.env,
+      QUADLET_UNIT_DIRS: fixture.outputDir,
+    }
+    const fallback = childProcess.spawnSync(
+      PODMAN_USER_GENERATOR,
+      ['--user', '--dryrun'],
+      { encoding: 'utf8', env: generatorEnv },
+    )
+
+    const controlDir = path.join(fixture.root, 'unsupported-add-host')
+    fs.cpSync(fixture.outputDir, controlDir, { recursive: true })
+    const appUnitPath = path.join(
+      controlDir,
+      'kravhantering-app-runtime.container',
+    )
+    fs.writeFileSync(
+      appUnitPath,
+      fs
+        .readFileSync(appUnitPath, 'utf8')
+        .replace('PodmanArgs=--add-host=', 'AddHost='),
+    )
+    const unsupported = childProcess.spawnSync(
+      PODMAN_USER_GENERATOR,
+      ['--user', '--dryrun'],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, QUADLET_UNIT_DIRS: controlDir },
+      },
+    )
+
+    expect(fallback.status, fallback.stderr).toBe(0)
+    expect(unsupported.status).not.toBe(0)
+    expect(unsupported.stderr).toContain("unsupported key 'AddHost'")
   })
 
   it('fails before writing units when a required release value is missing', () => {
@@ -159,16 +340,131 @@ describe('kravhantering Quadlet helper', () => {
     expect(fs.existsSync(fixture.outputDir)).toBe(false)
   })
 
-  it('prints the stable Podman network name for explicit db-job operations', () => {
+  it('prints purpose-specific Podman network names for explicit jobs', () => {
     const fixture = createFixture(releaseEnv())
     const result = runHelper(
-      ['print-network', '--topology', 'single-node'],
+      ['print-network', '--topology', 'single-node', '--purpose', 'database'],
       fixture,
     )
 
     expect(result.status).toBe(0)
-    expect(result.stdout).toBe(
-      'kravhantering-single-node_kravhantering-internal\n',
+    expect(result.stdout).toBe('kravhantering-single-node_database\n')
+
+    const ambiguous = runHelper(
+      ['print-network', '--topology', 'single-node'],
+      fixture,
+    )
+    expect(ambiguous.status).not.toBe(0)
+    expect(ambiguous.stderr).toContain(
+      '--purpose is required with print-network',
+    )
+  })
+
+  it('discovers the resolver from each topology network', () => {
+    const fixture = createFixture(releaseEnv())
+    const edge = runHelper(
+      ['print-resolver', '--topology', 'single-node', '--purpose', 'edge'],
+      fixture,
+    )
+    const identity = runHelper(
+      ['print-resolver', '--topology', 'single-node', '--purpose', 'identity'],
+      fixture,
+    )
+
+    expect(edge.status).toBe(0)
+    expect(edge.stdout).toBe('10.91.0.1\n')
+    expect(identity.status).toBe(0)
+    expect(identity.stdout).toBe('10.91.1.1\n')
+  })
+
+  it('renders bounded resource and disk-backed export overrides', () => {
+    const exportPath = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'kh-export-private-'),
+    )
+    fs.chmodSync(exportPath, 0o700)
+    temporaryDirectories.push(exportPath)
+    const fixture = createFixture(
+      releaseEnv({
+        APP_RUNTIME_CPU_QUOTA_PERCENT: '250',
+        APP_RUNTIME_EXPORT_HOST_PATH: exportPath,
+        APP_RUNTIME_EXPORT_STORAGE: 'bind',
+        APP_RUNTIME_MEMORY_LIMIT_MIB: '6144',
+        APP_RUNTIME_PIDS_LIMIT: '640',
+        NGINX_CACHE_TMPFS_MIB: '96',
+        NGINX_CPU_QUOTA_PERCENT: '75',
+        NGINX_MEMORY_LIMIT_MIB: '768',
+        NGINX_PIDS_LIMIT: '192',
+      }),
+    )
+    const units = render('app-node-tls', fixture)
+    const appRuntime = units.find(
+      unit => unit.file === 'kravhantering-app-runtime.container',
+    )?.content
+    const nginx = units.find(
+      unit => unit.file === 'kravhantering-nginx.container',
+    )?.content
+
+    expect(appRuntime).toContain(
+      `Volume=${exportPath}:/run/kravhantering/export:rw,Z,nosuid,nodev,noexec`,
+    )
+    expect(appRuntime).not.toContain('Tmpfs=/run/kravhantering/export:')
+    expect(appRuntime).toContain('MemoryMax=6144M')
+    expect(appRuntime).toContain('CPUQuota=250%')
+    expect(appRuntime).toContain('PidsLimit=640')
+    expect(appRuntime).toContain('TasksMax=672')
+    expect(nginx).toContain('MemoryMax=768M')
+    expect(nginx).toContain('CPUQuota=75%')
+    expect(nginx).toContain('PidsLimit=192')
+    expect(nginx).toContain('TasksMax=224')
+    expect(nginx).toContain(
+      'Tmpfs=/var/cache/nginx:rw,size=96M,mode=0750,U,notmpcopyup,nosuid,nodev,noexec',
+    )
+  })
+
+  it.each([
+    ['APP_RUNTIME_MEMORY_LIMIT_MIB', '4095'],
+    ['APP_RUNTIME_EXPORT_STORAGE', 'shared'],
+    ['APP_RUNTIME_EXPORT_TMPFS_MIB', '512'],
+    ['APP_RUNTIME_PIDS_LIMIT', '64'],
+    ['NGINX_MEMORY_LIMIT_MIB', '2048'],
+    ['NGINX_CACHE_TMPFS_MIB', '8'],
+    ['NGINX_PIDS_LIMIT', '0'],
+  ])('rejects invalid bounded override %s=%s', (key, value) => {
+    const fixture = createFixture(releaseEnv({ [key]: value }))
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'app-node-tls',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(`invalid ${key}`)
+    expect(fs.existsSync(fixture.outputDir)).toBe(false)
+  })
+
+  it('rejects combined CPU quotas above the topology capacity', () => {
+    const fixture = createFixture(
+      releaseEnv({ APP_RUNTIME_CPU_QUOTA_PERCENT: '400' }),
+    )
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'app-node-tls',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'CPU quota combination: exceeds topology CPU capacity',
     )
   })
 
@@ -205,7 +501,8 @@ describe('kravhantering Quadlet helper', () => {
 
     expect(result.status).toBe(0)
     expect(fs.readdirSync(quadletDir).sort()).toEqual([
-      'kravhantering-app-node.network',
+      'kravhantering-app-node-edge.network',
+      'kravhantering-app-node-egress.network',
       'kravhantering-app-runtime.container',
       'kravhantering-nginx.container',
       'operator-owned.container',
@@ -218,6 +515,173 @@ describe('kravhantering Quadlet helper', () => {
       fs.statSync(path.join(quadletDir, 'kravhantering-nginx.container')).mode &
         0o777,
     ).toBe(0o644)
+  })
+
+  it('leaves active units unchanged when host enforcement preflight fails', () => {
+    const fixture = createFixture(releaseEnv())
+    const quadletDir = path.join(fixture.outputDir, 'containers')
+    const systemdDir = path.join(fixture.outputDir, 'systemd')
+    const missingControllers = path.join(fixture.root, 'missing.controllers')
+    fs.writeFileSync(missingControllers, 'cpu pids\n')
+    fs.mkdirSync(quadletDir, { recursive: true })
+    fs.mkdirSync(systemdDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(quadletDir, 'kravhantering-nginx.container'),
+      'active nginx unit\n',
+    )
+
+    const result = runHelper(
+      ['install', '--topology', 'app-node-tls'],
+      fixture,
+      {
+        KRAVHANTERING_CGROUP_CONTROLLERS_FILE: missingControllers,
+        KRAVHANTERING_QUADLET_DIR: quadletDir,
+        KRAVHANTERING_SYSTEMD_USER_DIR: systemdDir,
+      },
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'delegated cgroup controllers are missing: memory',
+    )
+    expect(
+      fs.readFileSync(
+        path.join(quadletDir, 'kravhantering-nginx.container'),
+        'utf8',
+      ),
+    ).toBe('active nginx unit\n')
+  })
+
+  it('rejects host memory that cannot enforce the topology envelope', () => {
+    const fixture = createFixture(releaseEnv())
+    const lowMemory = path.join(fixture.root, 'low-memory')
+    fs.writeFileSync(lowMemory, 'MemTotal:       8388608 kB\n')
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'single-node'],
+      fixture,
+      { KRAVHANTERING_MEMINFO_FILE: lowMemory },
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'single-node memory limits leave less than 8 GiB',
+    )
+  })
+
+  it('requires crun for TLS key group access but not for HTTP', () => {
+    const tlsFixture = createFixture(releaseEnv())
+    writePodmanProbe(tlsFixture.podmanPath, 'runc')
+    const tlsResult = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      tlsFixture,
+    )
+
+    const httpFixture = createFixture(releaseEnv())
+    writePodmanProbe(httpFixture.podmanPath, 'runc')
+    const httpResult = runHelper(
+      ['verify-host', '--topology', 'app-node-http'],
+      httpFixture,
+    )
+
+    expect(tlsResult.status).not.toBe(0)
+    expect(tlsResult.stderr).toContain(
+      'TLS topology requires the crun OCI runtime (reported: runc)',
+    )
+    expect(httpResult.status).toBe(0)
+  })
+
+  it('rejects journald automatic sizing as an explicit retention bound', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.writeFileSync(
+      path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
+      '[Journal]\nSystemMaxUse=auto\n',
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'finite journald retention is not configured',
+    )
+  })
+
+  it('uses the final journald drop-in values when checking retention', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.renameSync(
+      path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
+      path.join(fixture.root, 'journald.conf.d', '10-limits.conf'),
+    )
+    fs.writeFileSync(
+      path.join(fixture.root, 'journald.conf.d', '90-automatic.conf'),
+      '[Journal]\nSystemMaxUse=auto\nSystemKeepFree=auto\n',
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'finite journald retention is not configured',
+    )
+  })
+
+  it('requires system retention bounds for persistent journal storage', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.writeFileSync(
+      path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
+      '[Journal]\nStorage=persistent\nRuntimeMaxUse=1G\n',
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'finite journald retention is not configured',
+    )
+  })
+
+  it('accepts runtime retention bounds for volatile journal storage', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.writeFileSync(
+      path.join(fixture.root, 'journald.conf.d', 'limits.conf'),
+      '[Journal]\nStorage=volatile\nRuntimeKeepFree=1G\n',
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).toBe(0)
+  })
+
+  it('reports Quadlet generator output when rendered units are rejected', () => {
+    const fixture = createFixture(releaseEnv())
+    const generatorPath = path.join(fixture.root, 'podman-user-generator')
+    fs.writeFileSync(
+      generatorPath,
+      '#!/usr/bin/env bash\nprintf "unsupported Quadlet key\\n" >&2\nexit 1\n',
+      { mode: 0o755 },
+    )
+
+    const result = runHelper(
+      ['verify-host', '--topology', 'app-node-tls'],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'Quadlet generator rejected the rendered production units: unsupported Quadlet key',
+    )
   })
 
   it('leaves active units unchanged when replacement staging fails', () => {

@@ -16,6 +16,9 @@ Usage:
   ${SCRIPT_NAME} --topology <app-node|single-node|single-node-demo|all> [options] load --bundle <path>
 
 Options:
+  --topology <selection>   Image transport selection. single-node-demo adds
+                           CI/demo support images; it is not a production
+                           Quadlet topology.
   --lock-file <path>       Release container-stack.lock.json path
   --test-lock-file <path>  Test support container-test-support.lock.json path
                            used by single-node-demo

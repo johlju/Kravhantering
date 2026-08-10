@@ -1,0 +1,21 @@
+[Unit]
+Description=Kravhantering CI-only HSA person lookup adapter
+Requires=kravhantering-ci-hsa-directory-mock.service
+After=kravhantering-ci-hsa-directory-mock.service
+Before=kravhantering-ci-kong.service
+
+[Container]
+ContainerName=kravhantering-ci-hsa-person-lookup-adapter
+Image=@@HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF@@
+Environment=PORT=8080
+Environment=HSA_SOAP_ENDPOINT_URL=https://hsa-directory-mock:8443/svr-hsaws2/hsaws
+Environment=HSA_SOAP_TIMEOUT_MS=5000
+Network=kravhantering-single-node-egress.network
+PodmanArgs=--network-alias=hsa-person-lookup-adapter
+Volume=kravhantering-ci-hsa-mtls-certs.volume:/run/hsa-mtls:ro
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=120

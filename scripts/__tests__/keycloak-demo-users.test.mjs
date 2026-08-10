@@ -1,3 +1,7 @@
+import childProcess from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -293,6 +297,52 @@ describe('keycloak-demo-users', () => {
 
     expect(JSON.parse(files.get('realm.json')).users).toHaveLength(2)
     expect(consoleObj.error).not.toHaveBeenCalled()
+  })
+
+  it('merges through a symlinked deployment CLI path', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'keycloak-demo-cli-'))
+    const current = path.join(root, 'current')
+    const usersFile = path.join(root, 'users.json')
+    const realmFile = path.join(root, 'realm.json')
+    const outputFile = path.join(root, 'merged.json')
+    try {
+      fs.symlinkSync(process.cwd(), current, 'dir')
+      fs.writeFileSync(
+        usersFile,
+        JSON.stringify(
+          buildDemoUsersDocument(devRealm, {
+            generatedAt: '2026-05-24T00:00:00.000Z',
+          }),
+        ),
+      )
+      fs.writeFileSync(
+        realmFile,
+        JSON.stringify({ realm: 'kravhantering-production', users: [] }),
+      )
+
+      const result = childProcess.spawnSync(
+        process.execPath,
+        [
+          path.join(current, 'scripts/keycloak-demo-users.mjs'),
+          'merge-file',
+          '--users',
+          usersFile,
+          '--realm-file',
+          realmFile,
+          '--output',
+          outputFile,
+        ],
+        { encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain(`Merged demo users into ${outputFile}`)
+      expect(
+        JSON.parse(fs.readFileSync(outputFile, 'utf8')).users,
+      ).toHaveLength(2)
+    } finally {
+      fs.rmSync(root, { force: true, recursive: true })
+    }
   })
 
   it('syncs running Keycloak demo users through the CLI', async () => {

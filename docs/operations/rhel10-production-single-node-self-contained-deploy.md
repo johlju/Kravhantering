@@ -13,7 +13,12 @@
 This guide describes how to install and operate Kravhantering on one clean
 Red Hat Enterprise Linux 10 host from released artifacts only, with nginx,
 `app-runtime`, SQL Server and Keycloak as rootless Podman Quadlet services.
-`db-job` runs explicitly on the same Quadlet network for release operations.
+`db-job` runs explicitly on the database Quadlet network for release
+operations.
+
+Apply the shared containment defaults, validated override ranges, network
+ownership, and host preflight in
+[Production Quadlet Containment](production-quadlet-containment.md).
 
 Use this topology when the production site must run without external SQL Server
 or external IdP dependencies at runtime. For the enterprise topology with
@@ -100,6 +105,7 @@ verification.
 | `DEMO_SEED_IMAGE_REF` | One-shot shell variable, not `release.env` | No production default | Test and development only; choose the optional `kravhantering-demo-seed` release tag or internal mirror only when running destructive demo seed in a disposable database. |
 | `KC_HOSTNAME` | `KC_HOSTNAME` in `keycloak.env` | `https://<APP_HOST>/auth` | Verify after choosing `APP_HOST`; plan only if Keycloak is deliberately exposed at another public URL. |
 | `NGINX_RESOLVER` | `NGINX_RESOLVER` in `release.env` | `10.89.0.1` | Verify from the actual Quadlet network. It can change when the internal network is recreated or assigned another subnet. |
+| `NGINX_IDENTITY_RESOLVER` | `NGINX_IDENTITY_RESOLVER` in `release.env` | `10.89.1.1` | Verify from the actual identity Quadlet network. Single-node nginx needs both network-scoped resolvers. |
 | `MSSQL_SA_PASSWORD` | `MSSQL_SA_PASSWORD` in `sqlserver.env` and `DB_BOOTSTRAP_ADMIN_PASSWORD` in `db-job.env` | No default | Always generate a unique SQL Server `sa` password. Use the same value in both places and follow [Generate Unique Secrets](#generate-unique-secrets). |
 | `DB_JOB_PASSWORD` | `DB_PASSWORD` in `db-job.env` | No default | Always generate a unique SQL Server password for the `kravhantering_job` migration/seed login. Follow [Generate Unique Secrets](#generate-unique-secrets). |
 | `APP_DB_PASSWORD` | `DB_BOOTSTRAP_APP_PASSWORD` in `db-job.env` and `DB_PASSWORD` in `app.env` | No default | Always generate a unique SQL Server password for the `kravhantering_app` runtime login. Use the same value in both places and follow [Generate Unique Secrets](#generate-unique-secrets). |
@@ -179,10 +185,15 @@ Install the host as a minimal RHEL 10 server. Recommended baseline:
 Install runtime packages as an administrator:
 
 ```bash
-sudo dnf install -y podman tar gzip coreutils jq
+sudo dnf install -y podman crun tar gzip coreutils jq
 podman --version
 podman info --format '{{.Host.CgroupsVersion}}'
+podman info --format '{{.Host.OCIRuntime.Name}}'
 ```
+
+The reported cgroup version must be `v2`, and the OCI runtime must be `crun`.
+The rootless nginx service uses crun supplementary-group preservation to read
+the group-restricted TLS private key without making it world-readable.
 
 Create a dedicated rootless service user:
 
@@ -209,7 +220,10 @@ Site-specific environment files, certificates and realm files live under
 The single-node Quadlet units store SQL Server database files in the named
 Podman volume `kravhantering-sqlserver-data`, mounted inside the SQL Server
 container at `/var/opt/mssql`. Keycloak uses the separate
-`kravhantering-keycloak-data` volume for its runtime state.
+`kravhantering-keycloak-data` volume for its runtime state. On container start,
+Podman initializes both named volumes for the non-root user declared by the
+corresponding image. Do not share either volume with another container that
+expects different ownership.
 
 Because the stack runs as the rootless `kravhantering` user, default Podman
 storage normally places the SQL Server volume data on the host at:
@@ -750,32 +764,40 @@ and the TLS certificate SAN:
 PUBLIC_HOSTNAME=kravhantering.example.internal
 ```
 
-`PUBLIC_HOSTNAME` is used by the single-node Quadlet unit as an nginx network
-alias so containers can resolve the browser-facing issuer URL internally.
+The single-node application maps `PUBLIC_HOSTNAME` to Podman's host gateway.
+Its server-side OIDC requests therefore traverse the same published host port
+as browser traffic before nginx forwards the `/auth` route to Keycloak. This
+preserves the browser-facing issuer without asking the unprivileged nginx
+process to bind container port 443. Podman 4.9 does not expose Quadlet's newer
+`AddHost` key, so this narrowly scoped host mapping uses
+`PodmanArgs=--add-host`; the helper's generator preflight rejects hosts where
+that compatibility form is unavailable.
 
-Set `NGINX_RESOLVER` to the Podman DNS resolver that nginx should use for
-dynamic `app-runtime` and Keycloak lookups. This value might not be knowable
-until the Podman network has been created later in the guide. If the site
-already knows the resolver IP that the next Podman network will use, set that
-value now; otherwise keep the example value temporarily and replace it after
-the resolver check in [Start the Single-Node Stack](#start-the-single-node-stack):
+Set `NGINX_RESOLVER` and `NGINX_IDENTITY_RESOLVER` to the Podman DNS resolvers
+that nginx should use for dynamic `app-runtime` and Keycloak lookups. Podman
+DNS is scoped to each network, so single-node nginx needs the edge resolver for
+`app-runtime` and the identity resolver for Keycloak. These values might not be
+knowable until the networks have been created later in the guide. Keep the
+example values temporarily and replace them after the resolver check in
+[Start the Single-Node Stack](#start-the-single-node-stack):
 
 ```env
 NGINX_RESOLVER=10.89.0.1
+NGINX_IDENTITY_RESOLVER=10.89.1.1
 ```
 
-The shown value is the common rootless Podman resolver, not a fixed release
-requirement. nginx uses it to re-resolve upstream container names after
+The shown values are common rootless Podman resolver addresses, not fixed
+release requirements. nginx uses them to re-resolve upstream container names after
 `app-runtime` or Keycloak restarts, instead of keeping a stale container IP.
 The resolver can change when the internal Quadlet network is recreated or
 assigned another subnet. Before starting nginx, run the resolver
-check below and update `NGINX_RESOLVER` in
-`/etc/kravhantering/release.env` to the printed resolver IP if it differs.
+check below and update both resolver values in
+`/etc/kravhantering/release.env` if either differs.
 
 SQL Server is only available internally on the
-`kravhantering-single-node_kravhantering-internal` Podman network. Connect to
-it as `sqlserver:1433` from `app-runtime`, `db-job` or temporary
-administration containers attached to that network.
+`kravhantering-single-node_database` Podman network. Connect to it as
+`sqlserver:1433` from `app-runtime`, `db-job` or temporary administration
+containers attached to that network.
 
 ### `/etc/kravhantering/sqlserver.env`
 
@@ -1221,9 +1243,10 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose identity
 )"
-NETWORK_UNIT=kravhantering-single-node-network.service
+NETWORK_UNIT=kravhantering-single-node-identity-network.service
 DEMO_USERS_FILE=$PWD/keycloak/demo-users.not-for-production.json
 DEMO_USERS_CONTAINER_FILE=/tmp/demo-users.not-for-production.json
 SCRIPT_FILE=$PWD/scripts/keycloak-demo-users.mjs
@@ -1339,7 +1362,8 @@ The `STACK_NETWORK` variable is for temporary `podman run` containers that
 need internal service-name DNS such as `keycloak` or `sqlserver`. Resolve the
 stable Quadlet network name through the helper.
 
-Confirm the nginx resolver from inside the same Quadlet network:
+Start the edge network, then discover both nginx resolvers through the Quadlet
+helper:
 
 ```bash
 sudo -iu kravhantering
@@ -1348,28 +1372,32 @@ set -a
 . /etc/kravhantering/release.env
 set +a
 
-STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+systemctl --user start kravhantering-single-node-edge-network.service
+systemctl --user start kravhantering-single-node-identity-network.service
+EDGE_RESOLVER="$(
+  bin/kravhantering-quadlet.sh print-resolver \
+    --topology single-node --purpose edge
 )"
-
-RESOLVER_IP="$(
-  podman run --rm --network "$STACK_NETWORK" --entrypoint /bin/sh \
-    "$NGINX_IMAGE_REF" -c \
-    "awk '/^nameserver / { print \$2; exit }' /etc/resolv.conf"
+IDENTITY_RESOLVER="$(
+  bin/kravhantering-quadlet.sh print-resolver \
+    --topology single-node --purpose identity
 )"
-printf 'Use NGINX_RESOLVER=%s in /etc/kravhantering/release.env\n' \
-  "$RESOLVER_IP"
+printf 'Use NGINX_RESOLVER=%s and NGINX_IDENTITY_RESOLVER=%s\n' \
+  "$EDGE_RESOLVER" "$IDENTITY_RESOLVER"
 
 exit
 ```
 
-If the printed resolver differs from `NGINX_RESOLVER`, update
-`/etc/kravhantering/release.env` to the printed IP before starting nginx:
+Update both values before starting nginx:
 
 ```bash
-# Replace 10.89.1.1 with the printed resolver IP.
-RESOLVER_IP=10.89.1.1
-sudo sed -i "s#^NGINX_RESOLVER=.*#NGINX_RESOLVER=${RESOLVER_IP}#" \
+# Replace these examples with the printed resolver IPs.
+EDGE_RESOLVER=10.89.0.1
+IDENTITY_RESOLVER=10.89.1.1
+sudo sed -i \
+  -e "s#^NGINX_RESOLVER=.*#NGINX_RESOLVER=${EDGE_RESOLVER}#" \
+  -e "s#^NGINX_IDENTITY_RESOLVER=.*#\
+NGINX_IDENTITY_RESOLVER=${IDENTITY_RESOLVER}#" \
   /etc/kravhantering/release.env
 ```
 
@@ -1387,7 +1415,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose database
 )"
 
 podman run --rm --network "$STACK_NETWORK" \
@@ -1411,7 +1440,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose database
 )"
 EVIDENCE_DIR="/var/tmp/kravhantering-deploy-${VERSION}-evidence"
 mkdir -p "$EVIDENCE_DIR"
@@ -1458,7 +1488,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose database
 )"
 DEMO_SEED_IMAGE_REF=ghcr.io/viscalyx/kravhantering-demo-seed:replace-with-release-tag
 
@@ -1475,12 +1506,13 @@ code. Demo seed files are not included in the production deployment bundle; use
 the separate optional image only for this explicit disposable-environment
 command.
 
-The production deployment bundle does not include the release-smoke Compose
-overlay. Run test-support services only through the separate local or CI smoke
-workflow; they are not part of the RHEL production topology.
+The production deployment bundle does not include the CI-only Quadlet smoke
+overlay. Run test-support services only through the separate CI smoke workflow;
+they are not part of the RHEL production topology.
 
-Reinstall the Quadlet files after correcting `NGINX_RESOLVER`, then enable and
-start the long-running-service target:
+Reinstall the Quadlet files after correcting `NGINX_RESOLVER` and
+`NGINX_IDENTITY_RESOLVER`, then enable and start the long-running-service
+target:
 
 ```bash
 sudo -iu kravhantering
@@ -1808,8 +1840,9 @@ uninstall procedure.
 
 - If `/api/health` and `/api/ready` return `502` after restarting
   `app-runtime` on an older release, restart nginx so it resolves the new
-  container IP. Current release packages render nginx with `NGINX_RESOLVER`
-  and dynamic upstream `resolve` entries to avoid stale upstream IPs.
+  container IP. Current release packages render nginx with the edge and
+  identity resolvers and dynamic upstream `resolve` entries to avoid stale
+  upstream IPs.
 
 ## Operational Evidence
 

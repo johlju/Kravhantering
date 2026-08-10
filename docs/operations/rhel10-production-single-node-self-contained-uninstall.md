@@ -55,7 +55,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose database
 )"
 DEMO_SEED_IMAGE_REF=ghcr.io/viscalyx/kravhantering-demo-seed:replace-with-release-tag
 
@@ -78,7 +79,8 @@ set -a
 set +a
 
 STACK_NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
+  bin/kravhantering-quadlet.sh print-network \
+    --topology single-node --purpose identity
 )"
 SCRIPT_FILE=$PWD/scripts/keycloak-demo-users.mjs
 SCRIPT_TARGET=/workspace/scripts/keycloak-demo-users.mjs
@@ -111,10 +113,13 @@ podman ps --all --format '{{.Names}}\t{{.Status}}\t{{.Image}}' \
 systemctl --user disable --now kravhantering-single-node.target
 bin/kravhantering-quadlet.sh remove --topology single-node
 systemctl --user daemon-reload
-NETWORK="$(
-  bin/kravhantering-quadlet.sh print-network --topology single-node
-)"
-podman network exists "$NETWORK" && podman network rm "$NETWORK"
+for purpose in edge identity database egress; do
+  NETWORK="$(
+    bin/kravhantering-quadlet.sh print-network \
+      --topology single-node --purpose "$purpose"
+  )"
+  podman network exists "$NETWORK" && podman network rm "$NETWORK"
+done
 
 exit
 ```

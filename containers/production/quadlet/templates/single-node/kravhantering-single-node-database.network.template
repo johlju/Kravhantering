@@ -1,0 +1,6 @@
+[Unit]
+Description=Kravhantering single-node database network
+
+[Network]
+NetworkName=kravhantering-single-node_database
+Internal=true
