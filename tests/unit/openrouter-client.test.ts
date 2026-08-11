@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  AiProviderError,
   generateChat,
   generateChatStream,
+  getDefaultModel,
   getKeyInfo,
   listModels,
 } from '@/lib/ai/openrouter-client'
@@ -9,6 +11,26 @@ import {
 // Mock global fetch
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
+
+function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers)
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  return new Response(JSON.stringify(data), { ...init, headers })
+}
+
+function streamResponseWithReader(reader: {
+  read: () => Promise<unknown>
+  releaseLock: () => void
+}): Response {
+  const response = new Response(new ReadableStream<Uint8Array>(), {
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+  if (!response.body) throw new Error('Expected response body')
+  vi.spyOn(response.body, 'getReader').mockReturnValue(reader as never)
+  return response
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -22,10 +44,221 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
+it('uses the built-in model when no public default is configured', () => {
+  vi.stubEnv('NEXT_PUBLIC_DEFAULT_MODEL', '')
+
+  expect(getDefaultModel()).toBe('anthropic/claude-sonnet-4')
+})
+
 describe('generateChat (non-streaming)', () => {
+  it('uses a stable rate-limit error without retaining provider body data', async () => {
+    const providerBody = JSON.stringify({
+      error: {
+        code: 'provider_rate_limit',
+        message:
+          'Echo: create payroll for Ada Lovelace ada@example.test with password=unsafe-secret',
+      },
+    })
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+    mockFetch.mockResolvedValueOnce(
+      new Response(providerBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-request-id': 'provider-request-123',
+        },
+        status: 429,
+      }),
+    )
+
+    try {
+      const rejection = generateChat({
+        correlationId: 'correlation-123',
+        messages: [{ content: 'sensitive prompt', role: 'user' }],
+        requestId: 'request-123',
+      })
+
+      await expect(rejection).rejects.toMatchObject({
+        code: 'ai_provider_rate_limited',
+        message: 'AI provider rate limit reached',
+        name: 'AiProviderError',
+      })
+      await rejection.catch(error => {
+        expect(error).toBeInstanceOf(AiProviderError)
+        expect(error).not.toHaveProperty('cause')
+        expect(JSON.stringify(error)).not.toMatch(
+          /Ada Lovelace|ada@example\.test|unsafe-secret|sensitive prompt/,
+        )
+      })
+      expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toMatch(
+        /Ada Lovelace|ada@example\.test|unsafe-secret|sensitive prompt/,
+      )
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"channel":"ai-provider-observability"'),
+      )
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('rejects an unexpected success content type without reading its body', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'Ada ada@example.test password=unsafe-secret',
+          ),
+        )
+        controller.close()
+      },
+    })
+    const getReaderSpy = vi.spyOn(stream, 'getReader')
+    mockFetch.mockResolvedValueOnce(
+      new Response(stream, {
+        headers: { 'Content-Type': 'text/html' },
+        status: 200,
+      }),
+    )
+
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
+    expect(getReaderSpy).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [400, 'ai_provider_configuration_error'],
+    [401, 'ai_provider_configuration_error'],
+    [403, 'ai_provider_configuration_error'],
+    [408, 'ai_provider_timeout'],
+    [429, 'ai_provider_rate_limited'],
+    [500, 'ai_provider_unavailable'],
+    [504, 'ai_provider_timeout'],
+  ] as const)('maps upstream status %i to %s', async (status, code) => {
+    mockFetch.mockResolvedValueOnce(
+      new Response('body must not be read', {
+        headers: { 'Content-Type': 'text/plain' },
+        status,
+      }),
+    )
+
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({ code })
+  })
+
+  it('stops reading an oversized provider error body at 16 KiB', async () => {
+    const cancel = vi.fn(() => {
+      throw new Error('cancel failure must be ignored')
+    })
+    const chunk = new TextEncoder().encode('x'.repeat(10 * 1024))
+    let reads = 0
+    const stream = new ReadableStream<Uint8Array>({
+      cancel,
+      pull(controller) {
+        reads += 1
+        controller.enqueue(chunk)
+      },
+    })
+    mockFetch.mockResolvedValueOnce(
+      new Response(stream, {
+        headers: { 'Content-Type': 'application/problem+json' },
+        status: 503,
+      }),
+    )
+
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_response_too_large',
+      metadata: { truncated: true },
+    })
+    expect(reads).toBeLessThanOrEqual(3)
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it('classifies provider body read failures without retaining exception text', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(
+          new Error('Ada ada@example.test password=body-read-secret'),
+        )
+      },
+    })
+    mockFetch.mockResolvedValueOnce(
+      new Response(stream, {
+        headers: { 'Content-Type': 'application/json' },
+        status: 502,
+      }),
+    )
+
+    try {
+      await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+        code: 'ai_provider_response_read_failed',
+      })
+      expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toMatch(
+        /Ada|ada@example\.test|body-read-secret/,
+      )
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('stops reading a successful JSON response above 4 MiB', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response('x'.repeat(4 * 1024 * 1024 + 1), {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_response_too_large',
+    })
+  })
+
+  it('rejects a missing or malformed bounded JSON body', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response(null, {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response('{malformed', {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
+  })
+
+  it('rejects malformed non-streaming response shapes', async () => {
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse(null))
+      .mockResolvedValueOnce(
+        jsonResponse({ choices: [{ message: { content: 42 } }] }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          choices: [{ message: { content: '{}' } }],
+          usage: { completion_tokens: 'many' },
+        }),
+      )
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+        code: 'ai_provider_invalid_response',
+      })
+    }
+  })
   it('sends correct request to OpenRouter', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [
           {
             message: {
@@ -41,8 +274,7 @@ describe('generateChat (non-streaming)', () => {
           prompt_tokens: 50,
         },
       }),
-      ok: true,
-    })
+    )
 
     const result = await generateChat<{ requirements: unknown[] }>({
       messages: [
@@ -80,8 +312,8 @@ describe('generateChat (non-streaming)', () => {
   })
 
   it('reads non-streaming reasoning_details when reasoning is not present', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [
           {
             message: {
@@ -96,8 +328,7 @@ describe('generateChat (non-streaming)', () => {
           },
         ],
       }),
-      ok: true,
-    })
+    )
 
     const result = await generateChat<{ requirements: unknown[] }>({
       messages: [],
@@ -107,8 +338,8 @@ describe('generateChat (non-streaming)', () => {
   })
 
   it('ignores malformed reasoning details and joins text and summary details', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [
           {
             message: {
@@ -123,8 +354,7 @@ describe('generateChat (non-streaming)', () => {
           },
         ],
       }),
-      ok: true,
-    })
+    )
 
     const result = await generateChat<{ requirements: unknown[] }>({
       messages: [{ content: 'Generate', role: 'user' }],
@@ -155,7 +385,7 @@ describe('generateChat (non-streaming)', () => {
         messages: [{ content: 'Generate', role: 'user' }],
         signal: controller.signal,
       }),
-    ).rejects.toThrow('Aborted')
+    ).rejects.toMatchObject({ name: 'AiProviderCallerCancelledError' })
   })
 
   it('aborts a pending request after the provider timeout', async () => {
@@ -172,7 +402,9 @@ describe('generateChat (non-streaming)', () => {
     const result = generateChat({
       messages: [{ content: 'Generate', role: 'user' }],
     })
-    const rejection = expect(result).rejects.toThrow('Timed out')
+    const rejection = expect(result).rejects.toMatchObject({
+      code: 'ai_provider_timeout',
+    })
     await vi.advanceTimersByTimeAsync(120_000)
 
     await rejection
@@ -195,26 +427,24 @@ describe('generateChat (non-streaming)', () => {
     })
     controller.abort()
 
-    await expect(result).rejects.toThrow('Caller aborted')
+    await expect(result).rejects.toMatchObject({
+      name: 'AiProviderCallerCancelledError',
+    })
   })
 
-  it('uses an empty provider error body when reading the body fails', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 502,
-      text: vi.fn().mockRejectedValue(new Error('body unavailable')),
-    })
+  it('uses a stable provider error when an error body is unavailable', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 502 }))
 
     await expect(
       generateChat({
         messages: [{ content: 'Generate', role: 'user' }],
       }),
-    ).rejects.toThrow('OpenRouter request failed (502): ')
+    ).rejects.toMatchObject({ code: 'ai_provider_unavailable' })
   })
 
   it('does not duplicate non-streaming reasoning when reasoning_details is also present', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [
           {
             message: {
@@ -230,8 +460,7 @@ describe('generateChat (non-streaming)', () => {
           },
         ],
       }),
-      ok: true,
-    })
+    )
 
     const result = await generateChat<{ requirements: unknown[] }>({
       messages: [],
@@ -241,12 +470,11 @@ describe('generateChat (non-streaming)', () => {
   })
 
   it('uses custom model when provided', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [{ message: { content: '{"requirements":[]}' } }],
       }),
-      ok: true,
-    })
+    )
 
     await generateChat({ messages: [], model: 'google/gemini-2.5-flash' })
 
@@ -273,12 +501,11 @@ describe('generateChat (non-streaming)', () => {
   })
 
   it('sends json_object when known model capabilities do not include structured_outputs', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [{ message: { content: '{"requirements":[]}' } }],
       }),
-      ok: true,
-    })
+    )
 
     await generateChat({
       format: {
@@ -296,12 +523,11 @@ describe('generateChat (non-streaming)', () => {
   })
 
   it('sends json_schema when model supports structured_outputs', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [{ message: { content: '{"requirements":[]}' } }],
       }),
-      ok: true,
-    })
+    )
 
     await generateChat({
       format: {
@@ -319,12 +545,11 @@ describe('generateChat (non-streaming)', () => {
   })
 
   it('sends json_object when model supports response_format but not structured_outputs', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [{ message: { content: '{"requirements":[]}' } }],
       }),
-      ok: true,
-    })
+    )
 
     await generateChat({
       format: {
@@ -342,36 +567,31 @@ describe('generateChat (non-streaming)', () => {
   })
 
   it('throws on non-OK response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      text: async () => 'Internal error',
-    })
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 500 }))
 
-    await expect(generateChat({ messages: [] })).rejects.toThrow(
-      'OpenRouter request failed (500)',
-    )
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_unavailable',
+    })
   })
 
   it('throws on invalid JSON content', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         choices: [{ message: { content: 'not json' } }],
       }),
-      ok: true,
-    })
-
-    await expect(generateChat({ messages: [] })).rejects.toThrow(
-      'Failed to parse OpenRouter JSON response',
     )
+
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
   })
 
   it('throws when API key is missing', async () => {
     vi.stubEnv('OPENROUTER_API_KEY', '')
 
-    await expect(generateChat({ messages: [] })).rejects.toThrow(
-      'OPENROUTER_API_KEY environment variable is not set',
-    )
+    await expect(generateChat({ messages: [] })).rejects.toMatchObject({
+      code: 'ai_provider_configuration_error',
+    })
   })
 
   it('handles abort signal', async () => {
@@ -387,6 +607,144 @@ describe('generateChat (non-streaming)', () => {
 })
 
 describe('generateChatStream', () => {
+  it('rejects an unexpected stream content type without reading the body', async () => {
+    const stream = new ReadableStream<Uint8Array>()
+    const getReaderSpy = vi.spyOn(stream, 'getReader')
+    mockFetch.mockResolvedValueOnce(
+      new Response(stream, {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const events = []
+    for await (const event of generateChatStream({ messages: [] })) {
+      events.push(event)
+    }
+
+    expect(events).toEqual([
+      {
+        code: 'ai_provider_invalid_response',
+        message: 'AI provider returned an invalid response',
+        phase: 'error',
+      },
+    ])
+    expect(getReaderSpy).not.toHaveBeenCalled()
+  })
+
+  it('stops reading an SSE frame above 256 KiB', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(`data: ${'x'.repeat(256 * 1024)}\n\n`, {
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    )
+
+    const events = []
+    for await (const event of generateChatStream({ messages: [] })) {
+      events.push(event)
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      code: 'ai_provider_response_too_large',
+      phase: 'error',
+    })
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ phase: 'done' }),
+    )
+  })
+
+  it('stops accumulating model content above 4 MiB', async () => {
+    const content = 'x'.repeat(240 * 1024)
+    const frames = Array.from(
+      { length: 18 },
+      () =>
+        `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+    ).join('')
+    mockFetch.mockResolvedValueOnce(
+      new Response(frames, {
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    )
+
+    const events = []
+    for await (const event of generateChatStream({ messages: [] })) {
+      events.push(event)
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      code: 'ai_provider_response_too_large',
+      phase: 'error',
+    })
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ phase: 'done' }),
+    )
+  })
+
+  it('fails closed when an SSE response ends without a DONE frame', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    )
+
+    const events = []
+    for await (const event of generateChatStream({ messages: [] })) {
+      events.push(event)
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      code: 'ai_provider_invalid_response',
+      phase: 'error',
+    })
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ phase: 'done' }),
+    )
+  })
+
+  it('rejects malformed SSE JSON and payload shapes', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        new Response('data: {malformed\n\n', {
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response('data: null\n\n', {
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      )
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const events = []
+      for await (const event of generateChatStream({ messages: [] })) {
+        events.push(event)
+      }
+      expect(events.at(-1)).toMatchObject({
+        code: 'ai_provider_invalid_response',
+        phase: 'error',
+      })
+    }
+  })
+
+  it('rejects malformed SSE UTF-8', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        Uint8Array.from([0x64, 0x61, 0x74, 0x61, 0x3a, 0x20, 0xff]),
+        {
+          headers: { 'Content-Type': 'text/event-stream' },
+        },
+      ),
+    )
+
+    const events = []
+    for await (const event of generateChatStream({ messages: [] })) {
+      events.push(event)
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      code: 'ai_provider_invalid_response',
+      phase: 'error',
+    })
+  })
   it('yields thinking and generating events', async () => {
     const sseLines = [
       'data: {"choices":[{"delta":{"reasoning":"Let me "}}]}\n\n',
@@ -410,10 +768,7 @@ describe('generateChatStream', () => {
       releaseLock: vi.fn(),
     }
 
-    mockFetch.mockResolvedValueOnce({
-      body: { getReader: () => mockReader },
-      ok: true,
-    })
+    mockFetch.mockResolvedValueOnce(streamResponseWithReader(mockReader))
 
     const events = []
     for await (const event of generateChatStream({ messages: [] })) {
@@ -446,11 +801,7 @@ describe('generateChatStream', () => {
   })
 
   it('yields error on non-OK response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 503,
-      text: async () => 'Service unavailable with sk-or-v1-secret',
-    })
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 503 }))
 
     const events = []
     for await (const event of generateChatStream({ messages: [] })) {
@@ -486,10 +837,7 @@ describe('generateChatStream', () => {
       releaseLock: vi.fn(),
     }
 
-    mockFetch.mockResolvedValueOnce({
-      body: { getReader: () => mockReader },
-      ok: true,
-    })
+    mockFetch.mockResolvedValueOnce(streamResponseWithReader(mockReader))
 
     const events = []
     for await (const event of generateChatStream({ messages: [] })) {
@@ -521,10 +869,7 @@ describe('generateChatStream', () => {
       releaseLock: vi.fn(),
     }
 
-    mockFetch.mockResolvedValueOnce({
-      body: { getReader: () => mockReader },
-      ok: true,
-    })
+    mockFetch.mockResolvedValueOnce(streamResponseWithReader(mockReader))
 
     const events = []
     for await (const event of generateChatStream({ messages: [] })) {
@@ -577,10 +922,7 @@ describe('generateChatStream', () => {
       releaseLock: vi.fn(),
     }
 
-    mockFetch.mockResolvedValueOnce({
-      body: { getReader: () => mockReader },
-      ok: true,
-    })
+    mockFetch.mockResolvedValueOnce(streamResponseWithReader(mockReader))
 
     const events = []
     for await (const event of generateChatStream({ messages: [] })) {
@@ -622,10 +964,7 @@ describe('generateChatStream', () => {
       releaseLock: vi.fn(),
     }
 
-    mockFetch.mockResolvedValueOnce({
-      body: { getReader: () => mockReader },
-      ok: true,
-    })
+    mockFetch.mockResolvedValueOnce(streamResponseWithReader(mockReader))
 
     const events = []
     for await (const event of generateChatStream({ messages: [] })) {
@@ -669,10 +1008,7 @@ describe('generateChatStream', () => {
       result: ReadableStreamReadResult<Uint8Array>,
     ) => readResolves[index]?.(result)
 
-    mockFetch.mockResolvedValueOnce({
-      body: { getReader: () => mockReader },
-      ok: true,
-    })
+    mockFetch.mockResolvedValueOnce(streamResponseWithReader(mockReader))
 
     const eventsPromise = (async () => {
       const events = []
@@ -701,7 +1037,10 @@ describe('generateChatStream', () => {
       value: new TextEncoder().encode(sseLines[2]),
     })
     await waitForRead(4)
-    resolveLine(3, { done: true, value: undefined })
+    resolveLine(3, {
+      done: false,
+      value: new TextEncoder().encode('data: [DONE]\n\n'),
+    })
 
     const events = await eventsPromise
     expect(events.map(event => event.phase)).toEqual([
@@ -732,10 +1071,7 @@ describe('generateChatStream', () => {
 
     mockFetch.mockImplementationOnce(async (_url, init) => {
       requestSignal = (init as { signal?: AbortSignal }).signal
-      return {
-        body: { getReader: () => mockReader },
-        ok: true,
-      }
+      return streamResponseWithReader(mockReader)
     })
 
     const eventsPromise = (async () => {
@@ -751,8 +1087,44 @@ describe('generateChatStream', () => {
     const events = await eventsPromise
     expect(events).toEqual([
       {
-        cause: 'OpenRouter stream idle timeout after 120000 ms',
-        message: 'AI provider is unavailable',
+        code: 'ai_provider_timeout',
+        message: 'AI provider request timed out',
+        phase: 'error',
+      },
+    ])
+  })
+
+  it('times out while reading a stalled provider error body', async () => {
+    vi.useFakeTimers()
+    mockFetch.mockImplementationOnce(async (_url, init) => {
+      const requestSignal = (init as { signal: AbortSignal }).signal
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            requestSignal.addEventListener(
+              'abort',
+              () => controller.error(new DOMException('Aborted', 'AbortError')),
+              { once: true },
+            )
+          },
+        }),
+        { headers: { 'Content-Type': 'application/json' }, status: 503 },
+      )
+    })
+
+    const eventsPromise = (async () => {
+      const events = []
+      for await (const event of generateChatStream({ messages: [] })) {
+        events.push(event)
+      }
+      return events
+    })()
+    await vi.advanceTimersByTimeAsync(120_000)
+
+    await expect(eventsPromise).resolves.toEqual([
+      {
+        code: 'ai_provider_timeout',
+        message: 'AI provider request timed out',
         phase: 'error',
       },
     ])
@@ -779,6 +1151,78 @@ describe('generateChatStream', () => {
     expect(events).toEqual([])
   })
 
+  it('returns quietly without diagnostics when a caller aborts while an error body is being read', async () => {
+    const caller = new AbortController()
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+        caller.abort()
+        controller.error(
+          new Error('provider body leaked Ada Lovelace ada@example.test'),
+        )
+      },
+    })
+    mockFetch.mockResolvedValueOnce(
+      new Response(stream, {
+        headers: { 'Content-Type': 'application/json' },
+        status: 503,
+      }),
+    )
+
+    try {
+      const events = []
+      for await (const event of generateChatStream({
+        messages: [],
+        signal: caller.signal,
+      })) {
+        events.push(event)
+      }
+
+      expect(events).toEqual([])
+      expect(consoleErrorSpy).not.toHaveBeenCalled()
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('returns quietly when a successful stream read and caller abort happen together', async () => {
+    const caller = new AbortController()
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            caller.abort()
+            controller.enqueue(
+              new TextEncoder().encode('data: {provider-secret}\n\n'),
+            )
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      ),
+    )
+
+    try {
+      const events = []
+      for await (const event of generateChatStream({
+        messages: [],
+        signal: caller.signal,
+      })) {
+        events.push(event)
+      }
+
+      expect(events).toEqual([])
+      expect(consoleErrorSpy).not.toHaveBeenCalled()
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
   it('reports non-Error fetch failures without leaking their value', async () => {
     mockFetch.mockRejectedValueOnce('provider-secret')
 
@@ -791,7 +1235,7 @@ describe('generateChatStream', () => {
 
     expect(events).toEqual([
       {
-        cause: 'OpenRouter fetch error: Fetch failed',
+        code: 'ai_provider_unavailable',
         message: 'AI provider is unavailable',
         phase: 'error',
       },
@@ -810,8 +1254,8 @@ describe('generateChatStream', () => {
 
     expect(events).toEqual([
       {
-        cause: 'No response body from OpenRouter',
-        message: 'AI provider is unavailable',
+        code: 'ai_provider_invalid_response',
+        message: 'AI provider returned an invalid response',
         phase: 'error',
       },
     ])
@@ -819,9 +1263,64 @@ describe('generateChatStream', () => {
 })
 
 describe('listModels', () => {
+  it('uses the shared stable error contract for model catalog failures', async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message:
+              'Echo Ada Lovelace ada@example.test password=catalog-secret',
+          },
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+          status: 401,
+        },
+      ),
+    )
+
+    await expect(listModels()).rejects.toMatchObject({
+      code: 'ai_provider_configuration_error',
+      message: 'AI provider configuration is invalid',
+    })
+  })
+
+  it('classifies model catalog network, timeout, and parse failures safely', async () => {
+    mockFetch
+      .mockRejectedValueOnce(
+        new Error('Ada ada@example.test password=network-secret'),
+      )
+      .mockResolvedValueOnce(
+        new Response('{"data":', {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+    await expect(listModels()).rejects.toMatchObject({
+      code: 'ai_provider_unavailable',
+    })
+    await expect(listModels()).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
+
+    const controller = new AbortController()
+    controller.abort()
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockReturnValueOnce(controller.signal)
+    mockFetch.mockRejectedValueOnce(new Error('timeout-secret'))
+    try {
+      await expect(listModels()).rejects.toMatchObject({
+        code: 'ai_provider_timeout',
+      })
+    } finally {
+      timeoutSpy.mockRestore()
+    }
+  })
+
   it('returns models from OpenRouter', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         data: [
           {
             context_length: 200000,
@@ -843,8 +1342,7 @@ describe('listModels', () => {
           },
         ],
       }),
-      ok: true,
-    })
+    )
 
     const models = await listModels()
     expect(models).toHaveLength(2)
@@ -856,12 +1354,11 @@ describe('listModels', () => {
   })
 
   it('maps provider model defaults when optional catalog fields are absent', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         data: [{ id: 'custom/model', name: 'Minimal model' }],
       }),
-      ok: true,
-    })
+    )
 
     await expect(listModels()).resolves.toEqual([
       {
@@ -876,16 +1373,15 @@ describe('listModels', () => {
     ])
   })
 
-  it('returns an empty catalog when the provider omits data', async () => {
-    mockFetch.mockResolvedValueOnce({ json: async () => ({}), ok: true })
-    await expect(listModels()).resolves.toEqual([])
+  it('rejects a catalog response when the provider omits data', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({}))
+    await expect(listModels()).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
   })
 
   it('passes supported_parameters filter', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({ data: [] }),
-      ok: true,
-    })
+    mockFetch.mockResolvedValueOnce(jsonResponse({ data: [] }))
 
     await listModels(['structured_outputs'])
 
@@ -897,26 +1393,73 @@ describe('listModels', () => {
     /* cspell:enable */
   })
 
-  it('throws on non-OK response', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
-    await expect(listModels()).rejects.toThrow(
-      'Failed to list OpenRouter models',
+  it('rejects malformed model entries', async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: [{ id: 42, name: 'Invalid model' }] }),
     )
+
+    await expect(listModels()).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
+  })
+
+  it('throws on non-OK response', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 500 }))
+    await expect(listModels()).rejects.toMatchObject({
+      code: 'ai_provider_unavailable',
+    })
   })
 })
 
 describe('getKeyInfo', () => {
+  it('keeps optional credit lookup best-effort under the shared error contract', async () => {
+    vi.stubEnv('OPENROUTER_MGMT_API_KEY', 'sk-or-mgmt-test-key')
+    mockFetch.mockImplementation(async input => {
+      const url = String(input)
+      if (url.includes('/credits')) {
+        return jsonResponse(
+          {
+            error: {
+              message:
+                'Echo Ada Lovelace ada@example.test password=credit-secret',
+            },
+          },
+          { status: 503 },
+        )
+      }
+      if (url.includes('/auth/key')) {
+        return jsonResponse({
+          data: {
+            is_free_tier: false,
+            limit: 50,
+            limit_remaining: 40,
+            usage: 10,
+            usage_daily: 1,
+          },
+        })
+      }
+      throw new Error(`Unexpected OpenRouter URL: ${url}`)
+    })
+
+    await expect(
+      getKeyInfo({
+        correlationId: 'credits-correlation',
+        requestId: 'credits-request',
+      }),
+    ).resolves.toMatchObject({ totalCredits: null, usage: 10 })
+  })
+
   it('returns credit info with org credits when mgmt key is set', async () => {
     vi.stubEnv('OPENROUTER_MGMT_API_KEY', 'sk-or-mgmt-test-key')
-    mockFetch
-      .mockResolvedValueOnce({
-        json: async () => ({
+    mockFetch.mockImplementation(async input => {
+      const url = String(input)
+      if (url.includes('/credits')) {
+        return jsonResponse({
           data: { total_credits: 10, total_usage: 0.13 },
-        }),
-        ok: true,
-      })
-      .mockResolvedValueOnce({
-        json: async () => ({
+        })
+      }
+      if (url.includes('/auth/key')) {
+        return jsonResponse({
           data: {
             is_free_tier: false,
             limit: 50,
@@ -924,9 +1467,10 @@ describe('getKeyInfo', () => {
             usage: 12.5,
             usage_daily: 2.3,
           },
-        }),
-        ok: true,
-      })
+        })
+      }
+      throw new Error(`Unexpected OpenRouter URL: ${url}`)
+    })
 
     const info = await getKeyInfo()
     expect(info.isFreeTier).toBe(false)
@@ -949,9 +1493,9 @@ describe('getKeyInfo', () => {
   it('returns null totalCredits when mgmt key credits endpoint fails', async () => {
     vi.stubEnv('OPENROUTER_MGMT_API_KEY', 'sk-or-mgmt-test-key')
     mockFetch
-      .mockResolvedValueOnce({ ok: false, status: 403 })
-      .mockResolvedValueOnce({
-        json: async () => ({
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
           data: {
             is_free_tier: true,
             limit: null,
@@ -960,8 +1504,7 @@ describe('getKeyInfo', () => {
             usage_daily: 0,
           },
         }),
-        ok: true,
-      })
+      )
 
     const info = await getKeyInfo()
     expect(info.isFreeTier).toBe(true)
@@ -969,29 +1512,40 @@ describe('getKeyInfo', () => {
     expect(info.managementKeyMissing).toBe(false)
   })
 
-  it('uses safe key and credit defaults for partial provider payloads', async () => {
+  it('rejects a missing primary key envelope and ignores missing optional credit data', async () => {
     vi.stubEnv('OPENROUTER_MGMT_API_KEY', 'sk-or-mgmt-test-key')
     mockFetch
-      .mockResolvedValueOnce({
-        json: async () => ({ data: { total_usage: 2 } }),
-        ok: true,
-      })
-      .mockResolvedValueOnce({ json: async () => ({}), ok: true })
+      .mockResolvedValueOnce(jsonResponse({ data: { total_usage: 2 } }))
+      .mockResolvedValueOnce(jsonResponse({}))
 
-    await expect(getKeyInfo()).resolves.toEqual({
-      isFreeTier: false,
-      limit: null,
-      limitRemaining: null,
-      managementKeyMissing: false,
+    await expect(getKeyInfo()).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
+  })
+
+  it('rejects a malformed primary key payload and ignores malformed optional credits', async () => {
+    vi.stubEnv('OPENROUTER_MGMT_API_KEY', 'sk-or-mgmt-test-key')
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ data: [] }))
+      .mockResolvedValueOnce(jsonResponse({ data: [] }))
+
+    await expect(getKeyInfo()).rejects.toMatchObject({
+      code: 'ai_provider_invalid_response',
+    })
+
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ data: [] }))
+      .mockResolvedValueOnce(jsonResponse({ data: { usage: 1 } }))
+
+    await expect(getKeyInfo()).resolves.toMatchObject({
       totalCredits: null,
-      usage: 0,
-      usageDaily: 0,
+      usage: 1,
     })
   })
 
   it('skips credits fetch and flags managementKeyMissing when mgmt key is not set', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
         data: {
           is_free_tier: false,
           limit: 10,
@@ -1000,8 +1554,7 @@ describe('getKeyInfo', () => {
           usage_daily: 0.5,
         },
       }),
-      ok: true,
-    })
+    )
 
     const info = await getKeyInfo()
     expect(info.managementKeyMissing).toBe(true)
@@ -1012,9 +1565,9 @@ describe('getKeyInfo', () => {
   })
 
   it('throws on non-OK key response', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 })
-    await expect(getKeyInfo()).rejects.toThrow(
-      'Failed to get OpenRouter key info (401)',
-    )
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 401 }))
+    await expect(getKeyInfo()).rejects.toMatchObject({
+      code: 'ai_provider_configuration_error',
+    })
   })
 })

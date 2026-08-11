@@ -1,4 +1,23 @@
-import { AI_PROVIDER_UNAVAILABLE_MESSAGE } from '@/lib/http/safe-errors'
+import {
+  AI_PROVIDER_RESPONSE_LIMITS,
+  AiProviderCallerCancelledError,
+  type AiProviderError,
+  type AiProviderErrorCode,
+  type AiProviderErrorMetadata,
+  type AiProviderOperation,
+  aiProviderStreamError,
+  createAiProviderError,
+  getAiProviderContentTypeCategory,
+  getSafeUpstreamRequestId,
+  isAiProviderError,
+  recordAiProviderError,
+} from '@/lib/ai/provider-errors'
+import {
+  readAiProviderErrorResponse,
+  readAiProviderJson,
+} from '@/lib/ai/provider-response'
+
+export { AiProviderError } from '@/lib/ai/provider-errors'
 
 /**
  * OpenRouter API client for AI requirement generation.
@@ -17,6 +36,12 @@ export interface OpenRouterModel {
   pricing: { completion: string; prompt: string; reasoning: string }
   provider: string
   supportedParameters: string[]
+}
+
+export interface OpenRouterRequestContext {
+  correlationId?: string
+  modelProvider?: string
+  requestId?: string
 }
 
 export interface GenerationStats {
@@ -42,7 +67,7 @@ export type StreamEvent =
       stats: GenerationStats
       thinking: string
     }
-  | { cause?: string; message: string; phase: 'error' }
+  | { code: AiProviderErrorCode; message: string; phase: 'error' }
 
 export interface NonStreamingResult<T> {
   content: T
@@ -74,6 +99,7 @@ export interface ProviderPreferences {
 }
 
 interface GenerateOptions {
+  correlationId?: string
   format?: Record<string, unknown>
   messages: ChatMessage[]
   model?: string
@@ -81,6 +107,7 @@ interface GenerateOptions {
   providerPreferences?: ProviderPreferences
   /** Reasoning effort level (default: 'high'). Use 'none' to disable reasoning. */
   reasoningEffort?: string
+  requestId?: string
   signal?: AbortSignal
   /** Model capabilities from the server catalog. Required when format is supplied. */
   supportedParameters?: string[]
@@ -90,10 +117,19 @@ interface GenerateOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getApiKey(): string {
+function getApiKey(
+  operation: AiProviderOperation,
+  options: Pick<GenerateOptions, 'correlationId' | 'requestId'> = {},
+): string {
   const key = process.env.OPENROUTER_API_KEY
   if (!key) {
-    throw new Error('OPENROUTER_API_KEY environment variable is not set')
+    const error = createAiProviderError({
+      ...options,
+      code: 'ai_provider_configuration_error',
+      operation,
+    })
+    recordAiProviderError(error)
+    throw error
   }
   return key
 }
@@ -103,6 +139,42 @@ export function getDefaultModel(): string {
 }
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasOptionalFiniteNumber(
+  value: Record<string, unknown>,
+  key: string,
+): boolean {
+  return (
+    value[key] === undefined ||
+    (typeof value[key] === 'number' && Number.isFinite(value[key]))
+  )
+}
+
+function hasOptionalFiniteNumberOrNull(
+  value: Record<string, unknown>,
+  key: string,
+): boolean {
+  return value[key] === null || hasOptionalFiniteNumber(value, key)
+}
+
+function throwInvalidProviderResponse(
+  operation: AiProviderOperation,
+  context: OpenRouterRequestContext,
+  status?: number,
+): never {
+  const error = createAiProviderError({
+    ...context,
+    code: 'ai_provider_invalid_response',
+    operation,
+    status,
+  })
+  recordAiProviderError(error)
+  throw error
+}
 
 /**
  * Apply the best response_format strategy based on the model's capabilities.
@@ -171,7 +243,13 @@ function readReasoningText(input: {
 export async function generateChat<T>(
   options: GenerateOptions,
 ): Promise<NonStreamingResult<T>> {
-  const apiKey = getApiKey()
+  const operation = 'chat.completions' as const
+  const diagnosticContext = {
+    correlationId: options.correlationId,
+    modelProvider: options.model?.split('/', 1)[0],
+    requestId: options.requestId,
+  }
+  const apiKey = getApiKey(operation, options)
   const model = options.model || getDefaultModel()
 
   const effort = options.reasoningEffort || 'high'
@@ -194,15 +272,20 @@ export async function generateChat<T>(
   // wire it so that either the timeout or the caller's abort cancels the fetch.
   const DEFAULT_TIMEOUT_MS = 120_000
   const childController = new AbortController()
-  const timeoutId = setTimeout(
-    () => childController.abort(),
-    DEFAULT_TIMEOUT_MS,
-  )
+  let timeoutTriggered = false
+  let callerAbortTriggered = false
+  const timeoutId = setTimeout(() => {
+    timeoutTriggered = true
+    childController.abort()
+  }, DEFAULT_TIMEOUT_MS)
 
-  const onCallerAbort = () => childController.abort()
+  const onCallerAbort = (): void => {
+    callerAbortTriggered = true
+    childController.abort()
+  }
   if (options.signal) {
     if (options.signal.aborted) {
-      childController.abort()
+      onCallerAbort()
     } else {
       options.signal.addEventListener('abort', onCallerAbort, { once: true })
     }
@@ -219,19 +302,41 @@ export async function generateChat<T>(
       method: 'POST',
       signal: childController.signal,
     })
-  } catch (err) {
+  } catch {
     clearTimeout(timeoutId)
     options.signal?.removeEventListener('abort', onCallerAbort)
-    throw err
+    if (callerAbortTriggered) throw new AiProviderCallerCancelledError()
+    const error = createAiProviderError({
+      ...diagnosticContext,
+      code: timeoutTriggered
+        ? 'ai_provider_timeout'
+        : 'ai_provider_unavailable',
+      operation,
+    })
+    recordAiProviderError(error)
+    throw error
   }
 
   try {
     if (!response.ok) {
-      const text = await response.text().catch(() => '')
-      throw new Error(`OpenRouter request failed (${response.status}): ${text}`)
+      let error = await readAiProviderErrorResponse(response, {
+        ...diagnosticContext,
+        operation,
+      })
+      if (callerAbortTriggered) throw new AiProviderCallerCancelledError()
+      if (timeoutTriggered) {
+        error = createAiProviderError({
+          ...diagnosticContext,
+          code: 'ai_provider_timeout',
+          operation,
+          status: response.status,
+        })
+      }
+      recordAiProviderError(error)
+      throw error
     }
 
-    const data = (await response.json()) as {
+    let data: {
       choices: Array<{
         message: {
           content: string | null
@@ -248,17 +353,95 @@ export async function generateChat<T>(
         }
       }
     }
+    try {
+      data = await readAiProviderJson<typeof data>(response, {
+        ...diagnosticContext,
+        operation,
+      })
+    } catch (error) {
+      if (callerAbortTriggered) throw new AiProviderCallerCancelledError()
+      const providerError = isAiProviderError(error)
+        ? timeoutTriggered
+          ? createAiProviderError({
+              ...diagnosticContext,
+              code: 'ai_provider_timeout',
+              operation,
+              status: response.status,
+            })
+          : error
+        : createAiProviderError({
+            ...diagnosticContext,
+            code: 'ai_provider_invalid_response',
+            operation,
+            status: response.status,
+          })
+      recordAiProviderError(providerError)
+      throw providerError
+    }
 
-    const message = data.choices?.[0]?.message
-    if (!message?.content) {
-      throw new Error('OpenRouter returned empty response')
+    if (!isRecord(data) || !Array.isArray(data.choices)) {
+      throwInvalidProviderResponse(
+        operation,
+        diagnosticContext,
+        response.status,
+      )
+    }
+    const choice = data.choices[0]
+    if (!isRecord(choice) || !isRecord(choice.message)) {
+      throwInvalidProviderResponse(
+        operation,
+        diagnosticContext,
+        response.status,
+      )
+    }
+    const message = choice.message
+    if (typeof message.content !== 'string' || !message.content) {
+      throwInvalidProviderResponse(
+        operation,
+        diagnosticContext,
+        response.status,
+      )
+    }
+
+    if (data.usage !== undefined) {
+      if (
+        !isRecord(data.usage) ||
+        !hasOptionalFiniteNumber(data.usage, 'completion_tokens') ||
+        !hasOptionalFiniteNumber(data.usage, 'cost') ||
+        !hasOptionalFiniteNumber(data.usage, 'prompt_tokens')
+      ) {
+        throwInvalidProviderResponse(
+          operation,
+          diagnosticContext,
+          response.status,
+        )
+      }
+      const details = data.usage.completion_tokens_details
+      if (
+        details !== undefined &&
+        (!isRecord(details) ||
+          !hasOptionalFiniteNumber(details, 'reasoning_tokens'))
+      ) {
+        throwInvalidProviderResponse(
+          operation,
+          diagnosticContext,
+          response.status,
+        )
+      }
     }
 
     let content: T
     try {
       content = JSON.parse(message.content) as T
     } catch {
-      throw new Error('Failed to parse OpenRouter JSON response')
+      const error = createAiProviderError({
+        ...diagnosticContext,
+        code: 'ai_provider_invalid_response',
+        operation,
+        status: response.status,
+      })
+      recordAiProviderError(error)
+      throw error
     }
 
     const usage = data.usage
@@ -288,7 +471,19 @@ export async function generateChat<T>(
 export async function* generateChatStream(
   options: GenerateOptions,
 ): AsyncGenerator<StreamEvent> {
-  const apiKey = getApiKey()
+  const operation = 'chat.completions' as const
+  const diagnosticContext = {
+    correlationId: options.correlationId,
+    modelProvider: options.model?.split('/', 1)[0],
+    requestId: options.requestId,
+  }
+  let apiKey: string
+  try {
+    apiKey = getApiKey(operation, options)
+  } catch (error) {
+    if (isAiProviderError(error)) yield aiProviderStreamError(error)
+    return
+  }
   const model = options.model || getDefaultModel()
 
   const effort = options.reasoningEffort || 'high'
@@ -316,14 +511,14 @@ export async function* generateChatStream(
   let idleTimeoutTriggered = false
   let callerAbortTriggered = false
 
-  const clearIdleTimeout = () => {
+  const clearIdleTimeout = (): void => {
     if (idleTimeoutId) {
       clearTimeout(idleTimeoutId)
       idleTimeoutId = undefined
     }
   }
 
-  const startIdleTimeout = () => {
+  const startIdleTimeout = (): void => {
     clearIdleTimeout()
     idleTimeoutTriggered = false
     idleTimeoutId = setTimeout(() => {
@@ -332,7 +527,7 @@ export async function* generateChatStream(
     }, STREAM_IDLE_TIMEOUT_MS)
   }
 
-  const onCallerAbort = () => {
+  const onCallerAbort = (): void => {
     callerAbortTriggered = true
     childController.abort()
   }
@@ -356,49 +551,97 @@ export async function* generateChatStream(
       method: 'POST',
       signal: childController.signal,
     })
-  } catch (err) {
+  } catch {
     clearIdleTimeout()
     options.signal?.removeEventListener('abort', onCallerAbort)
     if (callerAbortTriggered) return
-    const message = err instanceof Error ? err.message : 'Fetch failed'
-    yield {
-      cause: idleTimeoutTriggered
-        ? `OpenRouter stream idle timeout after ${STREAM_IDLE_TIMEOUT_MS} ms`
-        : `OpenRouter fetch error: ${message}`,
-      message: AI_PROVIDER_UNAVAILABLE_MESSAGE,
-      phase: 'error',
-    }
+    const error = createAiProviderError({
+      ...diagnosticContext,
+      code: idleTimeoutTriggered
+        ? 'ai_provider_timeout'
+        : 'ai_provider_unavailable',
+      operation,
+    })
+    recordAiProviderError(error)
+    yield aiProviderStreamError(error)
     return
   } finally {
     clearIdleTimeout()
   }
 
-  if (!response.ok) {
-    clearIdleTimeout()
+  if (callerAbortTriggered) {
     options.signal?.removeEventListener('abort', onCallerAbort)
-    const text = await response.text().catch(() => '')
-    yield {
-      cause: `OpenRouter error (${response.status}): ${text}`,
-      message: AI_PROVIDER_UNAVAILABLE_MESSAGE,
-      phase: 'error',
+    return
+  }
+
+  if (!response.ok) {
+    let error: AiProviderError
+    try {
+      startIdleTimeout()
+      error = await readAiProviderErrorResponse(response, {
+        ...diagnosticContext,
+        operation,
+      })
+    } finally {
+      clearIdleTimeout()
+      options.signal?.removeEventListener('abort', onCallerAbort)
     }
+    if (callerAbortTriggered) return
+    if (idleTimeoutTriggered) {
+      error = createAiProviderError({
+        ...diagnosticContext,
+        code: 'ai_provider_timeout',
+        operation,
+        status: response.status,
+      })
+    }
+    recordAiProviderError(error)
+    yield aiProviderStreamError(error)
+    return
+  }
+
+  const streamFailure = (
+    code: AiProviderErrorCode,
+    metadata?: AiProviderErrorMetadata,
+  ): StreamEvent => {
+    const error = createAiProviderError({
+      ...diagnosticContext,
+      code,
+      metadata,
+      operation,
+      status: response.status,
+    })
+    recordAiProviderError(error)
+    return aiProviderStreamError(error)
+  }
+
+  if (
+    getAiProviderContentTypeCategory(response.headers.get('content-type')) !==
+    'event-stream'
+  ) {
+    options.signal?.removeEventListener('abort', onCallerAbort)
+    yield streamFailure('ai_provider_invalid_response', {
+      contentTypeCategory: getAiProviderContentTypeCategory(
+        response.headers.get('content-type'),
+      ),
+      upstreamRequestId: getSafeUpstreamRequestId(response.headers),
+    })
     return
   }
 
   if (!response.body) {
     clearIdleTimeout()
     options.signal?.removeEventListener('abort', onCallerAbort)
-    yield {
-      cause: 'No response body from OpenRouter',
-      message: AI_PROVIDER_UNAVAILABLE_MESSAGE,
-      phase: 'error',
-    }
+    yield streamFailure('ai_provider_invalid_response')
     return
   }
 
   const reader = response.body.getReader()
-  const decoder = new TextDecoder()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  const encoder = new TextEncoder()
   let buffer = ''
+  let currentFrameBytes = 0
+  let accumulatedOutputBytes = 0
   let thinkingSoFar = ''
   let contentSoFar = ''
   let lastStats: GenerationStats = {
@@ -415,31 +658,61 @@ export async function* generateChatStream(
       try {
         startIdleTimeout()
         readResult = await reader.read()
-      } catch (err) {
+      } catch {
         if (callerAbortTriggered) return
-        const message = err instanceof Error ? err.message : 'Stream failed'
-        yield {
-          cause: idleTimeoutTriggered
-            ? `OpenRouter stream idle timeout after ${STREAM_IDLE_TIMEOUT_MS} ms`
-            : `OpenRouter stream read error: ${message}`,
-          message: AI_PROVIDER_UNAVAILABLE_MESSAGE,
-          phase: 'error',
-        }
+        yield streamFailure(
+          idleTimeoutTriggered
+            ? 'ai_provider_timeout'
+            : 'ai_provider_response_read_failed',
+        )
         return
       } finally {
         clearIdleTimeout()
       }
 
+      if (callerAbortTriggered) return
+
       const { done, value } = readResult
       if (done) break
 
-      buffer += decoder.decode(value, { stream: true })
+      try {
+        buffer += decoder.decode(value, { stream: true })
+      } catch {
+        yield streamFailure('ai_provider_invalid_response', {
+          contentTypeCategory: 'event-stream',
+        })
+        return
+      }
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
+      const residualBufferBytes = encoder.encode(buffer).byteLength
+      if (residualBufferBytes > AI_PROVIDER_RESPONSE_LIMITS.sseFrameBytes) {
+        await reader.cancel().catch(() => undefined)
+        yield streamFailure('ai_provider_response_too_large', {
+          contentTypeCategory: 'event-stream',
+          observedBytes: residualBufferBytes,
+          truncated: true,
+        })
+        return
+      }
 
       for (const line of lines) {
         const trimmed = line.trim()
-        if (!trimmed || trimmed.startsWith(':')) continue
+        if (!trimmed) {
+          currentFrameBytes = 0
+          continue
+        }
+        currentFrameBytes += encoder.encode(line).byteLength + 1
+        if (currentFrameBytes > AI_PROVIDER_RESPONSE_LIMITS.sseFrameBytes) {
+          await reader.cancel().catch(() => undefined)
+          yield streamFailure('ai_provider_response_too_large', {
+            contentTypeCategory: 'event-stream',
+            observedBytes: currentFrameBytes,
+            truncated: true,
+          })
+          return
+        }
+        if (trimmed.startsWith(':')) continue
         if (trimmed === 'data: [DONE]') {
           yield {
             phase: 'done',
@@ -474,14 +747,65 @@ export async function* generateChatStream(
         try {
           chunk = JSON.parse(jsonStr) as typeof chunk
         } catch {
-          continue
+          yield streamFailure('ai_provider_invalid_response', {
+            contentTypeCategory: 'event-stream',
+          })
+          return
         }
 
-        const delta = chunk.choices?.[0]?.delta
+        if (
+          !isRecord(chunk) ||
+          (chunk.choices !== undefined && !Array.isArray(chunk.choices)) ||
+          (chunk.usage !== undefined && !isRecord(chunk.usage))
+        ) {
+          yield streamFailure('ai_provider_invalid_response', {
+            contentTypeCategory: 'event-stream',
+          })
+          return
+        }
+
+        const firstChoice = chunk.choices?.[0]
+        if (
+          (firstChoice !== undefined && !isRecord(firstChoice)) ||
+          (firstChoice?.delta !== undefined && !isRecord(firstChoice.delta)) ||
+          (firstChoice?.delta?.content !== undefined &&
+            firstChoice.delta.content !== null &&
+            typeof firstChoice.delta.content !== 'string') ||
+          (chunk.usage !== undefined &&
+            (!hasOptionalFiniteNumber(chunk.usage, 'completion_tokens') ||
+              !hasOptionalFiniteNumber(chunk.usage, 'cost') ||
+              !hasOptionalFiniteNumber(chunk.usage, 'prompt_tokens') ||
+              (chunk.usage.completion_tokens_details !== undefined &&
+                (!isRecord(chunk.usage.completion_tokens_details) ||
+                  !hasOptionalFiniteNumber(
+                    chunk.usage.completion_tokens_details,
+                    'reasoning_tokens',
+                  )))))
+        ) {
+          yield streamFailure('ai_provider_invalid_response', {
+            contentTypeCategory: 'event-stream',
+          })
+          return
+        }
+
+        const delta = firstChoice?.delta
 
         // Reasoning/thinking content
         const reasoningChunk = delta ? readReasoningText(delta) : ''
         if (reasoningChunk) {
+          accumulatedOutputBytes += encoder.encode(reasoningChunk).byteLength
+          if (
+            accumulatedOutputBytes >
+            AI_PROVIDER_RESPONSE_LIMITS.sseAccumulatedBytes
+          ) {
+            await reader.cancel().catch(() => undefined)
+            yield streamFailure('ai_provider_response_too_large', {
+              contentTypeCategory: 'event-stream',
+              observedBytes: accumulatedOutputBytes,
+              truncated: true,
+            })
+            return
+          }
           thinkingSoFar += reasoningChunk
           yield {
             chunk: reasoningChunk,
@@ -492,6 +816,19 @@ export async function* generateChatStream(
 
         // Generated content
         if (delta?.content) {
+          accumulatedOutputBytes += encoder.encode(delta.content).byteLength
+          if (
+            accumulatedOutputBytes >
+            AI_PROVIDER_RESPONSE_LIMITS.sseAccumulatedBytes
+          ) {
+            await reader.cancel().catch(() => undefined)
+            yield streamFailure('ai_provider_response_too_large', {
+              contentTypeCategory: 'event-stream',
+              observedBytes: accumulatedOutputBytes,
+              truncated: true,
+            })
+            return
+          }
           contentSoFar += delta.content
           yield { chunk: delta.content, phase: 'generating' }
         }
@@ -512,12 +849,9 @@ export async function* generateChatStream(
       }
     }
 
-    yield {
-      phase: 'done',
-      rawContent: contentSoFar,
-      stats: lastStats,
-      thinking: thinkingSoFar,
-    }
+    yield streamFailure('ai_provider_invalid_response', {
+      contentTypeCategory: 'event-stream',
+    })
   } finally {
     clearIdleTimeout()
     options.signal?.removeEventListener('abort', onCallerAbort)
@@ -529,10 +863,127 @@ export async function* generateChatStream(
 // Model listing
 // ---------------------------------------------------------------------------
 
+interface ProviderCatalogModel {
+  architecture?: { modality?: string }
+  context_length?: number
+  id: string
+  name: string
+  pricing?: {
+    completion?: string
+    prompt?: string
+    reasoning?: string
+  }
+  supported_parameters?: string[]
+}
+
+function isValidCatalogModel(model: unknown): model is ProviderCatalogModel {
+  if (!isRecord(model)) return false
+  if (typeof model.id !== 'string' || typeof model.name !== 'string')
+    return false
+  if (!hasOptionalFiniteNumber(model, 'context_length')) return false
+
+  if (model.architecture !== undefined) {
+    if (!isRecord(model.architecture)) return false
+    if (
+      model.architecture.modality !== undefined &&
+      typeof model.architecture.modality !== 'string'
+    ) {
+      return false
+    }
+  }
+
+  if (model.pricing !== undefined) {
+    if (!isRecord(model.pricing)) return false
+    if (
+      (model.pricing.completion !== undefined &&
+        typeof model.pricing.completion !== 'string') ||
+      (model.pricing.prompt !== undefined &&
+        typeof model.pricing.prompt !== 'string') ||
+      (model.pricing.reasoning !== undefined &&
+        typeof model.pricing.reasoning !== 'string')
+    ) {
+      return false
+    }
+  }
+
+  return (
+    model.supported_parameters === undefined ||
+    (Array.isArray(model.supported_parameters) &&
+      model.supported_parameters.every(
+        parameter => typeof parameter === 'string',
+      ))
+  )
+}
+
+async function fetchProviderJson<T>(
+  url: string,
+  apiKey: string,
+  operation: Exclude<AiProviderOperation, 'chat.completions'>,
+  context: OpenRouterRequestContext,
+  timeoutMs: number,
+): Promise<T> {
+  const signal = AbortSignal.timeout(timeoutMs)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal,
+    })
+  } catch {
+    const error = createAiProviderError({
+      ...context,
+      code: signal.aborted ? 'ai_provider_timeout' : 'ai_provider_unavailable',
+      operation,
+    })
+    recordAiProviderError(error)
+    throw error
+  }
+
+  if (!response.ok) {
+    let error = await readAiProviderErrorResponse(response, {
+      ...context,
+      operation,
+    })
+    if (signal.aborted) {
+      error = createAiProviderError({
+        ...context,
+        code: 'ai_provider_timeout',
+        operation,
+        status: response.status,
+      })
+    }
+    recordAiProviderError(error)
+    throw error
+  }
+
+  try {
+    return await readAiProviderJson<T>(response, { ...context, operation })
+  } catch (error) {
+    const providerError = isAiProviderError(error)
+      ? signal.aborted
+        ? createAiProviderError({
+            ...context,
+            code: 'ai_provider_timeout',
+            operation,
+            status: response.status,
+          })
+        : error
+      : createAiProviderError({
+          ...context,
+          code: 'ai_provider_invalid_response',
+          operation,
+          status: response.status,
+        })
+    recordAiProviderError(providerError)
+    throw providerError
+  }
+}
+
 export async function listModels(
   supportedParameters?: string[],
+  context: OpenRouterRequestContext = {},
 ): Promise<OpenRouterModel[]> {
-  const apiKey = getApiKey()
+  const apiKey = getApiKey('models.list', context)
 
   const url = new URL(`${OPENROUTER_BASE}/models`)
   // Always require reasoning + stream + response_format (at minimum json_object)
@@ -544,28 +995,19 @@ export async function listModels(
   }
   url.searchParams.set('supported_parameters', params.join(','))
 
-  const response = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(10_000),
-  })
+  const data = await fetchProviderJson<{ data: ProviderCatalogModel[] }>(
+    url.toString(),
+    apiKey,
+    'models.list',
+    context,
+    10_000,
+  )
 
-  if (!response.ok) {
-    throw new Error(`Failed to list OpenRouter models (${response.status})`)
+  if (!data || !Array.isArray(data.data)) {
+    throwInvalidProviderResponse('models.list', context)
   }
-
-  const data = (await response.json()) as {
-    data: Array<{
-      architecture?: { modality?: string }
-      context_length?: number
-      id: string
-      name: string
-      pricing?: {
-        completion?: string
-        prompt?: string
-        reasoning?: string
-      }
-      supported_parameters?: string[]
-    }>
+  if (!data.data.every(isValidCatalogModel)) {
+    throwInvalidProviderResponse('models.list', context)
   }
 
   return (data.data ?? []).map(m => ({
@@ -597,44 +1039,58 @@ export interface KeyInfo {
   usageDaily: number
 }
 
-export async function getKeyInfo(): Promise<KeyInfo> {
-  const apiKey = getApiKey()
+export async function getKeyInfo(
+  context: OpenRouterRequestContext = {},
+): Promise<KeyInfo> {
+  const apiKey = getApiKey('key.info', context)
   const mgmtKey = process.env.OPENROUTER_MGMT_API_KEY
 
   const creditsPromise = mgmtKey
-    ? fetch(`${OPENROUTER_BASE}/credits`, {
-        headers: { Authorization: `Bearer ${mgmtKey}` },
-        signal: AbortSignal.timeout(5_000),
-      }).catch(() => null)
+    ? fetchProviderJson<{
+        data: { total_credits?: number; total_usage?: number }
+      }>(`${OPENROUTER_BASE}/credits`, mgmtKey, 'credits', context, 5_000)
+        .then(data => {
+          if (
+            !isRecord(data) ||
+            !isRecord(data.data) ||
+            !hasOptionalFiniteNumber(data.data, 'total_credits') ||
+            !hasOptionalFiniteNumber(data.data, 'total_usage')
+          ) {
+            throwInvalidProviderResponse('credits', context)
+          }
+          return data
+        })
+        .catch(() => null)
     : Promise.resolve(null)
 
-  const [keyResponse, creditsResponse] = await Promise.all([
-    fetch(`${OPENROUTER_BASE}/auth/key`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(5_000),
-    }),
+  const [keyData, creditsData] = await Promise.all([
+    fetchProviderJson<{
+      data: {
+        is_free_tier?: boolean
+        limit?: number | null
+        limit_remaining?: number | null
+        usage?: number
+        usage_daily?: number
+      }
+    }>(`${OPENROUTER_BASE}/auth/key`, apiKey, 'key.info', context, 5_000),
     creditsPromise,
   ])
 
-  if (!keyResponse.ok) {
-    throw new Error(`Failed to get OpenRouter key info (${keyResponse.status})`)
-  }
-
-  const keyData = (await keyResponse.json()) as {
-    data?: {
-      is_free_tier?: boolean
-      limit?: number | null
-      limit_remaining?: number | null
-      usage?: number
-      usage_daily?: number
-    }
+  if (
+    !isRecord(keyData) ||
+    !isRecord(keyData.data) ||
+    (keyData.data.is_free_tier !== undefined &&
+      typeof keyData.data.is_free_tier !== 'boolean') ||
+    !hasOptionalFiniteNumberOrNull(keyData.data, 'limit') ||
+    !hasOptionalFiniteNumberOrNull(keyData.data, 'limit_remaining') ||
+    !hasOptionalFiniteNumber(keyData.data, 'usage') ||
+    !hasOptionalFiniteNumber(keyData.data, 'usage_daily')
+  ) {
+    throwInvalidProviderResponse('key.info', context)
   }
 
   let totalCredits: number | null = null
-  if (creditsResponse?.ok) {
-    const creditsData = (await creditsResponse.json()) as {
-      data?: { total_credits?: number; total_usage?: number }
-    }
+  if (creditsData) {
     const purchased = creditsData.data?.total_credits
     const used = creditsData.data?.total_usage
     if (purchased != null) {
@@ -642,7 +1098,7 @@ export async function getKeyInfo(): Promise<KeyInfo> {
     }
   }
 
-  const d = keyData.data ?? {}
+  const d = keyData.data
   return {
     isFreeTier: d.is_free_tier ?? false,
     limit: d.limit ?? null,
