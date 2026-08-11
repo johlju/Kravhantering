@@ -1,8 +1,8 @@
 [Unit]
 Description=Kravhantering application runtime
 PartOf=kravhantering-single-node.target
-Requires=kravhantering-single-node-edge-network.service kravhantering-single-node-database-network.service kravhantering-single-node-egress-network.service kravhantering-sqlserver.service kravhantering-keycloak.service
-After=kravhantering-single-node-edge-network.service kravhantering-single-node-database-network.service kravhantering-single-node-egress-network.service kravhantering-sqlserver.service kravhantering-keycloak.service
+Requires=kravhantering-single-node-edge-network.service kravhantering-single-node-database-network.service kravhantering-single-node-egress-network.service kravhantering-sqlserver.service @@KEYCLOAK_APP_DEPENDENCIES@@
+After=kravhantering-single-node-edge-network.service kravhantering-single-node-database-network.service kravhantering-single-node-egress-network.service kravhantering-sqlserver.service @@KEYCLOAK_APP_DEPENDENCIES@@
 
 [Container]
 ContainerName=kravhantering-app-runtime
@@ -20,7 +20,7 @@ Network=kravhantering-single-node-edge.network
 Network=kravhantering-single-node-database.network
 Network=kravhantering-single-node-egress.network
 PodmanArgs=--network-alias=app-runtime
-PodmanArgs=--add-host=@@PUBLIC_HOSTNAME@@:host-gateway
+@@PUBLIC_ISSUER_HOST_MAPPING@@
 Volume=/etc/kravhantering/tls/ca.crt:/run/kravhantering/tls/ca.crt:ro
 @@APP_RUNTIME_EXPORT_MOUNT@@
 Tmpfs=/tmp:rw,size=64M,mode=1777,nosuid,nodev,noexec
