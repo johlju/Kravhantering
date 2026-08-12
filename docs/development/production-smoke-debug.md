@@ -74,6 +74,77 @@ npm run container:production-smoke:debug -- evidence
 The wrapper supports one named debug host at a time and verifies its ownership
 label before entering, collecting evidence, or removing it.
 
+## Compare hosted-runner evidence
+
+Every PR and trusted release smoke run uploads `runtime-diagnostics/` in its
+runtime artifact, including runs that stop during toolchain setup, the early
+journald preflight, Quadlet installation, or service startup. The job summary
+lists any recognized infrastructure signatures:
+
+- `conmon_missing_journald` identifies a conmon build without journald support;
+- `cgroup_oom` identifies a service cgroup OOM kill;
+- `host_oom` identifies a kernel-level host OOM kill;
+- `disk_exhausted` identifies an out-of-space failure; and
+- `service_timeout` identifies a systemd service startup timeout.
+
+An `unknown` result means that none of those signatures occurs in the captured
+evidence. It does not classify the failure as an application defect.
+
+Download the runtime artifact from one failed run and one successful run into
+separate directories. For PR smoke runs:
+
+```bash
+gh run download <failed-run-id> \
+  --name container-pr-runtime-<failed-run-id> \
+  --dir tmp/production-smoke-comparison/failed
+gh run download <failed-run-id> \
+  --name container-pr-runner-metadata-<failed-run-id> \
+  --dir tmp/production-smoke-comparison/failed/runner-metadata
+gh run download <successful-run-id> \
+  --name container-pr-runtime-<successful-run-id> \
+  --dir tmp/production-smoke-comparison/successful
+gh run download <successful-run-id> \
+  --name container-pr-runner-metadata-<successful-run-id> \
+  --dir tmp/production-smoke-comparison/successful/runner-metadata
+```
+
+Start with these comparisons:
+
+<!-- markdownlint-disable MD013 -->
+```bash
+diff -u \
+  tmp/production-smoke-comparison/successful/runtime-diagnostics/runner.json \
+  tmp/production-smoke-comparison/failed/runtime-diagnostics/runner.json
+diff -u \
+  tmp/production-smoke-comparison/successful/runner-metadata/github-runner-metadata.txt \
+  tmp/production-smoke-comparison/failed/runner-metadata/github-runner-metadata.txt
+diff -u \
+  tmp/production-smoke-comparison/successful/runtime-diagnostics/runtime-components.txt \
+  tmp/production-smoke-comparison/failed/runtime-diagnostics/runtime-components.txt
+diff -u \
+  tmp/production-smoke-comparison/successful/runtime-diagnostics/service-cgroups.txt \
+  tmp/production-smoke-comparison/failed/runtime-diagnostics/service-cgroups.txt
+```
+<!-- markdownlint-enable MD013 -->
+
+Use `runner.json`, `runner-platform.txt`, and the separate
+`runner-metadata/github-runner-metadata.txt` artifact to compare the image,
+provisioner, and provisioned host. The metadata follow-up job runs after the
+smoke job completes, so GitHub makes the target job log available before the
+allowlisted runner header is extracted. Trusted releases provide the analogous
+`container-release-runner-metadata-<run-id>` artifact. Then compare
+`runtime-components.txt` and `podman-info.json` for every expected and selected
+binary path, package ownership, version, hash, and Podman's selected helpers.
+Compare `meminfo.txt`, `free.txt`, `pressure-*.txt`, `kernel-oom.txt`, and
+`service-cgroups.txt` for host or cgroup pressure. The process report contains
+only PID, parent PID, user, executable name, and RSS; it deliberately omits
+command arguments. The collector never dumps the environment or container
+environment variables.
+
+The collector extracts only allowlisted runner and provisioner header fields
+from the completed target job log. A missing target log or missing header fails
+the follow-up job instead of silently publishing incomplete metadata.
+
 ## Clean up
 
 Always remove the nested stack and debug host when finished:

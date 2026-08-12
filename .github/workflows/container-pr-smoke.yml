@@ -8,14 +8,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   container-smoke:
     name: Build and Smoke Test Container Stack
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
 
     env:
       APP_RUNTIME_IMAGE: localhost/kravhantering/app-runtime
@@ -33,6 +33,8 @@ jobs:
       NEXT_PUBLIC_SITE_URL: https://kravhantering.test
       NGINX_IMAGE_REF: docker.io/library/nginx:1.31.3-alpine
       SQLSERVER_IMAGE_REF: mcr.microsoft.com/mssql/server:2025-CU7-ubuntu-24.04
+      CI_RUNTIME_EVIDENCE_DIR: tmp/container-pr-artifacts/runtime-diagnostics
+      CI_RUNTIME_RELATED_EVIDENCE_DIR: tmp/production-smoke-evidence
 
     steps:
       - name: Report initial disk layout
@@ -73,10 +75,11 @@ jobs:
           else
             echo "docker not available"
           fi
-          if command -v podman >/dev/null 2>&1; then
+          if [[ -f "${RUNNER_TEMP}/kravhantering-ci-runtime-ready" ]] && \
+            command -v podman >/dev/null 2>&1; then
             podman system df || true
           else
-            echo "podman not available"
+            echo "podman storage report deferred until runtime bootstrap"
           fi
           du -sh \
             "${GITHUB_WORKSPACE}/tmp/container-pr-artifacts/oci" \
@@ -152,16 +155,18 @@ jobs:
       - name: Install container runtime tools
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y jq podman libnss3-tools
+          scripts/containers/ci-container-runtime.sh bootstrap pr
+          touch "${RUNNER_TEMP}/kravhantering-ci-runtime-ready"
           sudo sysctl net.ipv4.ip_unprivileged_port_start=0
           echo "127.0.0.1 kravhantering.test" | sudo tee -a /etc/hosts
-          podman --version
-          podman info
+          timeout --kill-after=5s 30s podman info
           docker --version
           docker buildx version
           docker info
           docker buildx ls
+
+      - name: Preflight rootless Podman journald logging
+        run: scripts/containers/ci-container-runtime.sh preflight
 
       - name: Prepare Docker Buildx builder
         run: |
@@ -369,6 +374,13 @@ jobs:
         if: always()
         run: scripts/containers/production-smoke.sh evidence || true
 
+      - name: Collect container runtime diagnostics
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/containers/ci-container-runtime.sh collect
+
       - name: Remove production Quadlet stack
         if: always()
         run: scripts/containers/production-smoke.sh down
@@ -408,6 +420,11 @@ jobs:
             cp -R \
               tmp/production-smoke-evidence \
               tmp/container-pr-artifacts/runtime/production-smoke-evidence
+          fi
+          if [ -d "${CI_RUNTIME_EVIDENCE_DIR}" ]; then
+            cp -R \
+              "${CI_RUNTIME_EVIDENCE_DIR}" \
+              tmp/container-pr-artifacts/runtime/runtime-diagnostics
           fi
 
           if [ -d playwright-report-release-smoke ]; then
@@ -456,3 +473,17 @@ jobs:
           path: tmp/container-pr-artifacts/oci/*.oci.tar
           if-no-files-found: ignore
           retention-days: 2
+
+  runner-metadata:
+    name: Capture Container Smoke Runner Metadata
+    needs: container-smoke
+    if: ${{ always() && needs.container-smoke.result != 'skipped' }}
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/reusable-container-runner-metadata.yml
+    with:
+      artifact-name: container-pr-runner-metadata-${{ github.run_id }}
+      evidence-directory: tmp/container-pr-runner-metadata
+      retention-days: 7
+      target-job: Build and Smoke Test Container Stack

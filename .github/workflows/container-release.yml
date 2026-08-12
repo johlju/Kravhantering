@@ -12,18 +12,18 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  attestations: write
-  contents: write
-  id-token: write
-  packages: write
-
 jobs:
   trusted-release:
     name: Validate and Promote Trusted Container Stack
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
 
     env:
       KEYCLOAK_IMAGE_REF: quay.io/keycloak/keycloak:26.7.0-1
@@ -31,6 +31,8 @@ jobs:
       NEXT_PUBLIC_SITE_URL: https://kravhantering.test
       NGINX_IMAGE_REF: docker.io/library/nginx:1.31.3-alpine
       SQLSERVER_IMAGE_REF: mcr.microsoft.com/mssql/server:2025-CU7-ubuntu-24.04
+      CI_RUNTIME_EVIDENCE_DIR: tmp/container-release-artifacts/runtime-diagnostics
+      CI_RUNTIME_RELATED_EVIDENCE_DIR: tmp/production-smoke-evidence
 
     steps:
       - name: Checkout code
@@ -96,17 +98,18 @@ jobs:
       - name: Install container runtime tools
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y crun jq podman skopeo libnss3-tools
+          scripts/containers/ci-container-runtime.sh bootstrap release
           sudo sysctl net.ipv4.ip_unprivileged_port_start=0
           echo "127.0.0.1 kravhantering.test" | sudo tee -a /etc/hosts
-          podman --version
-          podman info
+          timeout --kill-after=5s 30s podman info
           docker --version
           docker buildx version
           docker info
           docker buildx ls
           skopeo --version
+
+      - name: Preflight rootless Podman journald logging
+        run: scripts/containers/ci-container-runtime.sh preflight
 
       - name: Prepare Docker Buildx builder
         run: |
@@ -334,6 +337,13 @@ jobs:
       - name: Collect production Quadlet evidence
         if: always()
         run: scripts/containers/production-smoke.sh evidence || true
+
+      - name: Collect container runtime diagnostics
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/containers/ci-container-runtime.sh collect
 
       - name: Remove production Quadlet stack
         if: always()
@@ -677,6 +687,11 @@ jobs:
               tmp/production-smoke-evidence \
               tmp/container-release-artifacts/runtime/production-smoke-evidence
           fi
+          if [ -d "${CI_RUNTIME_EVIDENCE_DIR}" ]; then
+            cp -R \
+              "${CI_RUNTIME_EVIDENCE_DIR}" \
+              tmp/container-release-artifacts/runtime/runtime-diagnostics
+          fi
 
           if [ -d playwright-report-release-smoke ]; then
             cp -R \
@@ -878,3 +893,17 @@ jobs:
             tmp/container-release-artifacts/kravhantering-production-deploy-*.tar.gz.trusted-root.jsonl
           if-no-files-found: warn
           retention-days: 30
+
+  runner-metadata:
+    name: Capture Trusted Release Runner Metadata
+    needs: trusted-release
+    if: ${{ always() && needs.trusted-release.result != 'skipped' }}
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/reusable-container-runner-metadata.yml
+    with:
+      artifact-name: container-release-runner-metadata-${{ github.run_id }}
+      evidence-directory: tmp/container-release-runner-metadata
+      retention-days: 30
+      target-job: Validate and Promote Trusted Container Stack
