@@ -23,6 +23,9 @@ const PODMAN_GENERATOR_VERSION = fs.existsSync(PODMAN_USER_GENERATOR)
       encoding: 'utf8',
     }).stdout ?? '')
   : ''
+const STAT_BIN = childProcess
+  .execFileSync('sh', ['-c', 'command -v stat'], { encoding: 'utf8' })
+  .trim()
 const temporaryDirectories = []
 
 function writePodmanProbe(filePath, runtime = 'crun') {
@@ -46,6 +49,32 @@ function writePodmanProbe(filePath, runtime = 'crun') {
   )
 }
 
+function writeStatProbe(filePath) {
+  fs.writeFileSync(
+    filePath,
+    [
+      '#!/usr/bin/env bash',
+      'set -euo pipefail',
+      `real_stat=${JSON.stringify(STAT_BIN)}`,
+      `if [[ "\${1-}" == -c && "\${2-}" == "%u %g %a" && "\${3-}" == -- ]]; then`,
+      '  target="$4"',
+      '  mode="$("$real_stat" -c "%a" -- "$target")"',
+      '  [[ -d "$target" ]] && mode=755',
+      `  [[ "$target" == "\${KRAVHANTERING_TEST_WRITABLE_PARENT-}" ]] && mode=777`,
+      '  owner=0',
+      `  if [[ "$target" == "\${KRAVHANTERING_TEST_UNTRUSTED_CONFIG-}" ]]; then`,
+      '    owner="$("$real_stat" -c "%u" -- "$target")"',
+      '  fi',
+      '  printf "%s 0 %s\\n" "$owner" "$mode"',
+      '  exit 0',
+      'fi',
+      'exec "$real_stat" "$@"',
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  )
+}
+
 function createFixture(
   releaseEnv,
   keycloakEnv = 'KC_HOSTNAME_ADMIN=https://keycloak-management.example.internal:9443/auth\n',
@@ -58,8 +87,10 @@ function createFixture(
   const meminfoPath = path.join(root, 'meminfo')
   const podmanPath = path.join(root, 'podman')
   const systemctlPath = path.join(root, 'systemctl')
+  const statPath = path.join(root, 'stat')
   const releaseEnvPath = path.join(root, 'release.env')
   const keycloakEnvPath = path.join(root, 'keycloak.env')
+  const readinessProbeConfigPath = path.join(root, 'readiness-probes.conf')
   const trustedProxyConfigPath = path.join(root, 'trusted-proxies.conf')
   const outputDir = path.join(root, 'rendered')
   fs.mkdirSync(journalConfigDir)
@@ -73,25 +104,38 @@ function createFixture(
     mode: 0o755,
   })
   writePodmanProbe(podmanPath)
+  writeStatProbe(statPath)
   fs.writeFileSync(systemctlPath, '#!/usr/bin/env bash\nexit 0\n', {
     mode: 0o755,
   })
   fs.writeFileSync(
     trustedProxyConfigPath,
     'set_real_ip_from 10.20.0.0/16;\nset_real_ip_from 2001:db8:20::/48;\n',
+    { mode: 0o644 },
+  )
+  fs.writeFileSync(
+    readinessProbeConfigPath,
+    '# Monitoring networks\nallow 10.30.0.10/32;\nallow 2001:db8:30::10/128;\n',
+    { mode: 0o644 },
   )
   fs.writeFileSync(
     releaseEnvPath,
-    releaseEnv.replace(
-      'NGINX_TRUSTED_PROXY_CONFIG_FILE=fixture',
-      `NGINX_TRUSTED_PROXY_CONFIG_FILE=${trustedProxyConfigPath}`,
-    ),
+    releaseEnv
+      .replace(
+        'NGINX_READINESS_PROBE_CONFIG_FILE=fixture',
+        `NGINX_READINESS_PROBE_CONFIG_FILE=${readinessProbeConfigPath}`,
+      )
+      .replace(
+        'NGINX_TRUSTED_PROXY_CONFIG_FILE=fixture',
+        `NGINX_TRUSTED_PROXY_CONFIG_FILE=${trustedProxyConfigPath}`,
+      ),
   )
   fs.writeFileSync(keycloakEnvPath, keycloakEnv)
   return {
     outputDir,
     podmanPath,
     preflightEnv: {
+      PATH: `${root}:${process.env.PATH}`,
       KRAVHANTERING_CGROUP_CONTROLLERS_FILE: controllersPath,
       KRAVHANTERING_JOURNAL_CONFIG_DIR: journalConfigDir,
       KRAVHANTERING_MEMINFO_FILE: meminfoPath,
@@ -114,6 +158,7 @@ function releaseEnv(overrides = {}) {
     NGINX_HTTPS_BIND: '8443:443',
     NGINX_IDENTITY_RESOLVER: '10.91.1.1',
     NGINX_IMAGE_REF: 'registry.example/nginx:1.31',
+    NGINX_READINESS_PROBE_CONFIG_FILE: 'fixture',
     NGINX_RESOLVER: '10.91.0.1',
     NGINX_TRUSTED_PROXY_CONFIG_FILE: 'fixture',
     PUBLIC_HOSTNAME: 'kravhantering.example.internal',
@@ -231,6 +276,9 @@ describe('kravhantering Quadlet helper', () => {
     expect(nginx).toContain('MemoryMax=512M')
     expect(nginx).toContain('CPUQuota=100%')
     expect(nginx).toContain('TasksMax=160')
+    expect(nginx).toContain(
+      'readiness-probes.conf:/etc/nginx/snippets/readiness-probes.conf:ro',
+    )
     expect(units.map(unit => unit.content).join('\n')).not.toMatch(
       /(?:@@[A-Z_]+@@|\$\{[^}]+\})/u,
     )
@@ -273,6 +321,202 @@ describe('kravhantering Quadlet helper', () => {
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain(
       'release.env is missing required value: NGINX_TRUSTED_PROXY_CONFIG_FILE',
+    )
+    expect(fs.existsSync(fixture.outputDir)).toBe(false)
+  })
+
+  it.each(['app-node-tls', 'app-node-http', 'single-node'])(
+    'requires an explicit readiness probe boundary for %s',
+    topology => {
+      const fixture = createFixture(
+        releaseEnv({ NGINX_READINESS_PROBE_CONFIG_FILE: '' }),
+      )
+      const result = runHelper(
+        ['render', '--topology', topology, '--output-dir', fixture.outputDir],
+        fixture,
+      )
+
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain(
+        'release.env is missing required value: NGINX_READINESS_PROBE_CONFIG_FILE',
+      )
+      expect(fs.existsSync(fixture.outputDir)).toBe(false)
+    },
+  )
+
+  it('accepts comments, blank lines, and IPv4 and IPv6 host routes', () => {
+    const fixture = createFixture(releaseEnv())
+    const configPath = path.join(fixture.root, 'readiness-probes.conf')
+    fs.writeFileSync(
+      configPath,
+      '\n# Exact monitoring hosts\nallow 192.0.2.10/32;\nallow 2001:db8::10/128;\n',
+    )
+
+    const units = render('single-node', fixture)
+    const nginx = units.find(
+      unit => unit.file === 'kravhantering-nginx.container',
+    )?.content
+
+    expect(nginx).toContain(
+      `${configPath}:/etc/nginx/snippets/readiness-probes.conf:ro`,
+    )
+  })
+
+  it.each([
+    ['', 'at least one readiness probe network'],
+    ['# comments only\n', 'at least one readiness probe network'],
+    ['allow monitoring.internal;\n', 'allow CIDR'],
+    ['allow 0.0.0.0/0;\n', 'prefix'],
+    ['allow ::/0;\n', 'prefix'],
+    ['allow 192.0.2.0/24; deny all;\n', 'allow CIDR'],
+    ['allow 192.0.2.0/33;\n', 'prefix'],
+    ['allow 2001:db8::1::2/64;\n', 'address'],
+  ])('rejects unsafe readiness probe configuration %s', (content, message) => {
+    const fixture = createFixture(releaseEnv())
+    const configPath = path.join(fixture.root, 'readiness-probes.conf')
+    fs.writeFileSync(configPath, content)
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'app-node-tls',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(message)
+    expect(fs.existsSync(fixture.outputDir)).toBe(false)
+  })
+
+  it('rejects a symlinked readiness probe configuration', () => {
+    const fixture = createFixture(releaseEnv())
+    const configPath = path.join(fixture.root, 'readiness-probes.conf')
+    const targetPath = path.join(fixture.root, 'readiness-probes-target.conf')
+    fs.renameSync(configPath, targetPath)
+    fs.symlinkSync(targetPath, configPath)
+
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'single-node',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('existing nonsymlink file')
+    expect(fs.existsSync(fixture.outputDir)).toBe(false)
+  })
+
+  it('rejects a missing readiness probe configuration file', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.rmSync(path.join(fixture.root, 'readiness-probes.conf'))
+
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'single-node',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('existing nonsymlink file')
+    expect(fs.existsSync(fixture.outputDir)).toBe(false)
+  })
+
+  it('rejects an unreadable readiness probe configuration file', () => {
+    const fixture = createFixture(releaseEnv())
+    fs.chmodSync(path.join(fixture.root, 'readiness-probes.conf'), 0o000)
+
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'single-node',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('file is not readable')
+    expect(fs.existsSync(fixture.outputDir)).toBe(false)
+  })
+
+  it.each([0o664, 0o646])(
+    'rejects a group- or other-writable readiness probe configuration with mode %s',
+    mode => {
+      const fixture = createFixture(releaseEnv())
+      const configPath = path.join(fixture.root, 'readiness-probes.conf')
+      fs.chmodSync(configPath, mode)
+
+      const result = runHelper(
+        [
+          'render',
+          '--topology',
+          'single-node',
+          '--output-dir',
+          fixture.outputDir,
+        ],
+        fixture,
+      )
+
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('group- or other-writable')
+      expect(fs.existsSync(fixture.outputDir)).toBe(false)
+    },
+  )
+
+  it('rejects a readiness probe configuration not owned by root', () => {
+    const fixture = createFixture(releaseEnv())
+    const configPath = path.join(fixture.root, 'readiness-probes.conf')
+
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'single-node',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+      { KRAVHANTERING_TEST_UNTRUSTED_CONFIG: configPath },
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('file must be owned by root')
+    expect(fs.existsSync(fixture.outputDir)).toBe(false)
+  })
+
+  it('rejects a readiness probe path writable by the service account', () => {
+    const fixture = createFixture(releaseEnv())
+
+    const result = runHelper(
+      [
+        'render',
+        '--topology',
+        'single-node',
+        '--output-dir',
+        fixture.outputDir,
+      ],
+      fixture,
+      { KRAVHANTERING_TEST_WRITABLE_PARENT: fixture.root },
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'parent directory is writable by the service account',
     )
     expect(fs.existsSync(fixture.outputDir)).toBe(false)
   })
