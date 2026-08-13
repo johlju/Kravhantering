@@ -5,6 +5,7 @@ import {
   type DataSubjectExportResponse,
   expectOk,
   expectStatus,
+  expectStatusCode,
   HSA,
   newRoleContext,
   type RequirementPackageResponse,
@@ -80,16 +81,18 @@ test('AUTHZ-07/AUTH-10/AUTH-11: requirement package co-authors are exported but 
       403,
       'package co-author update',
     )
-    await expectStatus(
+    await expectStatusCode(
       await packageCoauthor.put(
         `/api/requirement-packages/${fixture.packageId}/co-authors`,
         {
           data: {
             coAuthorHsaIds: [],
+            verificationEvidence: [],
           },
         },
       ),
       403,
+      'forbidden',
       'package co-author co-author management',
     )
 

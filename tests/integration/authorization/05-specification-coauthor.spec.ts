@@ -3,7 +3,7 @@ import {
   type AuthorizationFixture,
   createAuthorizationFixture,
   expectOk,
-  expectStatus,
+  expectStatusCode,
   HSA,
   newRoleContext,
   ROLE_STORAGE_STATE,
@@ -82,24 +82,32 @@ test('AUTHZ-05/AUTH-10/AUTH-11: specification co-authors can edit content but no
       ),
       'specification co-author content update',
     )
-    await expectStatus(
+    await expectStatusCode(
       await specificationCoauthor.put(
         `/api/requirements-specifications/${fixture.specificationId}/co-authors`,
         {
-          data: { coAuthorHsaIds: [HSA.areaCoauthor] },
+          data: {
+            coAuthorHsaIds: [HSA.areaCoauthor],
+            verificationEvidence: [],
+          },
         },
       ),
       403,
+      'forbidden',
       'specification co-author co-author update',
     )
-    await expectStatus(
+    await expectStatusCode(
       await specificationCoauthor.put(
         `/api/requirements-specifications/${fixture.specificationId}/responsible`,
         {
-          data: { responsibleHsaId: HSA.specificationResponsible },
+          data: {
+            responsibleHsaId: HSA.specificationResponsible,
+            verificationEvidence: 'permission-check-evidence',
+          },
         },
       ),
       403,
+      'forbidden',
       'specification co-author responsible update',
     )
   } finally {

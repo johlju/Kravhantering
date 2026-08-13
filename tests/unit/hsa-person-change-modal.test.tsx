@@ -63,6 +63,22 @@ function prefixPayload(prefix = 'SE5560000001') {
   }
 }
 
+function verifiedPersonResponse() {
+  return {
+    evidence: 'signed-evidence',
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    person: {
+      displayName: 'Nora New',
+      email: 'nora.new@example.test',
+      givenName: 'Nora',
+      hasProtectedPersonalData: false,
+      hsaId: 'SE5560000001-new1',
+      middleName: null,
+      surname: 'New',
+    },
+  }
+}
+
 describe('HsaPersonChangeModal', () => {
   afterEach(() => {
     vi.clearAllMocks()
@@ -126,16 +142,7 @@ describe('HsaPersonChangeModal', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/api/hsa-id-prefixes') return okJson(prefixPayload())
-      return okJson({
-        person: {
-          displayName: 'Nora New',
-          email: 'nora.new@example.test',
-          givenName: 'Nora',
-          hsaId: 'SE5560000001-new1',
-          middleName: null,
-          surname: 'New',
-        },
-      })
+      return okJson(verifiedPersonResponse())
     })
     vi.stubGlobal('fetch', fetchMock)
     const onSubmit = vi.fn(async () => ({ ok: true as const }))
@@ -176,7 +183,12 @@ describe('HsaPersonChangeModal', () => {
   it('resets on reopen, reports submit errors, and closes on cancel', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(prefixPayload())),
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/hsa-id-prefixes') {
+          return okJson(prefixPayload())
+        }
+        return okJson(verifiedPersonResponse())
+      }),
     )
     const onSubmit = vi.fn(async () => ({
       error: 'Assignment failed',
@@ -204,7 +216,11 @@ describe('HsaPersonChangeModal', () => {
     const input = within(dialog).getByRole('textbox', { name: /New HSA-id/ })
     await waitFor(() => expect(input).toBeEnabled())
     fireEvent.change(input, { target: { value: 'new1' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Change' }))
+    const submitButton = within(dialog).getByRole('button', { name: 'Change' })
+    expect(submitButton).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fetch' }))
+    await waitFor(() => expect(submitButton).toBeEnabled())
+    fireEvent.click(submitButton)
     await waitFor(() =>
       expect(within(dialog).getByRole('alert')).toHaveTextContent(
         'Assignment failed',

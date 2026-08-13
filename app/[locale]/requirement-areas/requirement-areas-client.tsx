@@ -88,12 +88,24 @@ const toForm = (area: Area): AreaForm => ({
   prefix: area.prefix,
 })
 
-const toCreatePayload = (form: AreaForm) => ({
-  description: form.description,
-  name: form.name,
-  ownerHsaId: form.ownerHsaId,
-  prefix: form.prefix,
-})
+function matchingOwnerVerificationEvidence(form: AreaForm): string | null {
+  const verification = form.ownerPersonVerification
+  const evidence = verification?.verificationEvidence.trim()
+  return verification?.hsaId === form.ownerHsaId.trim() && evidence
+    ? evidence
+    : null
+}
+
+const toCreatePayload = (form: AreaForm) => {
+  const verificationEvidence = matchingOwnerVerificationEvidence(form)
+  return {
+    description: form.description,
+    name: form.name,
+    ownerHsaId: form.ownerHsaId,
+    prefix: form.prefix,
+    ...(verificationEvidence ? { verificationEvidence } : {}),
+  }
+}
 
 const toUpdatePayload = (form: AreaForm) => ({
   description: form.description,
@@ -137,13 +149,17 @@ export default function RequirementAreasClient() {
 
   const submitOwnerChange = async (
     nextOwnerHsaId: string,
+    person: HsaPersonVerification | null,
   ): Promise<HsaPersonChangeSubmitResult> => {
     if (!ownerChange) return { ok: false }
     try {
       const response = await apiFetch(
         `/api/requirement-areas/${ownerChange.areaId}`,
         {
-          body: JSON.stringify({ ownerHsaId: nextOwnerHsaId }),
+          body: JSON.stringify({
+            ownerHsaId: nextOwnerHsaId,
+            verificationEvidence: person?.verificationEvidence ?? '',
+          }),
           headers: { 'Content-Type': 'application/json' },
           method: 'PUT',
         },
@@ -234,6 +250,10 @@ export default function RequirementAreasClient() {
       }
       formMaxWidthClassName="max-w-2xl"
       formPresentation="modal"
+      formSubmitDisabled={
+        controller.editId === null &&
+        matchingOwnerVerificationEvidence(controller.form) === null
+      }
       formTitle={mode => (mode === 'create' ? t('newArea') : t('editArea'))}
       formTitleId="requirement-area-form-title"
       renderFormFields={({
