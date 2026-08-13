@@ -239,10 +239,14 @@ function restoreSafetyRuleDefaultsInRules(
 
 export default function AiSettingsPanel({
   embedded = false,
+  mcpImportMaxRowsCeiling = MCP_IMPORT_MAX_ROWS_MAX,
   onSettingsSettled,
+  persistedMcpImportMaxRowsCeiling = mcpImportMaxRowsCeiling,
 }: {
   embedded?: boolean
+  mcpImportMaxRowsCeiling?: number
   onSettingsSettled?: () => void
+  persistedMcpImportMaxRowsCeiling?: number
 }) {
   const locale = useLocale()
   const ta = useTranslations('admin')
@@ -316,10 +320,26 @@ export default function AiSettingsPanel({
   const [mcpLimitInputKiB, setMcpLimitInputKiB] = useState(committedMcpLimitKiB)
   const currentMcpImportMaxRows =
     settings.mcpImportMaxRows ?? MCP_IMPORT_MAX_ROWS_DEFAULT
-  const committedMcpImportRows = String(currentMcpImportMaxRows)
+  const effectiveMcpImportMaxRows = Math.min(
+    currentMcpImportMaxRows,
+    mcpImportMaxRowsCeiling,
+  )
+  const committedMcpImportRows = String(effectiveMcpImportMaxRows)
   const [mcpImportRowsInput, setMcpImportRowsInput] = useState(
     committedMcpImportRows,
   )
+  useEffect(() => {
+    setMcpImportRowsInput(String(effectiveMcpImportMaxRows))
+  }, [effectiveMcpImportMaxRows])
+  useEffect(() => {
+    setSettings(current => ({
+      ...current,
+      mcpImportMaxRows: Math.min(
+        current.mcpImportMaxRows ?? MCP_IMPORT_MAX_ROWS_DEFAULT,
+        persistedMcpImportMaxRowsCeiling,
+      ),
+    }))
+  }, [persistedMcpImportMaxRowsCeiling])
   const committedMcpImportTtlMinutes = String(
     settings.mcpImportValidationTtlMinutes ??
       MCP_IMPORT_VALIDATION_TTL_DEFAULT_MINUTES,
@@ -440,7 +460,10 @@ export default function AiSettingsPanel({
   }
 
   function updateMcpImportMaxRows(nextValue: number) {
-    const next = coerceMcpImportMaxRows(nextValue)
+    const next = Math.min(
+      coerceMcpImportMaxRows(nextValue),
+      mcpImportMaxRowsCeiling,
+    )
     setMcpImportRowsInput(String(next))
     if (next === currentMcpImportMaxRows) return
     void saveSettingsPatch(
@@ -1651,7 +1674,7 @@ export default function AiSettingsPanel({
                       }
                       id={mcpImportRowsId}
                       inputMode="numeric"
-                      max={MCP_IMPORT_MAX_ROWS_MAX}
+                      max={mcpImportMaxRowsCeiling}
                       min={MCP_IMPORT_MAX_ROWS_MIN}
                       onBlur={event => {
                         commitMcpImportMaxRowsInput(event.currentTarget.value)

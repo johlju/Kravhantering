@@ -4,15 +4,21 @@ import {
   requirementsMutationPolicy,
   secureMutationRoute,
 } from '@/lib/http/secure-mutation-route'
-import { toHttpErrorPayload } from '@/lib/requirements/http-errors'
 import {
+  createRequirementImportBodyReader,
+  requirementImportHttpErrorResponse,
+} from '@/lib/requirements/import-http'
+import {
+  buildImportExecuteBodySchema,
   type ImportExecuteBody,
-  importExecuteBodySchema,
 } from '@/lib/requirements/import-schema'
 import { createRequirementsRestRuntime } from '@/lib/requirements/server'
 
-export const POST = secureMutationRoute({
-  bodySchema: importExecuteBodySchema,
+export const POST = secureMutationRoute<ImportExecuteBody>({
+  bodyReader: createRequirementImportBodyReader({
+    content: body => ({ rows: (body as { rows?: unknown })?.rows }),
+    schema: buildImportExecuteBodySchema,
+  }),
   policy: requirementsMutationPolicy<ImportExecuteBody>(({ body }) => ({
     areaId: body.areaId,
     kind: 'manage_requirement',
@@ -32,8 +38,7 @@ export const POST = secureMutationRoute({
       })
     } catch (error) {
       logSanitizedError('[API] Failed to execute requirements import', error)
-      const { body: errorBody, status } = toHttpErrorPayload(error)
-      return NextResponse.json(errorBody, { status })
+      return requirementImportHttpErrorResponse(error)
     }
   },
 })

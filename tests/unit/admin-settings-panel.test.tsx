@@ -23,9 +23,24 @@ vi.mock('next-intl', () => ({
 }))
 
 vi.mock('@/app/[locale]/admin/panels/settings/ai-settings-panel', () => ({
-  default: ({ onSettingsSettled }: { onSettingsSettled?: () => void }) => {
+  default: ({
+    mcpImportMaxRowsCeiling,
+    onSettingsSettled,
+    persistedMcpImportMaxRowsCeiling,
+  }: {
+    mcpImportMaxRowsCeiling?: number
+    onSettingsSettled?: () => void
+    persistedMcpImportMaxRowsCeiling?: number
+  }) => {
     useEffect(() => onSettingsSettled?.(), [onSettingsSettled])
-    return <section aria-label="AI settings">AI settings</section>
+    return (
+      <section aria-label="AI settings">
+        AI settings
+        <output aria-label="MCP import row ceilings">
+          {mcpImportMaxRowsCeiling}/{persistedMcpImportMaxRowsCeiling}
+        </output>
+      </section>
+    )
   },
 }))
 
@@ -87,9 +102,17 @@ describe('SettingsPanel', () => {
       .map(heading => heading.textContent)
     expect(headings).toEqual([
       'admin.applicationSettings.title',
+      'admin.applicationSettings.imports.title',
       'admin.applicationSettings.exports.title',
       'admin.applicationSettings.reports.title',
     ])
+    expect(
+      screen
+        .getByRole('heading', {
+          name: 'admin.applicationSettings.imports.title',
+        })
+        .querySelector('.lucide-file-input'),
+    ).toHaveAttribute('aria-hidden', 'true')
     expect(
       screen
         .getByRole('heading', {
@@ -129,6 +152,11 @@ describe('SettingsPanel', () => {
       pdfReportMaxRequirements: 'requirements',
       pdfReportTimeoutSeconds: 'seconds',
       pdfWorkerMemoryMib: 'mib',
+      requirementImportMaxJsonDepth: 'depthLevels',
+      requirementImportMaxNestedItems: 'importItems',
+      requirementImportMaxProposedNeedsReferences: 'proposals',
+      requirementImportMaxProposedNormReferences: 'proposals',
+      requirementImportMaxRows: 'importRows',
     } as const
 
     for (const [field, unit] of Object.entries(expectedUnits)) {
@@ -351,7 +379,7 @@ describe('SettingsPanel', () => {
     })
     expect(
       screen.getAllByText('admin.applicationSettings.loadError'),
-    ).toHaveLength(2)
+    ).toHaveLength(3)
     fireEvent.click(retryButtons[0])
 
     await waitFor(() =>
@@ -455,11 +483,11 @@ describe('SettingsPanel', () => {
 
     expect(
       await screen.findAllByText('admin.applicationSettings.loadError'),
-    ).toHaveLength(2)
+    ).toHaveLength(3)
     expect(response.bodyUsed).toBe(true)
     expect(
       screen.getAllByRole('button', { name: 'common.retry' }),
-    ).toHaveLength(2)
+    ).toHaveLength(3)
   })
 
   it('rolls back an optimistic edit when saving is rejected', async () => {
@@ -503,5 +531,55 @@ describe('SettingsPanel', () => {
     expect(input).toHaveValue(
       DEFAULT_APPLICATION_SETTINGS.csvExportTimeoutSeconds,
     )
+  })
+
+  it('restores the effective MCP ceiling when the global limit PATCH fails', async () => {
+    const patch = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(okJson(settingsResponse()))
+      .mockReturnValueOnce(patch.promise)
+    render(<SettingsPanel />)
+
+    const input = await screen.findByLabelText(
+      'admin.applicationSettings.fields.requirementImportMaxRows.label',
+    )
+    const ceilings = screen.getByLabelText('MCP import row ceilings')
+    expect(ceilings).toHaveTextContent('500/500')
+
+    fireEvent.change(input, { target: { value: '400' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(ceilings).toHaveTextContent('400/500'))
+
+    patch.resolve(errorJson({ message: 'admin.applicationSettings.rejected' }))
+    await waitFor(() => expect(ceilings).toHaveTextContent('500/500'))
+    expect(input).toHaveValue(500)
+  })
+
+  it('reconciles the persisted MCP ceiling after the global limit PATCH succeeds', async () => {
+    const patch = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(okJson(settingsResponse()))
+      .mockReturnValueOnce(patch.promise)
+    render(<SettingsPanel />)
+
+    const input = await screen.findByLabelText(
+      'admin.applicationSettings.fields.requirementImportMaxRows.label',
+    )
+    const ceilings = screen.getByLabelText('MCP import row ceilings')
+
+    fireEvent.change(input, { target: { value: '400' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(ceilings).toHaveTextContent('400/500'))
+
+    patch.resolve(
+      okJson({
+        field: 'requirementImportMaxRows',
+        updatedAt: '2026-07-18T12:01:00.000Z',
+        value: 400,
+      }),
+    )
+
+    await waitFor(() => expect(ceilings).toHaveTextContent('400/400'))
+    expect(input).toHaveValue(400)
   })
 })

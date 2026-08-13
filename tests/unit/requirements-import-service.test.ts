@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getCachedMcpRuntimeSettings } from '@/lib/dal/ai-settings'
+import { DEFAULT_APPLICATION_SETTINGS } from '@/lib/application-settings'
+import {
+  getAiGenerationSettings,
+  getCachedMcpRuntimeSettings,
+} from '@/lib/dal/ai-settings'
+import {
+  getApplicationSettings,
+  getApplicationSettingsForUpdate,
+} from '@/lib/dal/application-settings'
 import {
   listNormReferences,
   type NormReferenceRow,
@@ -70,7 +78,13 @@ vi.mock('@/lib/dal/priority-levels', () => ({
 }))
 
 vi.mock('@/lib/dal/ai-settings', () => ({
+  getAiGenerationSettings: vi.fn(),
   getCachedMcpRuntimeSettings: vi.fn(),
+}))
+
+vi.mock('@/lib/dal/application-settings', () => ({
+  getApplicationSettings: vi.fn(),
+  getApplicationSettingsForUpdate: vi.fn(),
 }))
 
 vi.mock('@/lib/dal/requirement-areas', () => ({
@@ -229,6 +243,20 @@ describe('requirements import service', () => {
       mcpImportValidationTtlMinutes: 60,
       mcpMaxRequestBytes: 10 * 1024 * 1024,
     })
+    vi.mocked(getAiGenerationSettings).mockResolvedValue({
+      aiSafetyForensicLoggingEnabled: true,
+      aiSafetyRuleCacheTtlSeconds: 600,
+      mcpImportMaxRows: 500,
+      mcpImportValidationTtlMinutes: 60,
+      mcpMaxRequestBytes: 10 * 1024 * 1024,
+      requirementGenerationEnabled: true,
+    })
+    vi.mocked(getApplicationSettings).mockResolvedValue(
+      DEFAULT_APPLICATION_SETTINGS,
+    )
+    vi.mocked(getApplicationSettingsForUpdate).mockResolvedValue(
+      DEFAULT_APPLICATION_SETTINGS,
+    )
     vi.mocked(getAreaById).mockResolvedValue({
       createdAt: '2026-07-05T10:00:00.000Z',
       description: null,
@@ -317,6 +345,42 @@ describe('requirements import service', () => {
         }),
       ],
     })
+  })
+
+  it('rejects REST preview content above the current application budget', async () => {
+    vi.mocked(getApplicationSettings).mockResolvedValueOnce({
+      ...DEFAULT_APPLICATION_SETTINGS,
+      requirementImportMaxRows: 1,
+    })
+    const workflow = createRequirementsImportWorkflow({
+      authorization: { assertAuthorized: vi.fn() },
+      db: {} as never,
+    })
+    const payload = requirementsImportPayloadSchema.parse({
+      requirements: [
+        { description: 'First requirement.' },
+        { description: 'Second requirement.' },
+      ],
+      schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+    })
+    const referenceReadsBefore = vi.mocked(listCategories).mock.calls.length
+
+    await expect(
+      workflow.previewLibraryImport({} as never, {
+        areaId: 7,
+        locale: 'en',
+        payload,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      details: {
+        actual: 2,
+        limit: 1,
+        path: '/requirements',
+        reason: 'import_row_count_cap_exceeded',
+      },
+    })
+    expect(listCategories).toHaveBeenCalledTimes(referenceReadsBefore)
   })
 
   it('ignores needs-reference fields for library import preview', async () => {
@@ -547,6 +611,9 @@ describe('requirements import service', () => {
     expect(result.importInstruction).toContain(
       '# Create JSON for requirements import',
     )
+    expect(result.importInstruction).toContain(
+      'at most 500 requirements, 500 proposed norm references',
+    )
     expect(authorization.assertAuthorized).toHaveBeenCalledWith(
       { kind: 'get_import_instruction' },
       context,
@@ -733,11 +800,23 @@ describe('requirements import service', () => {
     })
     const context = makeContext('requirements_manage_import')
 
-    vi.mocked(getCachedMcpRuntimeSettings).mockResolvedValueOnce({
+    vi.mocked(getCachedMcpRuntimeSettings).mockResolvedValue({
       mcpImportMaxRows: 1,
       mcpImportValidationTtlMinutes: 60,
       mcpMaxRequestBytes: 10 * 1024 * 1024,
     })
+    const exactBoundary = await workflow.manageImport(context, {
+      destination: { areaId: 7, kind: 'requirements_library' },
+      operation: 'validate',
+      payload: {
+        requirements: [{ description: 'One' }],
+        schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+      },
+    })
+    expect(exactBoundary).toMatchObject({ hasErrors: false })
+    expect(createRequirementImportValidationSession).toHaveBeenCalledOnce()
+    vi.mocked(createRequirementImportValidationSession).mockClear()
+
     const rowCap = await workflow.manageImport(context, {
       destination: { areaId: 7, kind: 'requirements_library' },
       operation: 'validate',
@@ -755,17 +834,14 @@ describe('requirements import service', () => {
         }),
       ],
     })
+    expect(createRequirementImportValidationSession).not.toHaveBeenCalled()
 
-    vi.mocked(getCachedMcpRuntimeSettings).mockResolvedValueOnce({
-      mcpImportMaxRows: 500,
-      mcpImportValidationTtlMinutes: 60,
-      mcpMaxRequestBytes: 120,
-    })
     const payloadCap = await workflow.manageImport(context, {
       destination: { areaId: 7, kind: 'requirements_library' },
       operation: 'validate',
       payload: {
-        requirements: [{ description: 'A'.repeat(500) }],
+        padding: 'A'.repeat(8 * 1024 * 1024),
+        requirements: [{ description: 'Requirement' }],
         schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
       },
     })
@@ -1027,6 +1103,137 @@ describe('requirements import service', () => {
     expect(createRequirementsBatchWithExecutor).not.toHaveBeenCalled()
   })
 
+  it('rejects MCP execute before reference or mutation work when the budget changed', async () => {
+    const { db } = makeManageImportDb()
+    const workflow = createRequirementsImportWorkflow({
+      authorization: { assertAuthorized: vi.fn() },
+      db: db as never,
+    })
+    const context = makeContext('requirements_manage_import')
+    await workflow.manageImport(context, {
+      destination: { areaId: 7, kind: 'requirements_library' },
+      operation: 'validate',
+      payload: {
+        requirements: [{ description: 'Systemet ska vara spårbart.' }],
+        schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+      },
+    })
+    const createData = vi
+      .mocked(createRequirementImportValidationSession)
+      .mock.calls.at(-1)?.[1]
+    if (!createData) throw new Error('Expected validation session data')
+    vi.mocked(
+      getRequirementImportValidationSessionByTokenHash,
+    ).mockResolvedValue(makeSessionRecord(createData))
+    const referenceReadsBeforeExecute =
+      vi.mocked(listCategories).mock.calls.length
+    vi.mocked(getApplicationSettings).mockResolvedValue({
+      ...DEFAULT_APPLICATION_SETTINGS,
+      requirementImportMaxRows: 499,
+    })
+
+    const result = await workflow.manageImport(context, {
+      operation: 'execute',
+      validationToken: 'opaque-validation-token',
+    })
+
+    expect(result).toMatchObject({
+      hasErrors: true,
+      issues: [expect.objectContaining({ code: 'import_budget_stale' })],
+    })
+    expect(listCategories).toHaveBeenCalledTimes(referenceReadsBeforeExecute)
+    expect(createRequirementsBatchWithExecutor).not.toHaveBeenCalled()
+  })
+
+  it('rejects MCP execute when the budget changes after the transaction lock is acquired', async () => {
+    const { db } = makeManageImportDb()
+    const workflow = createRequirementsImportWorkflow({
+      authorization: { assertAuthorized: vi.fn() },
+      db: db as never,
+    })
+    const context = makeContext('requirements_manage_import')
+    await workflow.manageImport(context, {
+      destination: { areaId: 7, kind: 'requirements_library' },
+      operation: 'validate',
+      payload: {
+        requirements: [{ description: 'Systemet ska vara spårbart.' }],
+        schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+      },
+    })
+    const createData = vi
+      .mocked(createRequirementImportValidationSession)
+      .mock.calls.at(-1)?.[1]
+    if (!createData) throw new Error('Expected validation session data')
+    const session = makeSessionRecord(createData)
+    vi.mocked(
+      getRequirementImportValidationSessionByTokenHash,
+    ).mockResolvedValue(session)
+    vi.mocked(getApplicationSettings)
+      .mockResolvedValueOnce(DEFAULT_APPLICATION_SETTINGS)
+      .mockResolvedValueOnce({
+        ...DEFAULT_APPLICATION_SETTINGS,
+        requirementImportMaxRows: 499,
+      })
+
+    const result = await workflow.manageImport(context, {
+      operation: 'execute',
+      validationToken: 'opaque-validation-token',
+    })
+
+    expect(result).toMatchObject({
+      hasErrors: true,
+      issues: [expect.objectContaining({ code: 'import_budget_stale' })],
+    })
+    expect(createRequirementsBatchWithExecutor).not.toHaveBeenCalled()
+  })
+
+  it('fails closed and logs a diagnostic when the locked MCP session disappears', async () => {
+    const { db } = makeManageImportDb()
+    const logger = { error: vi.fn(), info: vi.fn() }
+    const workflow = createRequirementsImportWorkflow({
+      authorization: { assertAuthorized: vi.fn() },
+      db: db as never,
+      logger,
+    })
+    const context = makeContext('requirements_manage_import')
+    await workflow.manageImport(context, {
+      destination: { areaId: 7, kind: 'requirements_library' },
+      operation: 'validate',
+      payload: {
+        requirements: [{ description: 'Systemet ska vara spårbart.' }],
+        schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+      },
+    })
+    const createData = vi
+      .mocked(createRequirementImportValidationSession)
+      .mock.calls.at(-1)?.[1]
+    if (!createData) throw new Error('Expected validation session data')
+    vi.mocked(getRequirementImportValidationSessionByTokenHash)
+      .mockResolvedValueOnce(makeSessionRecord(createData))
+      .mockResolvedValueOnce(null)
+    vi.mocked(
+      purgeExpiredRequirementImportValidationSessions,
+    ).mockRejectedValueOnce(new Error('cleanup unavailable'))
+
+    await expect(
+      workflow.manageImport(context, {
+        operation: 'execute',
+        validationToken: 'opaque-validation-token',
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      details: { reason: 'validation_session_not_found_or_expired' },
+    })
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'requirements.manage_import.validation_session_diagnostic',
+      expect.objectContaining({
+        error_name: 'RequirementsServiceError',
+        reason: 'execution_failed',
+      }),
+    )
+  })
+
   it('re-checks the stored destination before MCP execute imports rows', async () => {
     const { db } = makeManageImportDb()
     const authorization = { assertAuthorized: vi.fn() }
@@ -1156,7 +1363,6 @@ describe('requirements import service', () => {
       ],
       expect.objectContaining({
         audit: expect.any(Function),
-        batchAudit: expect.any(Function),
       }),
     )
     expect(
@@ -1173,6 +1379,131 @@ describe('requirements import service', () => {
     ).toBeLessThan(
       vi.mocked(updateRequirementImportValidationSessionExecutionResult).mock
         .invocationCallOrder[0],
+    )
+  })
+
+  it('does not rewrite an execution result when every validated row was already imported', async () => {
+    const { db } = makeManageImportDb()
+    const workflow = createRequirementsImportWorkflow({
+      authorization: { assertAuthorized: vi.fn() },
+      db: db as never,
+    })
+    const context = makeContext('requirements_manage_import')
+
+    await workflow.manageImport(context, {
+      destination: { areaId: 7, kind: 'requirements_library' },
+      operation: 'validate',
+      payload: {
+        requirements: [{ description: 'Systemet ska redan vara importerat.' }],
+        schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+      },
+    })
+    const createData = vi
+      .mocked(createRequirementImportValidationSession)
+      .mock.calls.at(-1)?.[1]
+    if (!createData) throw new Error('Expected validation session data')
+    const session = makeSessionRecord({
+      ...createData,
+      executionResultJson: JSON.stringify({
+        importedRows: [
+          {
+            importedAt: '2026-08-05T08:00:00.000Z',
+            kravId: 'TEST0001',
+            reviewRowId: 'row-0',
+            sourceIndex: 0,
+            uniqueId: 'TEST0001',
+          },
+        ],
+        schemaVersion: 'mcp-requirement-import-execution.v1',
+      }),
+    })
+    vi.mocked(
+      getRequirementImportValidationSessionByTokenHash,
+    ).mockResolvedValue(session)
+    vi.mocked(
+      updateRequirementImportValidationSessionExecutionResult,
+    ).mockClear()
+    vi.mocked(createRequirementsBatchWithExecutor).mockClear()
+
+    const result = await workflow.manageImport(context, {
+      operation: 'execute',
+      validationToken: 'opaque-validation-token',
+    })
+
+    expect(result).toMatchObject({
+      importedRows: [],
+      notImportedRows: [],
+      summary: {
+        importedCount: 0,
+        notImportedCount: 0,
+        totalRowCount: 1,
+      },
+    })
+    expect(createRequirementsBatchWithExecutor).not.toHaveBeenCalled()
+    expect(
+      updateRequirementImportValidationSessionExecutionResult,
+    ).not.toHaveBeenCalled()
+  })
+
+  it('executes a validated specification-local MCP import in the locked transaction', async () => {
+    vi.mocked(getSpecificationById).mockResolvedValue({ id: 8 } as never)
+    const { db, manager } = makeManageImportDb()
+    const workflow = createRequirementsImportWorkflow({
+      authorization: { assertAuthorized: vi.fn() },
+      db: db as never,
+    })
+    const context = makeContext('requirements_manage_import')
+
+    await workflow.manageImport(context, {
+      destination: { kind: 'requirements_specification', specificationId: 8 },
+      operation: 'validate',
+      payload: {
+        requirements: [{ description: 'Det lokala kravet ska loggas.' }],
+        schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+      },
+    })
+    const createData = vi
+      .mocked(createRequirementImportValidationSession)
+      .mock.calls.at(-1)?.[1]
+    if (!createData) throw new Error('Expected validation session data')
+    const session = makeSessionRecord(createData)
+    vi.mocked(
+      getRequirementImportValidationSessionByTokenHash,
+    ).mockResolvedValue(session)
+    vi.mocked(
+      createSpecificationLocalRequirementsBatchWithExecutor,
+    ).mockResolvedValue([{ id: 301, uniqueId: 'LOCAL-301' }] as never)
+
+    const result = await workflow.manageImport(context, {
+      operation: 'execute',
+      validationToken: 'opaque-validation-token',
+    })
+
+    expect(result).toMatchObject({
+      importedRows: [
+        expect.objectContaining({
+          localKravId: 'LOCAL-301',
+          uniqueId: 'LOCAL-301',
+        }),
+      ],
+      summary: {
+        importedCount: 1,
+        notImportedCount: 0,
+        totalRowCount: 1,
+      },
+    })
+    expect(
+      createSpecificationLocalRequirementsBatchWithExecutor,
+    ).toHaveBeenCalledWith(manager, 8, [
+      expect.objectContaining({ description: 'Det lokala kravet ska loggas.' }),
+    ])
+    expect(
+      updateRequirementImportValidationSessionExecutionResult,
+    ).toHaveBeenCalledWith(
+      manager,
+      session.id,
+      expect.stringContaining('LOCAL-301'),
+      expect.any(Date),
     )
   })
 
@@ -2203,6 +2534,7 @@ describe('requirements import service', () => {
     vi.mocked(createRequirementsBatch).mockImplementationOnce(
       async (_db, _rows, options) => {
         const executor = { query: vi.fn().mockResolvedValue([]) }
+        await options?.beforeWrite?.(executor as never)
         await options?.audit?.(executor as never, createdResult as never, 0)
         await options?.batchAudit?.(executor as never, [createdResult] as never)
         return [createdResult] as never
@@ -2241,8 +2573,21 @@ describe('requirements import service', () => {
       expect.objectContaining({
         audit: expect.any(Function),
         batchAudit: expect.any(Function),
+        beforeWrite: expect.any(Function),
       }),
     )
+    expect(getApplicationSettingsForUpdate).toHaveBeenCalledOnce()
+    vi.mocked(getApplicationSettingsForUpdate).mockResolvedValueOnce({
+      ...DEFAULT_APPLICATION_SETTINGS,
+      requirementImportMaxRows: 499,
+    })
+    const writeOptions = vi.mocked(createRequirementsBatch).mock.calls[0]?.[2]
+    await expect(
+      writeOptions?.beforeWrite?.({ query: vi.fn() } as never),
+    ).rejects.toMatchObject({
+      code: 'conflict',
+      details: { reason: 'stale_requirement_import_preview' },
+    })
   })
 
   it('invokes per-row and batch audit for specification-local import', async () => {
@@ -2262,12 +2607,11 @@ describe('requirements import service', () => {
     )
     const row = preview.rows[0]
     if (!row) throw new Error('Expected preview row')
+    const executor = { query: vi.fn().mockResolvedValue([]) }
     vi.mocked(createSpecificationLocalRequirementsBatch).mockImplementationOnce(
       async (_db, _specificationId, _rows, options) => {
-        await options?.batchAudit?.(
-          { query: vi.fn().mockResolvedValue([]) } as never,
-          [301, 302],
-        )
+        await options?.beforeWrite?.(executor as never)
+        await options?.batchAudit?.(executor as never, [301, 302])
         return [
           { id: 301, uniqueId: 'LOCAL-301' },
           { id: 302, uniqueId: 'LOCAL-302' },
@@ -2292,6 +2636,64 @@ describe('requirements import service', () => {
     )
 
     expect(result.summary.createdCount).toBe(1)
+    expect(getApplicationSettingsForUpdate).toHaveBeenLastCalledWith(executor)
+  })
+
+  it('rejects stale REST preview tokens after normalizing row order', async () => {
+    vi.mocked(getSpecificationById).mockResolvedValue({ id: 8 } as never)
+    const workflow = createRequirementsImportWorkflow({
+      authorization: { assertAuthorized: vi.fn() },
+      db: {} as never,
+    })
+    const payload = requirementsImportPayloadSchema.parse({
+      requirements: [
+        { description: 'First requirement.' },
+        { description: 'Second requirement.' },
+      ],
+      schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+    })
+    const libraryPreview = await workflow.previewLibraryImport({} as never, {
+      areaId: 7,
+      locale: 'en',
+      payload,
+    })
+    const specificationPreview = await workflow.previewSpecificationLocalImport(
+      {} as never,
+      {
+        locale: 'en',
+        payload,
+        specificationId: 8,
+      },
+    )
+    const toExecuteRows = (preview: typeof libraryPreview) =>
+      [...preview.rows].reverse().map(row => ({
+        ...row.values,
+        reviewRowId: row.reviewRowId,
+        sourceIndex: row.sourceIndex,
+      }))
+
+    await expect(
+      workflow.executeLibraryImport(makeContext('rest'), {
+        areaId: 7,
+        locale: 'en',
+        previewToken: 'stale-library-token',
+        rows: toExecuteRows(libraryPreview),
+      }),
+    ).rejects.toMatchObject({
+      code: 'conflict',
+      details: { reason: 'stale_requirement_import_preview' },
+    })
+    await expect(
+      workflow.executeSpecificationLocalImport(makeContext('rest'), {
+        locale: 'en',
+        previewToken: 'stale-specification-token',
+        rows: toExecuteRows(specificationPreview),
+        specificationId: 8,
+      }),
+    ).rejects.toMatchObject({
+      code: 'conflict',
+      details: { reason: 'stale_requirement_import_preview' },
+    })
   })
 
   it('reviews conflicting, ambiguous, missing, archived, and duplicate references', async () => {

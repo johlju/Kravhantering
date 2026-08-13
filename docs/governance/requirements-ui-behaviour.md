@@ -105,7 +105,7 @@ Loading cannot be cancelled; activation resolves to the requested feature or
 an explicit in-modal error.
 
 - Requirement import uses one strict JSON file format,
-  `requirement-import.v3`, for both kravbiblioteksimport and
+  `requirement-import.v4`, for both kravbiblioteksimport and
   kravunderlagsimport. The top-level `schemaVersion` versions the whole import
   file, including requirement candidates and support data such as proposed norm
   references and proposed needs references. Destination fields such as `areaId`
@@ -136,10 +136,14 @@ an explicit in-modal error.
   clickable drop target, or dropped onto that target. The paste field uses
   placeholder text so the instruction is not inserted into the JSON value.
   `Förhandsgranska krav` stays disabled until the JSON parses and passes
-  `requirement-import.v3` schema validation and, for kravbiblioteksimport, a
+  `requirement-import.v4` schema validation and, for kravbiblioteksimport, a
   kravområde is selected. When the action is disabled, a short warning above
   the button explains the current blocker, such as missing kravområde, missing
   JSON, parse errors, wrong `schemaVersion`, or schema validation errors.
+  Selected files larger than 8 MiB are rejected before their contents are read,
+  and pasted content is measured as UTF-8 before parsing. The schema endpoint
+  supplies the current administrator-controlled row, proposal, nested-item,
+  and JSON-depth limits used by the browser.
 - Before the review is loaded, the dialog shows only the JSON setup panel. After
   the user loads review, the setup panel collapses and the editable krav review
   uses the dialog body.
@@ -215,8 +219,10 @@ an explicit in-modal error.
   refreshes when the dialog closes. If all rows have been imported and no
   review rows remain, closing the dialog does not ask the user to confirm
   discarding changes.
-- Imports with 200 or more rows show a warning but are not blocked. There is no
-  hard row-count limit.
+- Imports enforce the administrator-controlled row budget advertised by the
+  schema endpoint. Browser validation derives the row limit from the live
+  `requirement-import.v4` schema and blocks payloads above that limit before
+  preview.
 - The schema and AI reference prompt are downloadable from the import dialog.
   The AI prompt contains the full schema and current reference data, but no
   examples. A successful execute can optionally be recorded by downloading the

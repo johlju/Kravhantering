@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   getAdminApplicationSettings,
   getApplicationSettings,
+  getApplicationSettingsForUpdate,
   updateApplicationSetting,
 } from '@/lib/dal/application-settings'
 
@@ -18,6 +19,11 @@ function persistedRow() {
     pdfReportMaxRequirements: '1000',
     pdfReportTimeoutSeconds: '180',
     pdfWorkerMemoryMib: '512',
+    requirementImportMaxJsonDepth: '8',
+    requirementImportMaxNestedItems: '200',
+    requirementImportMaxProposedNeedsReferences: '500',
+    requirementImportMaxProposedNormReferences: '500',
+    requirementImportMaxRows: '500',
     updatedAt: '2026-07-18T11:00:00.000Z',
   }
 }
@@ -44,6 +50,16 @@ describe('application settings DAL', () => {
     expect(settings.pdfReportMaxFileBytes).toBe(50 * 1024 * 1024)
     expect(Object.isFrozen(settings)).toBe(true)
     expect(query.mock.calls[0]?.[0]).not.toContain('UPDLOCK')
+  })
+
+  it('returns a locked immutable snapshot for transactional revalidation', async () => {
+    const { executor, query } = queryExecutor([persistedRow()])
+
+    const settings = await getApplicationSettingsForUpdate(executor)
+
+    expect(settings.requirementImportMaxRows).toBe(500)
+    expect(Object.isFrozen(settings)).toBe(true)
+    expect(query.mock.calls[0]?.[0]).toContain('UPDLOCK, HOLDLOCK')
   })
 
   it('returns constraints and timestamp to Admin Center', async () => {
@@ -95,6 +111,23 @@ describe('application settings DAL', () => {
       field: 'csvExportConcurrencyPerNode',
       value: 8,
     })
+  })
+
+  it('atomically clamps the MCP row override only when lowering the global row limit', async () => {
+    const manager = {
+      query: vi
+        .fn(async (): Promise<unknown[]> => [])
+        .mockResolvedValueOnce([persistedRow()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]),
+    }
+    const db = { transaction: vi.fn(async callback => callback(manager)) }
+
+    await updateApplicationSetting(db as never, 'requirementImportMaxRows', 250)
+
+    const clampCall = manager.query.mock.calls[2] as unknown[] | undefined
+    expect(clampCall?.[0]).toContain('[mcp_import_max_rows] > @0')
+    expect(clampCall?.[1]).toEqual([250, expect.any(String)])
   })
 
   it('fails closed for missing or invalid persisted singleton state', async () => {

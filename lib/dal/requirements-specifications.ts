@@ -1,4 +1,5 @@
 import { isHsaId } from '@/lib/auth/hsa-id'
+import { normalizedBatchGroups } from '@/lib/dal/batch-groups'
 import { validateRequirementTaxonomyReferences } from '@/lib/dal/requirement-reference-validation'
 import {
   cleanupUnassignedRequirementResponsibilityPeople,
@@ -2388,6 +2389,8 @@ export async function createSpecificationLocalRequirement(
 
 export interface CreateSpecificationLocalRequirementsBatchOptions {
   batchAudit?: (executor: SqlExecutor, createdIds: number[]) => Promise<void>
+  beforeWrite?: (executor: SqlExecutor) => Promise<void>
+  maxGroupSize?: number
 }
 
 export interface CreatedSpecificationLocalRequirementRow {
@@ -2500,14 +2503,24 @@ export async function createSpecificationLocalRequirementsBatch(
 ): Promise<SpecificationLocalRequirementDetail[]> {
   if (inputs.length === 0) return []
 
-  const created = await db.transaction(async (manager: SqlExecutor) =>
-    createSpecificationLocalRequirementsBatchWithExecutor(
+  const created = await db.transaction(async (manager: SqlExecutor) => {
+    const results: CreatedSpecificationLocalRequirementRow[] = []
+    await options.beforeWrite?.(manager)
+    for (const group of normalizedBatchGroups(inputs, options.maxGroupSize)) {
+      results.push(
+        ...(await createSpecificationLocalRequirementsBatchWithExecutor(
+          manager,
+          specificationId,
+          group.items,
+        )),
+      )
+    }
+    await options.batchAudit?.(
       manager,
-      specificationId,
-      inputs,
-      options,
-    ),
-  )
+      results.map(row => row.id),
+    )
+    return results
+  })
 
   const details: SpecificationLocalRequirementDetail[] = []
   for (const { id: createdId } of created) {

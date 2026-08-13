@@ -4,15 +4,21 @@ import {
   requirementsMutationPolicy,
   secureMutationRoute,
 } from '@/lib/http/secure-mutation-route'
-import { toHttpErrorPayload } from '@/lib/requirements/http-errors'
+import {
+  createRequirementImportBodyReader,
+  requirementImportHttpErrorResponse,
+} from '@/lib/requirements/import-http'
 import { createRequirementsRestRuntime } from '@/lib/requirements/server'
 import {
   type SpecificationImportExecuteBody as Body,
-  specificationImportExecuteBodySchema as bodySchema,
+  buildSpecificationImportExecuteBodySchema,
 } from '../_shared'
 
-export const POST = secureMutationRoute({
-  bodySchema,
+export const POST = secureMutationRoute<Body>({
+  bodyReader: createRequirementImportBodyReader({
+    content: body => ({ rows: (body as { rows?: unknown })?.rows }),
+    schema: buildSpecificationImportExecuteBodySchema,
+  }),
   policy: requirementsMutationPolicy<Body>(({ body }) => ({
     kind: 'manage_specification_local_requirement',
     operation: 'create',
@@ -37,8 +43,7 @@ export const POST = secureMutationRoute({
         '[API] Failed to execute specification-local requirements import',
         error,
       )
-      const { body: errorBody, status } = toHttpErrorPayload(error)
-      return NextResponse.json(errorBody, { status })
+      return requirementImportHttpErrorResponse(error)
     }
   },
 })
