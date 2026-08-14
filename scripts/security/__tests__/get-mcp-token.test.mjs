@@ -5,7 +5,31 @@ import {
   fetchMcpToken,
   normalizeIssuerUrl,
   parseAccessTokenPayload,
+  validateMcpTokenShape,
 } from '../get-mcp-token.mjs'
+
+function encodedJson(value) {
+  return Buffer.from(JSON.stringify(value)).toString('base64url')
+}
+
+function serviceToken(overrides = {}, headerOverrides = {}) {
+  const now = Math.floor(Date.now() / 1000)
+  return [
+    encodedJson({ alg: 'RS256', typ: 'at+jwt', ...headerOverrides }),
+    encodedJson({
+      aud: 'kravhantering-app',
+      client_id: 'client-id',
+      employeeHsaId: 'SE5560000001-mcp1',
+      exp: now + 300,
+      iat: now,
+      roles: ['Admin'],
+      scope: 'kravhantering:mcp',
+      sub: 'service-account-client-id',
+      ...overrides,
+    }),
+    'signature',
+  ].join('.')
+}
 
 function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
@@ -34,18 +58,21 @@ describe('get-mcp-token', () => {
     const body = createClientCredentialsBody({
       clientId: 'kravhantering-mcp',
       clientSecret: 'dev-only-mcp-secret',
+      requiredScopes: 'kravhantering:mcp requirements:read',
     })
 
     expect(body.get('grant_type')).toBe('client_credentials')
     expect(body.get('client_id')).toBe('kravhantering-mcp')
     expect(body.get('client_secret')).toBe('dev-only-mcp-secret')
+    expect(body.get('scope')).toBe('kravhantering:mcp requirements:read')
   })
 
   it('posts credentials and returns only the access token', async () => {
+    const token = serviceToken()
     const fetchImpl = vi.fn(async () =>
       jsonResponse({
-        access_token: 'eyJ.test.token',
-        expires_in: 3600,
+        access_token: token,
+        expires_in: 300,
         token_type: 'Bearer',
       }),
     )
@@ -56,8 +83,9 @@ describe('get-mcp-token', () => {
         clientSecret: 'client-secret',
         fetchImpl,
         issuerUrl: 'http://localhost:8080/realms/dev',
+        requiredScopes: 'kravhantering:mcp',
       }),
-    ).resolves.toBe('eyJ.test.token')
+    ).resolves.toBe(token)
 
     expect(fetchImpl).toHaveBeenCalledWith(
       'http://localhost:8080/realms/dev/protocol/openid-connect/token',
@@ -88,7 +116,12 @@ describe('get-mcp-token', () => {
           }),
       )
 
-      const token = fetchMcpToken({ fetchImpl, timeoutMs: 10 })
+      const token = fetchMcpToken({
+        clientId: 'client-id',
+        fetchImpl,
+        requiredScopes: 'kravhantering:mcp',
+        timeoutMs: 10,
+      })
       const expectation = expect(token).rejects.toThrow(
         'Token endpoint request timed out after 10 ms',
       )
@@ -110,14 +143,41 @@ describe('get-mcp-token', () => {
       fetchMcpToken({
         clientSecret: 'dev-only-mcp-secret',
         fetchImpl,
+        clientId: 'client-id',
+        requiredScopes: 'kravhantering:mcp',
       }),
     ).rejects.toThrow('Token endpoint returned HTTP 401')
     await expect(
       fetchMcpToken({
         clientSecret: 'dev-only-mcp-secret',
         fetchImpl,
+        clientId: 'client-id',
+        requiredScopes: 'kravhantering:mcp',
       }),
     ).rejects.not.toThrow('dev-only-mcp-secret')
+  })
+
+  it('rejects a non-JSON token endpoint response', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('not-json', {
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+
+    await expect(
+      fetchMcpToken({
+        clientId: 'client-id',
+        fetchImpl,
+        requiredScopes: 'kravhantering:mcp',
+      }),
+    ).rejects.toThrow('Token endpoint did not return valid JSON')
+  })
+
+  it('requires an available fetch implementation', async () => {
+    await expect(fetchMcpToken({ fetchImpl: null })).rejects.toThrow(
+      'fetch is not available',
+    )
   })
 
   it('rejects malformed token payloads', () => {
@@ -127,5 +187,134 @@ describe('get-mcp-token', () => {
     expect(() => parseAccessTokenPayload({ access_token: '' })).toThrow(
       'Token endpoint response did not include access_token',
     )
+  })
+
+  it('rejects an ID-token-shaped response before printing it', () => {
+    expect(() =>
+      validateMcpTokenShape(serviceToken({}, { typ: 'JWT' }), {
+        clientId: 'client-id',
+        requiredScopes: 'kravhantering:mcp',
+      }),
+    ).toThrow('access-token contract: typ_invalid')
+  })
+
+  it.each([
+    [
+      'wrong client',
+      serviceToken({ client_id: 'browser-app' }),
+      'client_id_invalid',
+    ],
+    [
+      'conflicting authorized party',
+      serviceToken({ azp: 'browser-app' }),
+      'client_id_invalid',
+    ],
+    ['missing subject', serviceToken({ sub: undefined }), 'subject_invalid'],
+    [
+      'missing expiration',
+      serviceToken({ exp: undefined }),
+      'expiration_invalid',
+    ],
+    [
+      'missing issued-at time',
+      serviceToken({ iat: undefined }),
+      'issued_at_invalid',
+    ],
+    ['wrong audience', serviceToken({ aud: 'other-api' }), 'audience_invalid'],
+    ['missing scope', serviceToken({ scope: undefined }), 'scope_invalid'],
+    [
+      'wrong scope',
+      serviceToken({ scope: 'requirements:read' }),
+      'scope_invalid',
+    ],
+    [
+      'malformed HSA-id',
+      serviceToken({ employeeHsaId: 'private-value' }),
+      'employee_hsa_id_invalid',
+    ],
+    [
+      'overlong HSA-id',
+      serviceToken({ employeeHsaId: 'SE5560000001-1234567890123456789' }),
+      'employee_hsa_id_invalid',
+    ],
+    [
+      'unknown role',
+      serviceToken({ roles: ['Admin', 'Owner'] }),
+      'roles_invalid',
+    ],
+    [
+      'duplicate roles',
+      serviceToken({ roles: ['Admin', 'Admin'] }),
+      'roles_invalid',
+    ],
+    [
+      'excessive lifetime',
+      serviceToken({
+        exp: Math.floor(Date.now() / 1000) + 301,
+        iat: Math.floor(Date.now() / 1000),
+      }),
+      'lifetime_invalid',
+    ],
+    [
+      'expired lifetime',
+      serviceToken({
+        exp: Math.floor(Date.now() / 1000) - 31,
+        iat: Math.floor(Date.now() / 1000) - 300,
+      }),
+      'lifetime_invalid',
+    ],
+    ['non-string JWT', null, 'jwt_structure_invalid'],
+    ['malformed JWT', 'not-a-jwt', 'jwt_structure_invalid'],
+    [
+      'malformed JWT header',
+      `not-json.${serviceToken().split('.')[1]}.signature`,
+      'jwt_header_invalid',
+    ],
+    [
+      'malformed JWT payload',
+      `${serviceToken().split('.')[0]}.not-json.signature`,
+      'jwt_payload_invalid',
+    ],
+  ])('rejects a returned token with %s', (_label, token, reason) => {
+    expect(() =>
+      validateMcpTokenShape(token, {
+        clientId: 'client-id',
+        requiredScopes: 'kravhantering:mcp',
+      }),
+    ).toThrow(`access-token contract: ${reason}`)
+  })
+
+  it('accepts an array audience containing the API audience', () => {
+    const token = serviceToken({ aud: ['account', 'kravhantering-app'] })
+
+    expect(
+      validateMcpTokenShape(token, {
+        clientId: 'client-id',
+        requiredScopes: 'kravhantering:mcp',
+      }),
+    ).toBe(token)
+  })
+
+  it.each([59, 60.5, 901])(
+    'rejects an invalid configured maximum age of %s',
+    tokenMaxAgeSeconds => {
+      expect(() =>
+        validateMcpTokenShape(serviceToken(), {
+          clientId: 'client-id',
+          requiredScopes: 'kravhantering:mcp',
+          tokenMaxAgeSeconds,
+        }),
+      ).toThrow('access-token contract: token_max_age_invalid')
+    },
+  )
+
+  it('has no implicit MCP client identifier', () => {
+    expect(() =>
+      createClientCredentialsBody({
+        clientId: undefined,
+        clientSecret: 'dev-only-mcp-secret',
+        requiredScopes: 'kravhantering:mcp',
+      }),
+    ).toThrow('MCP_CLIENT_ID is required')
   })
 })

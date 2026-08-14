@@ -80,6 +80,8 @@ import {
   REQUIREMENTS_IMPORT_SCHEMA_VERSION,
 } from '@/lib/requirements/import-schema'
 
+const getTestDatabase = async () => ({}) as never
+
 function createFakeService(
   normReferences: Array<{
     normReference?: { name?: string; reference?: string; uri?: string | null }
@@ -296,7 +298,7 @@ async function createClient() {
           : input.url
     const request =
       input instanceof Request ? input : new Request(url, init ?? undefined)
-    return handleRequirementsMcpRequest(request, {} as never)
+    return handleRequirementsMcpRequest(request, getTestDatabase)
   })
 
   const transport = new StreamableHTTPClientTransport(
@@ -369,6 +371,10 @@ describe('handleRequirementsMcpRequest', () => {
     it('advertises the generic fail-closed error contract', () => {
       const instructions = toolSchemaClient?.client.getInstructions()
 
+      expect(instructions).toContain('short-lived OAuth access token')
+      expect(instructions).toContain('typ "at+jwt"')
+      expect(instructions).toContain('exact configured client_id')
+      expect(instructions).toContain('configured MCP role claim')
       expect(instructions).toContain('isError: true')
       expect(instructions).toContain('failed call')
       expect(instructions).toContain('Error: An internal error occurred')
@@ -1652,6 +1658,7 @@ describe('handleRequirementsMcpRequest', () => {
   })
 
   it('returns a bearer challenge and skips service creation when MCP auth fails', async () => {
+    const getDatabase = vi.fn(getTestDatabase)
     vi.mocked(verifyMcpBearerToken).mockRejectedValueOnce(
       new McpAuthError('bearer_missing'),
     )
@@ -1666,7 +1673,7 @@ describe('handleRequirementsMcpRequest', () => {
         headers: { 'content-type': 'application/json' },
         method: 'POST',
       }),
-      {} as never,
+      getDatabase,
     )
 
     expect(response.status).toBe(401)
@@ -1677,12 +1684,47 @@ describe('handleRequirementsMcpRequest', () => {
       jsonrpc: '2.0',
     })
     expect(serviceState.getService).not.toHaveBeenCalled()
+    expect(getDatabase).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'hsa_id_invalid',
+    'hsa_id_missing',
+    'token_audience_invalid',
+    'token_class_invalid',
+    'token_client_invalid',
+    'token_exp_invalid',
+    'token_iat_invalid',
+    'token_issuer_invalid',
+    'token_lifetime_invalid',
+    'token_scope_invalid',
+    'token_subject_invalid',
+    'token_verification_failed',
+  ] as const)('keeps the public response stable for %s', async reason => {
+    const getDatabase = vi.fn(getTestDatabase)
+    vi.mocked(verifyMcpBearerToken).mockRejectedValueOnce(
+      new McpAuthError(reason),
+    )
+
+    const response = await handleRequirementsMcpRequest(
+      new Request('https://example.test/api/mcp'),
+      getDatabase,
+    )
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('WWW-Authenticate')).toBe('Bearer')
+    expect(await response.json()).toEqual({
+      error: { code: -32000, message: 'Invalid Bearer token.' },
+      id: null,
+      jsonrpc: '2.0',
+    })
+    expect(getDatabase).not.toHaveBeenCalled()
   })
 
   it('rejects unsupported HTTP methods before authentication', async () => {
     const response = await handleRequirementsMcpRequest(
       new Request('https://example.test/api/mcp', { method: 'PATCH' }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(405)
@@ -1704,7 +1746,7 @@ describe('handleRequirementsMcpRequest', () => {
 
     const response = await handleRequirementsMcpRequest(
       new Request('https://example.test/api/mcp'),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(500)
@@ -1729,7 +1771,7 @@ describe('handleRequirementsMcpRequest', () => {
         },
         method: 'POST',
       }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(200)
@@ -1754,7 +1796,7 @@ describe('handleRequirementsMcpRequest', () => {
         },
         method: 'POST',
       }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(401)
@@ -1782,7 +1824,7 @@ describe('handleRequirementsMcpRequest', () => {
         },
         method: 'POST',
       }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(413)
@@ -1826,7 +1868,7 @@ describe('handleRequirementsMcpRequest', () => {
         },
         method: 'POST',
       } as RequestInit & { duplex: 'half' }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(413)
@@ -1865,7 +1907,7 @@ describe('handleRequirementsMcpRequest', () => {
         },
         method: 'POST',
       }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(413)
@@ -1896,7 +1938,7 @@ describe('handleRequirementsMcpRequest', () => {
         },
         method: 'POST',
       }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(413)
@@ -1928,7 +1970,7 @@ describe('handleRequirementsMcpRequest', () => {
         },
         method: 'POST',
       }),
-      {} as never,
+      getTestDatabase,
     )
 
     expect(response.status).toBe(200)
