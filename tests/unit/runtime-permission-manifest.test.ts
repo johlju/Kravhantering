@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRuntimePermissionReconcileSql,
   RUNTIME_PERMISSION_MANIFEST,
+  RUNTIME_PERMISSION_MANIFEST_AT_0054,
   RUNTIME_PERMISSION_MANIFEST_DIGEST,
   RUNTIME_PERMISSION_MANIFEST_VERSION,
 } from '@/typeorm/runtime-permission-manifest.mjs'
@@ -12,8 +13,13 @@ function permissionFor(objectName: string) {
 
 describe('runtime permission manifest', () => {
   it('is release-versioned, stable, and explicit about protected objects', () => {
-    expect(RUNTIME_PERMISSION_MANIFEST_VERSION).toMatch(/^2026\.08\.08\./u)
+    expect(RUNTIME_PERMISSION_MANIFEST_VERSION).toMatch(/^2026\.08\.14\./u)
     expect(RUNTIME_PERMISSION_MANIFEST_DIGEST).toMatch(/^[a-f0-9]{64}$/u)
+    expect(RUNTIME_PERMISSION_MANIFEST.map(entry => entry.object)).toEqual(
+      [...RUNTIME_PERMISSION_MANIFEST]
+        .map(entry => entry.object)
+        .sort((left, right) => left.localeCompare(right)),
+    )
     expect(permissionFor('dbo.migrations')).toEqual({
       object: 'dbo.migrations',
       permissions: ['SELECT'],
@@ -27,6 +33,25 @@ describe('runtime permission manifest', () => {
       object: 'dbo.archiving_retention_runs',
       permissions: ['SELECT', 'INSERT'],
     })
+    expect(
+      permissionFor('dbo.requirement_import_validation_rate_buckets'),
+    ).toEqual({
+      object: 'dbo.requirement_import_validation_rate_buckets',
+      permissions: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    })
+    const aiSettingsPermission = permissionFor('dbo.ai_settings')
+    expect(
+      aiSettingsPermission && 'updateColumns' in aiSettingsPermission
+        ? aiSettingsPermission.updateColumns
+        : undefined,
+    ).toEqual(
+      expect.arrayContaining([
+        'mcp_import_max_active_sessions_per_destination',
+        'mcp_import_max_active_sessions_per_principal',
+        'mcp_import_max_creations_per_window',
+        'mcp_import_max_reserved_bytes',
+      ]),
+    )
   })
 
   it('builds reconciliation from explicit objects without schema-wide or dynamic grants', () => {
@@ -48,5 +73,16 @@ describe('runtime permission manifest', () => {
     expect(sql).toContain(
       "ELSE N'THROW 51023, ''Runtime role contains an unsupported direct permission class.'', 1;'",
     )
+    expect(sql).toContain('requirement_import_validation_rate_buckets')
+    expect(sql).toContain('mcp_import_max_reserved_bytes')
+  })
+
+  it('keeps the migration 0054 permission snapshot historical', () => {
+    const sql = buildRuntimePermissionReconcileSql(
+      RUNTIME_PERMISSION_MANIFEST_AT_0054,
+    )
+
+    expect(sql).not.toContain('requirement_import_validation_rate_buckets')
+    expect(sql).not.toContain('mcp_import_max_reserved_bytes')
   })
 })

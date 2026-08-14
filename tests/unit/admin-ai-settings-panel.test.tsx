@@ -182,7 +182,11 @@ describe('AiSettingsPanel', () => {
               aiSafetyForensicLoggingEnabled: false,
               aiSafetyRuleCacheTtlSeconds: 60,
               disabledByEnvironment: true,
+              mcpImportMaxActiveSessionsPerDestination: 100,
+              mcpImportMaxActiveSessionsPerPrincipal: 10,
+              mcpImportMaxCreationsPerWindow: 20,
               mcpImportMaxRows: 500,
+              mcpImportMaxReservedBytes: 512 * 1024 * 1024,
               mcpImportValidationTtlMinutes: 60,
               mcpMaxRequestBytes: 5 * 1024 * 1024,
               requirementGenerationEnabled: false,
@@ -216,6 +220,10 @@ describe('AiSettingsPanel', () => {
       'admin.ai.safetyRuleCacheTtl',
       'admin.ai.safetyRulesTitle',
       'admin.ai.mcpMaxRequestLimit',
+      'admin.ai.mcpImportMaxActiveSessionsPerPrincipal',
+      'admin.ai.mcpImportMaxActiveSessionsPerDestination',
+      'admin.ai.mcpImportMaxCreationsPerWindow',
+      'admin.ai.mcpImportMaxReservedBytes',
       'admin.ai.mcpImportMaxRows',
       'admin.ai.mcpImportValidationTtl',
     ]) {
@@ -251,6 +259,23 @@ describe('AiSettingsPanel', () => {
       }),
     )
     await waitFor(() => expect(mcpLimit).toBeEnabled())
+
+    for (const [label, value] of [
+      ['admin.ai.mcpImportMaxActiveSessionsPerPrincipal', '11'],
+      ['admin.ai.mcpImportMaxActiveSessionsPerDestination', '101'],
+      ['admin.ai.mcpImportMaxCreationsPerWindow', '21'],
+      ['admin.ai.mcpImportMaxReservedBytes', '576'],
+    ] as const) {
+      const input = screen.getByLabelText(label)
+      fireEvent.change(input, { target: { value } })
+      if (label === 'admin.ai.mcpImportMaxActiveSessionsPerPrincipal') {
+        fireEvent.keyDown(input, { key: 'Escape' })
+        fireEvent.keyDown(input, { key: 'Enter' })
+      } else {
+        fireEvent.blur(input)
+      }
+      await waitFor(() => expect(input).toBeEnabled())
+    }
     fireEvent.click(
       screen.getByRole('button', {
         name: 'admin.ai.increaseMcpMaxRequestLimit',
@@ -272,9 +297,21 @@ describe('AiSettingsPanel', () => {
         fetchMock.mock.calls.filter(
           ([, init]) => (init as RequestInit | undefined)?.method === 'PATCH',
         ),
-      ).toHaveLength(8),
+      ).toHaveLength(12),
     )
+    expect(
+      fetchMock.mock.calls.some(([, init]) =>
+        String(init?.body).includes(
+          `"mcpImportMaxReservedBytes":${576 * 1024 * 1024}`,
+        ),
+      ),
+    ).toBe(true)
     expect(screen.getAllByText('admin.saved').length).toBeGreaterThan(0)
+    expect(
+      screen
+        .getAllByRole('status')
+        .some(status => status.textContent === 'admin.saved'),
+    ).toBe(true)
   })
 
   it('restores blank numeric drafts without saving', async () => {
@@ -295,6 +332,10 @@ describe('AiSettingsPanel', () => {
     for (const label of [
       'admin.ai.safetyRuleCacheTtl',
       'admin.ai.mcpMaxRequestLimit',
+      'admin.ai.mcpImportMaxActiveSessionsPerPrincipal',
+      'admin.ai.mcpImportMaxActiveSessionsPerDestination',
+      'admin.ai.mcpImportMaxCreationsPerWindow',
+      'admin.ai.mcpImportMaxReservedBytes',
       'admin.ai.mcpImportMaxRows',
       'admin.ai.mcpImportValidationTtl',
     ]) {
@@ -546,6 +587,47 @@ describe('AiSettingsPanel', () => {
         ([, init]) => (init as RequestInit | undefined)?.method === 'PATCH',
       ),
     ).toHaveLength(0)
+  })
+
+  it('replaces MCP quota drafts with the normalized committed value', async () => {
+    fetchMock.mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/admin/ai-settings' && !init?.method) {
+          return Promise.resolve(okJson({}))
+        }
+        if (url === '/api/admin/ai-settings' && init?.method === 'PATCH') {
+          return Promise.resolve(okJson(JSON.parse(String(init?.body))))
+        }
+        if (url === '/api/admin/ai-safety-rules') {
+          return Promise.resolve(okJson({ rules: [] }))
+        }
+        return Promise.reject(new Error(`Unexpected fetch ${url}`))
+      },
+    )
+    renderAdminPanel(<AiSettingsPanel />, { confirmModal: true })
+    const input = await screen.findByLabelText(
+      'admin.ai.mcpImportMaxActiveSessionsPerDestination',
+    )
+
+    fireEvent.change(input, { target: { value: '100.4' } })
+    fireEvent.blur(input)
+    expect(input).toHaveValue(100)
+    expect(
+      fetchMock.mock.calls.filter(
+        ([, init]) => (init as RequestInit | undefined)?.method === 'PATCH',
+      ),
+    ).toHaveLength(0)
+
+    fireEvent.change(input, { target: { value: '1000.6' } })
+    fireEvent.blur(input)
+    expect(input).toHaveValue(1000)
+    await waitFor(() => expect(input).toBeEnabled())
+    expect(
+      fetchMock.mock.calls.filter(
+        ([, init]) => (init as RequestInit | undefined)?.method === 'PATCH',
+      ),
+    ).toHaveLength(1)
   })
 
   it('uses an optimistic global ceiling only as the effective MCP display value', async () => {

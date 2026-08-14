@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 export const SQL_SERVER_RUNTIME_ROLE = 'kravhantering_runtime'
-export const RUNTIME_PERMISSION_MANIFEST_VERSION = '2026.08.08.1'
+export const RUNTIME_PERMISSION_MANIFEST_VERSION = '2026.08.14.1'
 
 const CRUD = Object.freeze(['SELECT', 'INSERT', 'UPDATE', 'DELETE'])
 const READ_CREATE = Object.freeze(['SELECT', 'INSERT'])
@@ -13,7 +13,7 @@ const READ_UPDATE = Object.freeze(['SELECT', 'UPDATE'])
  * fully qualified and every operation is explicit so new tables receive no
  * access until this manifest changes.
  */
-export const RUNTIME_PERMISSION_MANIFEST = Object.freeze(
+export const RUNTIME_PERMISSION_MANIFEST_AT_0054 = Object.freeze(
   [
     {
       object: 'dbo.access_review_items',
@@ -189,6 +189,33 @@ export const RUNTIME_PERMISSION_MANIFEST = Object.freeze(
   ),
 )
 
+export const RUNTIME_PERMISSION_MANIFEST = Object.freeze(
+  RUNTIME_PERMISSION_MANIFEST_AT_0054.flatMap(entry => {
+    const currentEntry =
+      entry.object === 'dbo.ai_settings'
+        ? Object.freeze({
+            ...entry,
+            updateColumns: Object.freeze([
+              ...entry.updateColumns,
+              'mcp_import_max_active_sessions_per_destination',
+              'mcp_import_max_active_sessions_per_principal',
+              'mcp_import_max_creations_per_window',
+              'mcp_import_max_reserved_bytes',
+            ]),
+          })
+        : entry
+    return entry.object === 'dbo.requirement_import_validation_sessions'
+      ? [
+          Object.freeze({
+            object: 'dbo.requirement_import_validation_rate_buckets',
+            permissions: CRUD,
+          }),
+          currentEntry,
+        ]
+      : [currentEntry]
+  }),
+)
+
 export const RUNTIME_PERMISSION_MANIFEST_DIGEST = createHash('sha256')
   .update(
     JSON.stringify({
@@ -234,22 +261,28 @@ export function buildRuntimeRoleCreateSql() {
     CREATE ROLE [${SQL_SERVER_RUNTIME_ROLE}] AUTHORIZATION [dbo];`
 }
 
-export function buildRuntimePermissionReconcileSql() {
-  const expectedObjectChecks = RUNTIME_PERMISSION_MANIFEST.map(entry => {
-    const { schema, table } = objectParts(entry.object)
-    return `IF OBJECT_ID(N'${schema}.${table}', N'U') IS NULL
+export function buildRuntimePermissionReconcileSql(
+  manifest = RUNTIME_PERMISSION_MANIFEST,
+) {
+  const expectedObjectChecks = manifest
+    .map(entry => {
+      const { schema, table } = objectParts(entry.object)
+      return `IF OBJECT_ID(N'${schema}.${table}', N'U') IS NULL
     THROW 51022, 'Runtime permission manifest object is missing: ${schema}.${table}.', 1;`
-  }).join('\n  ')
-  const explicitRevokes = RUNTIME_PERMISSION_MANIFEST.flatMap(entry => [
-    permissionSql(entry, 'REVOKE'),
-    updateSql(entry, 'REVOKE'),
-  ])
+    })
+    .join('\n  ')
+  const explicitRevokes = manifest
+    .flatMap(entry => [
+      permissionSql(entry, 'REVOKE'),
+      updateSql(entry, 'REVOKE'),
+    ])
     .filter(Boolean)
     .join('\n  ')
-  const grants = RUNTIME_PERMISSION_MANIFEST.flatMap(entry => [
-    permissionSql(entry, 'GRANT'),
-    updateSql(entry, 'GRANT'),
-  ])
+  const grants = manifest
+    .flatMap(entry => [
+      permissionSql(entry, 'GRANT'),
+      updateSql(entry, 'GRANT'),
+    ])
     .filter(Boolean)
     .join('\n  ')
 

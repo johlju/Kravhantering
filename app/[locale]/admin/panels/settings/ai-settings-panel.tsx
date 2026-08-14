@@ -53,6 +53,7 @@ import type {
 import { devMarker } from '@/lib/developer-mode-markers'
 import { apiFetch } from '@/lib/http/api-fetch'
 import { readResponseMessage } from '@/lib/http/response-message'
+import McpQuotaSettings, { type McpQuotaSettingKey } from './mcp-quota-settings'
 
 type SaveState = 'error' | 'idle' | 'saved' | 'saving'
 
@@ -101,7 +102,11 @@ function normalizeAdminAiSettings(
 type AiSettingSaveKey =
   | 'aiSafetyForensicLoggingEnabled'
   | 'aiSafetyRuleCacheTtlSeconds'
+  | 'mcpImportMaxActiveSessionsPerDestination'
+  | 'mcpImportMaxActiveSessionsPerPrincipal'
+  | 'mcpImportMaxCreationsPerWindow'
   | 'mcpImportMaxRows'
+  | 'mcpImportMaxReservedBytes'
   | 'mcpImportValidationTtlMinutes'
   | 'mcpMaxRequestBytes'
   | 'requirementGenerationEnabled'
@@ -111,7 +116,11 @@ type AiSettingsPatch = Partial<
     AdminAiSettings,
     | 'aiSafetyForensicLoggingEnabled'
     | 'aiSafetyRuleCacheTtlSeconds'
+    | 'mcpImportMaxActiveSessionsPerDestination'
+    | 'mcpImportMaxActiveSessionsPerPrincipal'
+    | 'mcpImportMaxCreationsPerWindow'
     | 'mcpImportMaxRows'
+    | 'mcpImportMaxReservedBytes'
     | 'mcpImportValidationTtlMinutes'
     | 'mcpMaxRequestBytes'
     | 'requirementGenerationEnabled'
@@ -132,6 +141,10 @@ const AI_SETTING_SAVE_KEYS: readonly AiSettingSaveKey[] = [
   'requirementGenerationEnabled',
   'aiSafetyForensicLoggingEnabled',
   'mcpMaxRequestBytes',
+  'mcpImportMaxActiveSessionsPerDestination',
+  'mcpImportMaxActiveSessionsPerPrincipal',
+  'mcpImportMaxCreationsPerWindow',
+  'mcpImportMaxReservedBytes',
   'mcpImportMaxRows',
   'mcpImportValidationTtlMinutes',
   'aiSafetyRuleCacheTtlSeconds',
@@ -289,7 +302,11 @@ export default function AiSettingsPanel({
   const settingSaveTokensRef = useRef<Record<AiSettingSaveKey, number>>({
     aiSafetyForensicLoggingEnabled: 0,
     aiSafetyRuleCacheTtlSeconds: 0,
+    mcpImportMaxActiveSessionsPerDestination: 0,
+    mcpImportMaxActiveSessionsPerPrincipal: 0,
+    mcpImportMaxCreationsPerWindow: 0,
     mcpImportMaxRows: 0,
+    mcpImportMaxReservedBytes: 0,
     mcpImportValidationTtlMinutes: 0,
     mcpMaxRequestBytes: 0,
     requirementGenerationEnabled: 0,
@@ -430,6 +447,31 @@ export default function AiSettingsPanel({
       setSettingSaveState(key, 'error')
       setMessage(saveErrorMessage)
     }
+  }
+
+  function updateMcpQuotaSetting(
+    key: McpQuotaSettingKey,
+    inputValue: number,
+    displayDivisor = 1,
+  ): number {
+    const constraint = constraints[key]
+    const rawValue = inputValue * displayDivisor
+    const next = Math.min(
+      constraint.max,
+      Math.max(
+        constraint.min,
+        constraint.min +
+          Math.round((rawValue - constraint.min) / constraint.step) *
+            constraint.step,
+      ),
+    )
+    if (next !== settings[key]) {
+      void saveSettingsPatch(key, { [key]: next }, current => ({
+        ...current,
+        [key]: next,
+      }))
+    }
+    return next
   }
 
   function updateMcpMaxRequestBytes(nextValue: number) {
@@ -959,7 +1001,10 @@ export default function AiSettingsPanel({
               </label>
             </div>
             {settingSaveStates.requirementGenerationEnabled !== 'idle' ? (
-              <p className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400">
+              <p
+                className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400"
+                role="status"
+              >
                 {settingSaveStates.requirementGenerationEnabled === 'saving'
                   ? tc('saving')
                   : settingSaveStates.requirementGenerationEnabled === 'saved'
@@ -1031,7 +1076,10 @@ export default function AiSettingsPanel({
               </label>
             </div>
             {settingSaveStates.aiSafetyForensicLoggingEnabled !== 'idle' ? (
-              <p className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400">
+              <p
+                className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400"
+                role="status"
+              >
                 {settingSaveStates.aiSafetyForensicLoggingEnabled === 'saving'
                   ? tc('saving')
                   : settingSaveStates.aiSafetyForensicLoggingEnabled === 'saved'
@@ -1116,7 +1164,10 @@ export default function AiSettingsPanel({
                 </div>
               </div>
               {settingSaveStates.aiSafetyRuleCacheTtlSeconds !== 'idle' ? (
-                <p className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400">
+                <p
+                  className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400"
+                  role="status"
+                >
                   {settingSaveStates.aiSafetyRuleCacheTtlSeconds === 'saving'
                     ? tc('saving')
                     : settingSaveStates.aiSafetyRuleCacheTtlSeconds === 'saved'
@@ -1630,7 +1681,10 @@ export default function AiSettingsPanel({
                 </div>
               </div>
               {settingSaveStates.mcpMaxRequestBytes !== 'idle' ? (
-                <p className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400">
+                <p
+                  className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400"
+                  role="status"
+                >
                   {settingSaveStates.mcpMaxRequestBytes === 'saving'
                     ? tc('saving')
                     : settingSaveStates.mcpMaxRequestBytes === 'saved'
@@ -1639,6 +1693,14 @@ export default function AiSettingsPanel({
                 </p>
               ) : null}
             </div>
+
+            <McpQuotaSettings
+              constraints={constraints}
+              isLoading={isLoading}
+              onCommit={updateMcpQuotaSetting}
+              saveStates={settingSaveStates}
+              settings={settings}
+            />
 
             <div className="rounded-2xl border border-secondary-200/70 bg-secondary-50/60 p-4 dark:border-secondary-700/60 dark:bg-secondary-950/40">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1706,7 +1768,10 @@ export default function AiSettingsPanel({
                 </div>
               </div>
               {settingSaveStates.mcpImportMaxRows !== 'idle' ? (
-                <p className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400">
+                <p
+                  className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400"
+                  role="status"
+                >
                   {settingSaveStates.mcpImportMaxRows === 'saving'
                     ? tc('saving')
                     : settingSaveStates.mcpImportMaxRows === 'saved'
@@ -1790,7 +1855,10 @@ export default function AiSettingsPanel({
                 </div>
               </div>
               {settingSaveStates.mcpImportValidationTtlMinutes !== 'idle' ? (
-                <p className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400">
+                <p
+                  className="mt-2 text-xs font-medium text-secondary-500 dark:text-secondary-400"
+                  role="status"
+                >
                   {settingSaveStates.mcpImportValidationTtlMinutes === 'saving'
                     ? tc('saving')
                     : settingSaveStates.mcpImportValidationTtlMinutes ===

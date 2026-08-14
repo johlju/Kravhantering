@@ -1,5 +1,50 @@
+import { createMcpImportValidationPrincipalFingerprint } from '../lib/mcp/import-validation-fingerprint.mjs'
 import { REQUIRED_SEED_TABLES } from './seed-required.mjs'
 import { runSeedData, seedPositionDetail } from './seed-runner.mjs'
+
+const DEMO_MCP_PRINCIPAL_HSA_ID = 'SE5560000001-mcp1'
+const DEMO_MCP_FINGERPRINT_FALLBACK_SECRET =
+  'kravhantering-demo-seed-cookie-password-only-2026'
+
+function demoMcpPrincipalFingerprint() {
+  const secret =
+    process.env.AUTH_SESSION_COOKIE_PASSWORD?.trim() ||
+    DEMO_MCP_FINGERPRINT_FALLBACK_SECRET
+  return createMcpImportValidationPrincipalFingerprint(
+    DEMO_MCP_PRINCIPAL_HSA_ID,
+    secret,
+  )
+}
+
+const DEMO_MCP_PRINCIPAL_FINGERPRINT = demoMcpPrincipalFingerprint()
+const MCP_RATE_WINDOW_MILLISECONDS = 10 * 60 * 1000
+
+function formatSqlServerSeedTimestamp(value) {
+  return value.toISOString().replace('T', ' ').replace('Z', '')
+}
+
+function refreshDemoMcpTransientTimestamps(now = new Date()) {
+  const createdAt = formatSqlServerSeedTimestamp(now)
+  const sessionExpiresAt = formatSqlServerSeedTimestamp(
+    new Date(now.getTime() + 60 * 60 * 1000),
+  )
+  const windowStartedAt = new Date(
+    Math.floor(now.getTime() / MCP_RATE_WINDOW_MILLISECONDS) *
+      MCP_RATE_WINDOW_MILLISECONDS,
+  )
+  const bucketExpiresAt = formatSqlServerSeedTimestamp(
+    new Date(windowStartedAt.getTime() + MCP_RATE_WINDOW_MILLISECONDS),
+  )
+  const sessionRow = SEED_DATA.requirement_import_validation_sessions.rows[0]
+  sessionRow[12] = sessionExpiresAt
+  sessionRow[13] = createdAt
+  sessionRow[14] = createdAt
+  const bucketRow = SEED_DATA.requirement_import_validation_rate_buckets.rows[0]
+  bucketRow[2] = formatSqlServerSeedTimestamp(windowStartedAt)
+  bucketRow[4] = bucketExpiresAt
+  bucketRow[5] = createdAt
+  bucketRow[6] = createdAt
+}
 
 const TABLE_ORDER = [
   'norm_references',
@@ -15,6 +60,8 @@ const TABLE_ORDER = [
   'requirement_area_co_authors',
   'requirement_categories',
   'ai_settings',
+  'requirement_import_validation_sessions',
+  'requirement_import_validation_rate_buckets',
   'application_settings',
   'ai_safety_rules',
   'ai_safety_rule_terms',
@@ -63,6 +110,68 @@ const TABLE_ORDER = [
 ]
 
 const SEED_DATA = {
+  requirement_import_validation_sessions: {
+    columns: [
+      'id',
+      'token_hash',
+      'creator_principal_fingerprint',
+      'payload_hash',
+      'destination_kind',
+      'destination_id',
+      'reference_data_fingerprint',
+      'reserved_bytes',
+      'destination_snapshot_json',
+      'submitted_payload_json',
+      'validation_result_json',
+      'execution_result_json',
+      'expires_at',
+      'created_at',
+      'updated_at',
+    ],
+    pk: ['id'],
+    rows: [
+      [
+        9001,
+        '1'.repeat(64),
+        DEMO_MCP_PRINCIPAL_FINGERPRINT,
+        '3'.repeat(64),
+        'requirements_library',
+        1001,
+        '4'.repeat(64),
+        4096,
+        '{"kind":"requirements_library","areaId":1001}',
+        '{"schemaVersion":"requirement-import.v4","requirements":[]}',
+        '{"issues":[],"rows":[]}',
+        null,
+        '2026-04-20 20:17:00',
+        '2026-04-20 20:07:00',
+        '2026-04-20 20:07:00',
+      ],
+    ],
+  },
+  requirement_import_validation_rate_buckets: {
+    columns: [
+      'id',
+      'principal_fingerprint',
+      'window_started_at',
+      'successful_creations',
+      'expires_at',
+      'created_at',
+      'updated_at',
+    ],
+    pk: ['id'],
+    rows: [
+      [
+        9001,
+        DEMO_MCP_PRINCIPAL_FINGERPRINT,
+        '2026-04-20 20:00:00',
+        1,
+        '2026-04-20 20:10:00',
+        '2026-04-20 20:07:00',
+        '2026-04-20 20:07:00',
+      ],
+    ],
+  },
   norm_references: {
     columns: [
       'id',
@@ -546,6 +655,10 @@ const SEED_DATA = {
       'mcp_max_request_bytes',
       'mcp_import_max_rows',
       'mcp_import_validation_ttl_minutes',
+      'mcp_import_max_active_sessions_per_principal',
+      'mcp_import_max_active_sessions_per_destination',
+      'mcp_import_max_creations_per_window',
+      'mcp_import_max_reserved_bytes',
       'ai_safety_rule_cache_ttl_seconds',
       'created_at',
       'updated_at',
@@ -559,6 +672,10 @@ const SEED_DATA = {
         1048576,
         500,
         60,
+        10,
+        100,
+        20,
+        536870912,
         600,
         '2026-04-20 20:07:00',
         '2026-04-20 20:07:00',
@@ -14405,6 +14522,7 @@ async function seedDemoLifecycleRow({
 }
 
 export async function seedDemoDatabase(executor) {
+  refreshDemoMcpTransientTimestamps()
   return runSeedData(executor, SEED_DATA, TABLE_ORDER, {
     includeTables: DEMO_SEED_TABLES,
     insertRow: seedDemoLifecycleRow,

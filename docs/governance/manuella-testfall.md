@@ -1841,6 +1841,15 @@ felorsak. Kvalitetssektionerna visar att data inte är tillgängliga, aldrig
 återställning visas de lokaliserade kvalitetsegenskaperna och en synlig
 statusbekräftelse.
 
+### ADMIN-17: MCP-kvoter sparas direkt och visar gränser
+
+1. Logga in som `Admin` och öppna `Administrationscenter > Inställningar > AI`.
+2. Kontrollera att MCP-sektionen visar aktiva sessioner per principal, aktiva
+   sessioner per mål, sessionsskapanden per 10 minuter och reserverad lagring.
+3. Ändra principalgränsen och lämna fältet.
+4. Verifiera att värdet sparats utan en gemensam Spara-knapp och att en ny
+   hämtning av AI-inställningarna innehåller värdet.
+
 ## Dataskydd och personuppgifter
 
 ### PRIV-01: egen personuppgiftsexport
@@ -1899,6 +1908,15 @@ förhandsgranskning.
 **Förväntat resultat:** Exporten innehåller lokal kravansvarsperson men inte
 otilldelade personer som inte matchar målet.
 
+### PRIV-10: MCP-fingerprint i export och radering
+
+1. Skapa en MCP-importvalidering som en testprincipal men kör den inte.
+2. Som `PrivacyOfficer`, förhandsgranska samma HSA-id.
+3. Verifiera träffar för valideringssession och anropsgränspost utan rå token,
+   importnyttolast, valideringsresultat, destinationsnamn eller rad-id:n.
+4. Exportera JSON och kontrollera att endast säker metadata visas.
+5. Kör rekommenderad radering och kontrollera att båda posterna raderas.
+
 ## Utvecklar- och robusthetsytor
 
 ### DEVTOOLS-01: Developer Mode-chip kopierar referens
@@ -1917,6 +1935,16 @@ MCP-korpusen.
 **Förväntat resultat:** Saknad eller ogiltig bearer-token ger HTTP 401 med
 `WWW-Authenticate: Bearer`. Med giltig token exponeras exakt den dokumenterade
 verktygsuppsättningen och seedade MCP-anrop fungerar utan oväntade verktyg.
+
+### MCP-02: principalen kan inspektera sin valideringssession
+
+**Steg:** Använd en giltig lokal MCP-principal för att lista tillåtna
+kravbiblioteksmål. Validera en liten `Kravimportfil` mot ett tillåtet mål och
+inspektera därefter den returnerade valideringstoken med samma principal.
+
+**Förväntat resultat:** Valideringen returnerar en token och inspektionen visar
+samma mål och inskickade kravrad. Samma valideringstoken skickas i
+inspektionsanropet men återges inte i svaret.
 
 ### DEVTOOLS-02: Developer Mode ligger kvar vid navigering
 
