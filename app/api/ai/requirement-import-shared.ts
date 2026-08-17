@@ -39,6 +39,8 @@ const ALLOWED_IMAGE_MIMES = [
 
 export const MAX_AI_IMAGE_BYTES = 10 * 1024 * 1024
 export const MAX_AI_IMAGES = 3
+export const MAX_AI_IMAGE_DATA_URL_LENGTH =
+  Math.ceil(MAX_AI_IMAGE_BYTES / 3) * 4 + 'data:image/jpeg;base64,'.length
 export const MAX_AI_INSTRUCTION_LENGTH = 4000
 export const MAX_AI_MODEL_LENGTH = 100
 export const MAX_AI_NEED_LENGTH = 4000
@@ -132,12 +134,14 @@ export async function guardAiInput(args: {
   )
 }
 
-export const imageDataUrlSchema = z.string()
+export const imageDataUrlSchema = z.string().max(MAX_AI_IMAGE_DATA_URL_LENGTH)
 
 const BASE64_PAYLOAD_PATTERN =
   /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+const BASE64_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
-function normalizeBase64Payload(base64Data: string): string | null {
+function canonicalizeBase64Payload(base64Data: string): string | null {
   if (base64Data.length === 0 || /\s/.test(base64Data)) return null
   const remainder = base64Data.length % 4
   if (remainder === 1) return null
@@ -145,7 +149,22 @@ function normalizeBase64Payload(base64Data: string): string | null {
     remainder === 0
       ? base64Data
       : base64Data.padEnd(base64Data.length + 4 - remainder, '=')
-  return BASE64_PAYLOAD_PATTERN.test(normalized) ? normalized : null
+  if (!BASE64_PAYLOAD_PATTERN.test(normalized)) return null
+
+  const padBitIndex = normalized.endsWith('==')
+    ? normalized.length - 3
+    : normalized.endsWith('=')
+      ? normalized.length - 2
+      : -1
+  if (padBitIndex === -1) return normalized
+
+  const sextet = BASE64_ALPHABET.indexOf(normalized[padBitIndex])
+  const canonicalSextet = normalized.endsWith('==')
+    ? sextet & 0b11_0000
+    : sextet & 0b11_1100
+  if (sextet === canonicalSextet) return normalized
+
+  return `${normalized.slice(0, padBitIndex)}${BASE64_ALPHABET[canonicalSextet]}${normalized.slice(padBitIndex + 1)}`
 }
 
 function countBase64Bytes(base64Data: string): number {
@@ -162,7 +181,7 @@ function validateImageDataUrl(
   context: RefinementCtx,
   locale: RequirementImportLocale,
   path: Array<number | string>,
-): void {
+): string | null {
   const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/)
   if (
     !mimeMatch ||
@@ -175,27 +194,28 @@ function validateImageDataUrl(
       message: getPromptMessage(locale, ['ai', 'imageSchemaErrorType']),
       path,
     })
-    return
+    return null
   }
 
   const base64Data = dataUrl.slice(dataUrl.indexOf(',') + 1)
-  const normalizedBase64Data = normalizeBase64Payload(base64Data)
-  if (!normalizedBase64Data) {
+  const canonicalBase64Data = canonicalizeBase64Payload(base64Data)
+  if (!canonicalBase64Data) {
     context.addIssue({
       code: 'custom',
       message: getPromptMessage(locale, ['ai', 'imageSchemaErrorBase64']),
       path,
     })
-    return
+    return null
   }
 
-  if (countBase64Bytes(normalizedBase64Data) > MAX_AI_IMAGE_BYTES) {
+  if (countBase64Bytes(canonicalBase64Data) > MAX_AI_IMAGE_BYTES) {
     context.addIssue({
       code: 'custom',
       message: getPromptMessage(locale, ['ai', 'imageSchemaErrorSize']),
       path,
     })
   }
+  return canonicalBase64Data
 }
 
 export function validateRequirementImportImages(
@@ -206,12 +226,25 @@ export function validateRequirementImportImages(
   context: RefinementCtx,
 ): void {
   const locale = requirementImportLocale(body)
+  const uniquePayloads = new Set<string>()
   for (const [index, image] of (body.images ?? []).entries()) {
-    validateImageDataUrl(image.dataUrl, context, locale, [
-      'images',
-      index,
-      'dataUrl',
-    ])
+    const path = ['images', index, 'dataUrl']
+    const canonicalPayload = validateImageDataUrl(
+      image.dataUrl,
+      context,
+      locale,
+      path,
+    )
+    if (canonicalPayload === null) continue
+    if (uniquePayloads.has(canonicalPayload)) {
+      context.addIssue({
+        code: 'custom',
+        message: getPromptMessage(locale, ['ai', 'imageSchemaErrorDuplicate']),
+        path,
+      })
+      continue
+    }
+    uniquePayloads.add(canonicalPayload)
   }
 }
 

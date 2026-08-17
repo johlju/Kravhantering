@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
   type GenerationStats,
@@ -32,6 +33,7 @@ import {
   requirementsMutationPolicy,
   secureMutationRoute,
 } from '@/lib/http/secure-mutation-route'
+import { readBoundedJsonWithSchema } from '@/lib/http/validation'
 import { recordCapacityEvent } from '@/lib/observability/capacity'
 import {
   applyResponseCorrelationHeaders,
@@ -71,6 +73,7 @@ import {
 
 const AI_GENERATE_REQUIREMENT_IMPORT_OPERATION =
   'ai.generate-requirement-import'
+export const AI_GENERATE_REQUIREMENT_IMPORT_MAX_REQUEST_BYTES = 42 * 1024 * 1024
 const STREAMED_REASONING_SAFETY_CONTEXT_CHARS = 1000
 
 const generateRequirementImportSchema = aiRequirementImportBaseBodySchema
@@ -97,6 +100,19 @@ const generateRequirementImportSchema = aiRequirementImportBaseBodySchema
 type GenerateRequirementImportBody = z.infer<
   typeof generateRequirementImportSchema
 >
+
+function aiRequestBytesExceededResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      code: 'ai_request_bytes_exceeded',
+      details: {
+        maxBytes: AI_GENERATE_REQUIREMENT_IMPORT_MAX_REQUEST_BYTES,
+      },
+      error: 'AI generation request exceeds the allowed size.',
+    },
+    { status: 413 },
+  )
+}
 
 function createStreamRecorder(
   context: RequestCorrelationIds,
@@ -202,8 +218,12 @@ function imageMetadataForSafety(
   })
 }
 
-export const POST = secureMutationRoute({
-  bodySchema: generateRequirementImportSchema,
+export const POST = secureMutationRoute<GenerateRequirementImportBody>({
+  bodyReader: ({ request }) =>
+    readBoundedJsonWithSchema(request, generateRequirementImportSchema, {
+      maxBytes: AI_GENERATE_REQUIREMENT_IMPORT_MAX_REQUEST_BYTES,
+      requestBytesExceededResponse: aiRequestBytesExceededResponse,
+    }),
   policy: requirementsMutationPolicy<GenerateRequirementImportBody>(
     ({ body }) => requirementImportScopeAction(body),
   ),

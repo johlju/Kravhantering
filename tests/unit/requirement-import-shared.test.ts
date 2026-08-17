@@ -6,7 +6,9 @@ import {
   createUnavailableAiStreamResponse,
   formatAiSafetyBlockedMessage,
   guardAiInput,
+  imageDataUrlSchema,
   isValidRequirementImportScope,
+  MAX_AI_IMAGE_DATA_URL_LENGTH,
   requirementImportDestination,
   requirementImportScopeAction,
   validateRequirementImportImages,
@@ -294,8 +296,8 @@ describe('AI requirement import shared contracts', () => {
         images: [
           { dataUrl: 'data:image/png;base64,YQ' },
           { dataUrl: 'data:image/jpeg;base64,YWI' },
-          { dataUrl: 'data:image/gif;base64,YQ==' },
-          { dataUrl: 'data:image/webp;base64,YWI=' },
+          { dataUrl: 'data:image/gif;base64,YWJjZA==' },
+          { dataUrl: 'data:image/webp;base64,YWJjZGU=' },
         ],
       }).success,
     ).toBe(true)
@@ -317,6 +319,13 @@ describe('AI requirement import shared contracts', () => {
         invalid.error.issues.every(issue => issue.path[0] === 'images'),
       ).toBe(true)
     }
+  })
+
+  it('bounds image data URLs before decoded image validation', () => {
+    expect(
+      imageDataUrlSchema.safeParse('x'.repeat(MAX_AI_IMAGE_DATA_URL_LENGTH + 1))
+        .success,
+    ).toBe(false)
   })
 
   it('validates both destination scopes and returns their authorization actions', () => {
