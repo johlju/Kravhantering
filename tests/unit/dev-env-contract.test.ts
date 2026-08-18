@@ -156,7 +156,6 @@ describe('development environment contract', () => {
     const azureModule = readWorkspaceFile(
       'scripts/azure-dev/AzureDev.Azure.psm1',
     )
-
     expect(entryScript).toContain(
       '$image = Get-AzureDevDeploymentImage -Config $Context.Config',
     )
@@ -339,9 +338,26 @@ describe('development environment contract', () => {
     const azureModule = readWorkspaceFile(
       'scripts/azure-dev/AzureDev.Azure.psm1',
     )
+    const configModule = readWorkspaceFile(
+      'scripts/azure-dev/AzureDev.Config.psm1',
+    )
     const bicepTemplate = readWorkspaceFile(
       'scripts/azure-dev/templates/main.bicep',
     )
+    const sshHostKeyArgumentsStart = configModule.indexOf(
+      '  $sshKnownHostsPath =',
+    )
+    const sshHostKeyArgumentsEnd = configModule.indexOf(
+      '\n  $workstationApproverPublicKeyPath =',
+      sshHostKeyArgumentsStart,
+    )
+    const sshHostKeyArgumentsBlock = configModule.slice(
+      sshHostKeyArgumentsStart,
+      sshHostKeyArgumentsEnd,
+    )
+    const sshHostKeyArgumentValues = [
+      ...sshHostKeyArgumentsBlock.matchAll(/^\s*(['"])(.*?)\1,?\s*$/gmu),
+    ].flatMap(match => (match[2] ? [match[2]] : []))
     const readinessStart = entryScript.indexOf(
       'function Wait-AzureDevTrustedLaunchGuestReadiness',
     )
@@ -422,10 +438,29 @@ describe('development environment contract', () => {
 
     expect(readinessStart).toBeGreaterThanOrEqual(0)
     expect(readinessEnd).toBeGreaterThan(readinessStart)
+    expect(sshHostKeyArgumentsStart).toBeGreaterThanOrEqual(0)
+    expect(sshHostKeyArgumentsEnd).toBeGreaterThan(sshHostKeyArgumentsStart)
     expect(entryScript).not.toContain(
       'function Test-AzureDevTrustedLaunchGuestReadiness',
     )
-    expect(readinessFunction).toContain('StrictHostKeyChecking=accept-new')
+    expect(readinessFunction).toContain('$Context.Config.SshHostKeyArguments')
+    expect(sshHostKeyArgumentsBlock).toContain(
+      "$sshKnownHostsPath = Join-Path (Join-Path $HOME '.ssh') 'known_hosts'",
+    )
+    expect(sshHostKeyArgumentValues).toContain('StrictHostKeyChecking=yes')
+    expect(sshHostKeyArgumentValues).toContain(
+      'UserKnownHostsFile=$sshKnownHostsPath',
+    )
+    expect(sshHostKeyArgumentValues).toContain('GlobalKnownHostsFile=none')
+    expect(sshHostKeyArgumentValues).toContain('KnownHostsCommand=none')
+    expect(sshHostKeyArgumentValues).toContain('VerifyHostKeyDNS=no')
+    expect(sshHostKeyArgumentValues).toContain('UpdateHostKeys=no')
+    const userKnownHostsFile = sshHostKeyArgumentValues.find(value =>
+      value.startsWith('UserKnownHostsFile='),
+    )
+    expect(userKnownHostsFile).toBeTruthy()
+    expect(userKnownHostsFile).not.toBe('UserKnownHostsFile=')
+    expect(userKnownHostsFile).not.toBe('UserKnownHostsFile=none')
     expect(readinessFunction).toContain('$Context.Config.SshHostAlias')
     expect(readinessFunction).toContain(
       'DKMS kernel modules require manual Secure Boot validation',
