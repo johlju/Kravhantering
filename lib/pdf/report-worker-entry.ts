@@ -9,28 +9,32 @@ import {
   collectStatusIconNames,
   preloadStatusIconNodes,
 } from '@/lib/icons/status-icon-allowlist'
-import type { ReportModel } from '@/lib/reports/types'
-
-interface PdfReportWorkerData {
-  locale: string
-  maxBytes: number
-  model: ReportModel
-  outputPath: string
-}
-
-type PdfReportWorkerMessage =
-  | { byteCount: number; ok: true }
-  | { failure: 'byte_limit' | 'storage'; ok: false }
+import type {
+  PdfReportWorkerMessage,
+  PdfWorkerData,
+} from '@/lib/pdf/report-worker-contract'
+import { isDataSubjectExportPdfWorkerData } from '@/lib/pdf/report-worker-contract'
 
 class PdfByteLimitError extends Error {}
 
 async function renderReport(): Promise<void> {
-  const data = workerData as PdfReportWorkerData
-  await preloadStatusIconNodes(collectStatusIconNames(data.model))
-  const document = createElement(PdfReportRenderer, {
-    locale: data.locale,
-    model: data.model,
-  })
+  const data = workerData as PdfWorkerData
+  let document: ReactElement
+  if (isDataSubjectExportPdfWorkerData(data)) {
+    const { default: DataSubjectExportPdfRenderer } = await import(
+      '@/components/privacy/DataSubjectExportPdfRenderer'
+    )
+    document = createElement(DataSubjectExportPdfRenderer, {
+      exportData: data.document.exportData,
+      locale: data.document.locale,
+    })
+  } else {
+    await preloadStatusIconNodes(collectStatusIconNames(data.model))
+    document = createElement(PdfReportRenderer, {
+      locale: data.locale,
+      model: data.model,
+    })
+  }
 
   const source = await renderToStream(
     document as ReactElement<import('@react-pdf/renderer').DocumentProps>,

@@ -1,5 +1,10 @@
 import { Worker } from 'node:worker_threads'
 import { GeneratedOutputError } from '@/lib/generated-output/errors'
+import type {
+  PdfReportWorkerMessage,
+  PdfWorkerData,
+} from '@/lib/pdf/report-worker-contract'
+import type { DataSubjectExportV1 } from '@/lib/privacy/data-subject-export-types'
 import type { ReportModel } from '@/lib/reports/types'
 
 interface RenderReportInWorkerOptions {
@@ -11,24 +16,66 @@ interface RenderReportInWorkerOptions {
   signal?: AbortSignal
 }
 
-type PdfReportWorkerMessage =
-  | { byteCount: number; ok: true }
-  | { failure: 'byte_limit' | 'storage'; ok: false }
+interface RenderDataSubjectExportInWorkerOptions {
+  exportData: DataSubjectExportV1
+  locale: string
+  maxBytes: number
+  memoryLimitMib: number
+  outputPath: string
+  signal?: AbortSignal
+}
+
+interface RenderPdfInWorkerOptions {
+  maxBytes: number
+  memoryLimitMib: number
+  signal?: AbortSignal
+  workerData: PdfWorkerData
+}
 
 export async function renderReportInWorker(
   options: RenderReportInWorkerOptions,
+): Promise<number> {
+  return renderPdfInWorker({
+    maxBytes: options.maxBytes,
+    memoryLimitMib: options.memoryLimitMib,
+    signal: options.signal,
+    workerData: {
+      locale: options.locale,
+      maxBytes: options.maxBytes,
+      model: options.model,
+      outputPath: options.outputPath,
+    },
+  })
+}
+
+export async function renderDataSubjectExportInWorker(
+  options: RenderDataSubjectExportInWorkerOptions,
+): Promise<number> {
+  return renderPdfInWorker({
+    maxBytes: options.maxBytes,
+    memoryLimitMib: options.memoryLimitMib,
+    signal: options.signal,
+    workerData: {
+      document: {
+        exportData: options.exportData,
+        kind: 'data-subject-export',
+        locale: options.locale,
+      },
+      maxBytes: options.maxBytes,
+      outputPath: options.outputPath,
+    },
+  })
+}
+
+async function renderPdfInWorker(
+  options: RenderPdfInWorkerOptions,
 ): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     const worker = new Worker('./lib/pdf/report-worker-entry.ts', {
       resourceLimits: {
         maxOldGenerationSizeMb: options.memoryLimitMib,
       },
-      workerData: {
-        locale: options.locale,
-        maxBytes: options.maxBytes,
-        model: options.model,
-        outputPath: options.outputPath,
-      },
+      workerData: options.workerData,
     })
     let settled = false
     let terminating = false

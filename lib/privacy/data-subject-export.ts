@@ -21,21 +21,43 @@ interface QueryExecutor {
 
 type ExportRow = Record<string, unknown>
 
+const SIMPLE_SELECT_PREFIX = /^(\s*(?:\/\*[\s\S]*?\*\/\s*)*SELECT)(\s+)/iu
+const SQL_TRIVIA_PREFIX = /^(?:\s|\/\*[\s\S]*?\*\/|--[^\r\n]*(?:\r?\n|$))*/u
+
+export function applyDataSubjectExportRowLimit(
+  sql: string,
+  limitParameter: string,
+): string {
+  const match = SIMPLE_SELECT_PREFIX.exec(sql)
+  if (!match) {
+    throw new Error('Privacy export source query must be a simple SELECT')
+  }
+  const remainder = sql.slice(match[0].length)
+  const meaningfulRemainder = remainder.slice(
+    SQL_TRIVIA_PREFIX.exec(remainder)?.[0].length ?? 0,
+  )
+  if (/^(?:ALL|DISTINCT|TOP)\b/iu.test(meaningfulRemainder)) {
+    throw new Error('Privacy export source query must be a simple SELECT')
+  }
+  return `${match[1]} TOP (${limitParameter})${match[2]}${remainder}`
+}
+
 function withDataSubjectExportRowLimit(
   db: QueryExecutor,
   maxRows: number,
+  signal: AbortSignal,
 ): QueryExecutor {
   return {
-    query: <T = unknown[]>(
+    query: async <T = unknown[]>(
       sql: string,
       parameters: unknown[] = [],
     ): Promise<T> => {
+      signal.throwIfAborted()
       const limitParameter = `@${parameters.length}`
-      const boundedSql = sql.replace(
-        /\bSELECT\b/u,
-        `SELECT TOP (${limitParameter})`,
-      )
-      return db.query<T>(boundedSql, [...parameters, maxRows])
+      const boundedSql = applyDataSubjectExportRowLimit(sql, limitParameter)
+      const result = await db.query<T>(boundedSql, [...parameters, maxRows])
+      signal.throwIfAborted()
+      return result
     },
   }
 }
@@ -61,6 +83,7 @@ export interface CollectDataSubjectExportInput {
 export interface DataSubjectExportItemLimitOptions {
   createItemLimitError: (limit: number) => Error
   maxItems: number
+  signal: AbortSignal
 }
 
 const POLICY_BY_KEY = new Map(
@@ -1436,8 +1459,9 @@ export function dataSubjectExportLimitations(): DataSubjectExportV1['limitations
 export async function collectDataSubjectExport(
   db: QueryExecutor,
   input: CollectDataSubjectExportInput,
-  itemLimit?: DataSubjectExportItemLimitOptions,
+  itemLimit: DataSubjectExportItemLimitOptions,
 ): Promise<DataSubjectExportV1> {
+  itemLimit.signal.throwIfAborted()
   const generatedAt = (input.generatedAt ?? new Date()).toISOString()
   const sources: DataSubjectExportSource[] = []
 
@@ -1448,21 +1472,22 @@ export async function collectDataSubjectExport(
     (count, source) => count + source.items.length,
     0,
   )
-  if (itemLimit && itemCount > itemLimit.maxItems) {
+  if (itemCount > itemLimit.maxItems) {
     throw itemLimit.createItemLimitError(itemLimit.maxItems)
   }
 
   for (const definition of SOURCE_DEFINITIONS) {
-    const remainingItemBudget = itemLimit
-      ? Math.max(itemLimit.maxItems + 1 - itemCount, 1)
-      : undefined
-    const sourceDb =
-      remainingItemBudget == null
-        ? db
-        : withDataSubjectExportRowLimit(db, remainingItemBudget)
+    itemLimit.signal.throwIfAborted()
+    const remainingItemBudget = Math.max(itemLimit.maxItems + 1 - itemCount, 1)
+    const sourceDb = withDataSubjectExportRowLimit(
+      db,
+      remainingItemBudget,
+      itemLimit.signal,
+    )
     const items = await definition.collect(sourceDb, input.target.hsaId)
+    itemLimit.signal.throwIfAborted()
     if (items.length < 1) continue
-    if (itemLimit && itemCount + items.length > itemLimit.maxItems) {
+    if (itemCount + items.length > itemLimit.maxItems) {
       throw itemLimit.createItemLimitError(itemLimit.maxItems)
     }
     sources.push({
