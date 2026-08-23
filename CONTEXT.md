@@ -422,14 +422,114 @@ _Avoid_: AI-generering som huvudterm, AI-assistering, automatisk publicering,
 AI-beslut, källa till sanning.
 
 **AI-anrop**:
-En förfrågan från applikationen till en AI-leverantör. I AI-assisterat
-författande består AI-anropet av styrande instruktioner, användarens behov och
-ett tvingande svarsformat.
+En avgränsad förfrågan från Kravhantering via en AI-anslutning. I
+AI-assisterat författande består AI-anropet av styrande instruktioner,
+användarens behov och ett tvingande svarsformat.
 
 - `en`: AI request
 
 _Avoid_: Prompt när hela anropet avses, AI-instruktion när bara
 författarinstruktionen avses.
+
+**Integritetsminimum för AI-anrop**:
+Den administratörsägda lägsta integritetsnivå som varje AI-anrop måste följa,
+oavsett om anroparen anger egna önskemål. Nivån förbjuder datainsamling och
+kräver nollagring hos AI-leverantören.
+
+- `en`: AI request privacy minimum
+
+_Avoid_: Användarens integritetsinställning, leverantörspreferens,
+datapolicysammanfattning.
+
+**AI-anslutning**:
+En administratörsförvaltad koppling mellan Kravhantering och en AI-leverantör
+eller agentmiljö. Endast en godkänd och aktiv AI-anslutning får användas för
+AI-anrop enligt beslutad datapolicy.
+
+- `en`: AI connection
+
+_Avoid_: AI-leverantör när kopplingen avses, endpoint, användaranslutning.
+
+**Agentmiljö**:
+En miljö som kan utföra ett AI-anrop genom egna samordnade steg men som möter
+Kravhantering genom en avgränsad AI-anslutning.
+
+- `en`: Agent runtime
+
+_Avoid_: AI-leverantör, agentsession, MCP-klient.
+
+**Global AI-spärr**:
+En miljöomfattande spärr som hindrar nya AI-anrop utan att göra
+Kravhantering otillgängligt. Spärren släpps först när miljöns
+AI-driftsättningsbevis har godkänts.
+
+- `en`: Global AI guard
+
+_Avoid_: Readiness, anslutningspaus, körprofilspaus.
+
+**AI-driftsättningsbevis**:
+Ett maskinverifierbart och innehållsfritt underlag som visar att en bestämd
+miljö och dess avsedda AI-anropsvägar uppfyller villkoren för att den globala
+AI-spärren ska få släppas.
+
+- `en`: AI deployment evidence
+
+_Avoid_: AI-hälsa, readiness, fritextintyg, staging-liveprov.
+
+**Staging-liveprov för AI**:
+Ett uttryckligen aktiverat, syntetiskt prov av avsedda AI-anropsvägar i en
+identifierad stagingmiljö medan den globala AI-spärren är aktiv.
+
+- `en`: AI staging live test
+
+_Avoid_: Produktionslikt prov, produktionsprov, manuellt leverantörsanrop.
+
+**AI-leverantör**:
+En organisation eller tjänst som tillhandahåller AI-förmåga bakom en
+AI-anslutning.
+
+- `en`: AI provider
+
+_Avoid_: AI-anslutning när den administrerade kopplingen avses,
+modelleverantör.
+
+**Anslutningsmodell**:
+En administratörsförvaltad modell som hör till en viss AI-anslutning och vars
+förändringar representeras av anslutningsmodellrevisioner.
+
+- `en`: AI connection model
+
+_Avoid_: Modellval, fristående modell, leverantörsmodell.
+
+**Anslutningsmodellrevision**:
+En bestämd version av en anslutningsmodell med de förmågor som verifierats för
+versionen. En körprofil väljer en kompatibel, verifierad
+anslutningsmodellrevision.
+
+- `en`: AI connection model revision
+
+_Avoid_: Anslutningsmodell när en bestämd revision avses, leverantörsmodell.
+
+**Körprofil**:
+En stabil, applikationsägd konfiguration som anger vilken
+anslutningsmodellrevision och vilka driftbudgetar som gäller för en bestämd
+anropstyp.
+
+- `en`: Run profile
+
+_Avoid_: Användarprofil, modellfavorit, automatisk routning,
+körprofilrevision.
+
+**Körprofilens huvudstatus**:
+Den enda användarsynliga administrativa statusen för en körprofil: Ej
+konfigurerad, Pausad, Blockerad eller Aktiv. Statusen härleds från modellval,
+administrativ paus och administrativa beroenden, inte från tillfällig
+leverantörshälsa.
+
+- `en`: Run profile status
+
+_Avoid_: Konfigurationsstatus, driftstatus, flera samtidiga statusar,
+leverantörshälsa.
 
 **AI-analys**:
 Modellens stödjande resonemang som visas tillsammans med förslag i

@@ -581,6 +581,28 @@ describe('development environment contract', () => {
     expect(azureValidation).toContain('npm run db:permission-status')
   })
 
+  it('provisions the local AI provider-secret keyring in every managed development topology', () => {
+    const defaultProfile = readWorkspaceFile('.devcontainer/devcontainer.json')
+    const elevatedProfile = readWorkspaceFile(
+      '.devcontainer/elevated/devcontainer.json',
+    )
+    const azureBootstrap = readWorkspaceFile(
+      'scripts/azure-dev/templates/bootstrap-host.sh',
+    )
+
+    for (const content of [defaultProfile, elevatedProfile, azureBootstrap]) {
+      expect(content).toContain(
+        'node scripts/provision-ai-provider-secret-keyring.mjs',
+      )
+    }
+    expect(readWorkspaceFile('.gitignore')).toContain(
+      '/.local/ai-provider-secret-keyring.json',
+    )
+    expect(readWorkspaceFile('.env.development')).toContain(
+      'AI_PROVIDER_SECRET_KEYRING_FILE=.local/ai-provider-secret-keyring.json',
+    )
+  })
+
   it('manages Azure data disk size outside the VM deployment', () => {
     const entryScript = readWorkspaceFile('scripts/azure-dev.ps1')
     const azureModule = readWorkspaceFile(
@@ -652,6 +674,25 @@ describe('development environment contract', () => {
     )
     expect(stopDockerIndex).toBeGreaterThanOrEqual(0)
     expect(startDockerIndex).toBeGreaterThan(stopDockerIndex)
+  })
+
+  it('runs managed shell output before Powerlevel10k initialization', () => {
+    const hostBootstrap = readWorkspaceFile(
+      'scripts/azure-dev/templates/bootstrap-host.sh',
+    )
+    const zshTemplate = readWorkspaceFile(
+      'scripts/azure-dev/templates/zshrc.template.example',
+    )
+    const managedEnvironmentIndex = hostBootstrap.indexOf(
+      '# Managed Azure development storage environment.',
+    )
+    const profileAppendIndex = hostBootstrap.indexOf(
+      'cat "${VSCODE_HOME}/.zshrc" >> "${zshrc_with_storage}"',
+    )
+
+    expect(managedEnvironmentIndex).toBeGreaterThanOrEqual(0)
+    expect(profileAppendIndex).toBeGreaterThan(managedEnvironmentIndex)
+    expect(zshTemplate).not.toContain('locate-shell-integration-path')
   })
 
   it('repairs disposable Podman build state without pruning named volumes', () => {

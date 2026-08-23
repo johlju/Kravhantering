@@ -6,8 +6,14 @@ AI-säkerhetsregler för AI-assisterat författande ska förvaltas i databasen m
 required seed-data som källa för standardregler och standardord. Runtime ska
 läsa den aktiva regeluppsättningen från databasen och lagra den i cache under
 en Admin Center-styrd TTL. Om regeluppsättningen inte kan läsas ska
-AI-assistering stoppas innan modellkatalog, bygge av promptar eller anrop till
-modellleverantör.
+integrationslagrets säkerhetsregelpreflight stoppa AI-assisterat författande.
+Preflighten ska köras före profilupplösning, adapterkonfiguration och varje
+försök till egress, även vid direkta anrop genom `integration.run()`.
+Misslyckad regelläsning ska stoppa flödet innan något av dessa steg. Samma
+applikationsägda regler screenar indata före egress och det fullständiga
+resultatet, inklusive råutdata och karantänlagda deltan, innan klient eller
+import enligt
+[ADR 0052](./0052-tillitsgrans-och-krypterade-ai-leverantorshemligheter.md).
 
 Standardord lagras som rader märkta som standard och aktiva. Administratörer
 kan inaktivera standardord, ändra riktning per term och lägga till egna
@@ -30,8 +36,8 @@ loggas som privilegierad administrativ åtgärd med metadata utan själva termen
   standardord, egna termer, aktiv status och riktning behöver kunna hanteras,
   valideras, seedas och loggas i åtgärdsloggen på radnivå.
 - Ha fallback i kod när databasen inte kan läsas: avvisat eftersom
-  systemet då skulle kunna köra AI-assistering med ett annat regelsätt än det
-  som förvaltningen ser och styr i Admin Center.
+  systemet då skulle kunna använda AI-assisterat författande med ett annat
+  regelsätt än det som förvaltningen ser och styr i Admin Center.
 - Spara AI-flikens ändringar med en gemensam Spara-knapp: avvisat eftersom
   administration av termer och befintliga AI-inställningar ska ge direkt och
   tydlig återkoppling per kontroll.
