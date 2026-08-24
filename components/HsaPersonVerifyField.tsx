@@ -96,6 +96,9 @@ export default function HsaPersonVerifyField({
     useState<HsaPersonVerification | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [liveLookupAvailable, setLiveLookupAvailable] = useState<
+    boolean | null
+  >(null)
   const prefixLoadErrorMessage = tc('hsaPrefixLoadError')
   const trimmedHsaId = hsaId.trim()
   const hsaIdParts = splitHsaId(trimmedHsaId)
@@ -131,7 +134,12 @@ export default function HsaPersonVerifyField({
   )
   const currentHsaIdRef = useRef(trimmedHsaId)
   const refreshButtonRef = useRef<HTMLButtonElement>(null)
+  const suffixInputRef = useRef<HTMLInputElement>(null)
   const skipBlurVerifyForRefreshPointerRef = useRef(false)
+  const pendingBlurVerificationHsaIdRef = useRef<string | null>(null)
+  const verifyPersonRef = useRef<
+    ((mode: 'refresh' | 'reuse_local') => Promise<void>) | null
+  >(null)
   const activeVerification =
     verification?.hsaId === trimmedHsaId ? verification : null
   const resolvedPersonSummaryMode =
@@ -183,6 +191,24 @@ export default function HsaPersonVerifyField({
   }, [prefixLoadErrorMessage, readOnly])
 
   useEffect(() => {
+    let cancelled = false
+    apiFetch('/api/hsa-person-lookup-capability')
+      .then(async response => {
+        if (!response.ok) throw new Error('capability_unavailable')
+        return response.json() as Promise<{ available?: boolean }>
+      })
+      .then(payload => {
+        if (!cancelled) setLiveLookupAvailable(payload.available === true)
+      })
+      .catch(() => {
+        if (!cancelled) setLiveLookupAvailable(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     currentHsaIdRef.current = trimmedHsaId
     setError(null)
     setLoading(false)
@@ -191,6 +217,7 @@ export default function HsaPersonVerifyField({
 
   const verifyPerson = async (mode: 'refresh' | 'reuse_local') => {
     if (!isHsaId(trimmedHsaId) || loading) return
+    if (mode === 'refresh' && liveLookupAvailable !== true) return
     const requestedHsaId = trimmedHsaId
     setLoading(true)
     setError(null)
@@ -243,6 +270,20 @@ export default function HsaPersonVerifyField({
       }
     }
   }
+
+  useEffect(() => {
+    verifyPersonRef.current = verifyPerson
+  })
+  useEffect(() => {
+    if (liveLookupAvailable === null) return
+    const pendingHsaId = pendingBlurVerificationHsaIdRef.current
+    if (!pendingHsaId) return
+    pendingBlurVerificationHsaIdRef.current = null
+    if (pendingHsaId !== trimmedHsaId) return
+    void verifyPersonRef.current?.(
+      liveLookupAvailable ? 'refresh' : 'reuse_local',
+    )
+  }, [liveLookupAvailable, trimmedHsaId])
 
   const renderHsaIdInput = () => {
     if (readOnly) {
@@ -311,7 +352,12 @@ export default function HsaPersonVerifyField({
               skipBlurVerifyForRefreshPointerRef.current
             skipBlurVerifyForRefreshPointerRef.current = false
             if (skipBlurVerify) return
-            void verifyPerson('refresh')
+            if (liveLookupAvailable === null) {
+              pendingBlurVerificationHsaIdRef.current = trimmedHsaId
+              return
+            }
+            pendingBlurVerificationHsaIdRef.current = null
+            void verifyPerson(liveLookupAvailable ? 'refresh' : 'reuse_local')
           }}
           onChange={event => {
             setError(null)
@@ -320,6 +366,7 @@ export default function HsaPersonVerifyField({
           }}
           pattern="[A-Za-z0-9]+"
           placeholder={tc('hsaSuffixPlaceholder')}
+          ref={suffixInputRef}
           required={required}
           value={suffixValue}
         />
@@ -334,15 +381,32 @@ export default function HsaPersonVerifyField({
         <button
           aria-label={loading ? fetchingLabel : fetchLabel}
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border text-secondary-700 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/50 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:text-secondary-200 dark:hover:bg-secondary-800"
-          disabled={disabled || loading || !isHsaId(trimmedHsaId)}
+          disabled={
+            disabled ||
+            loading ||
+            liveLookupAvailable !== true ||
+            !isHsaId(trimmedHsaId)
+          }
           onClick={() => {
+            skipBlurVerifyForRefreshPointerRef.current = false
+            pendingBlurVerificationHsaIdRef.current = null
             void verifyPerson('refresh')
           }}
+          onPointerCancel={() => {
+            skipBlurVerifyForRefreshPointerRef.current = false
+          }}
           onPointerDown={() => {
-            skipBlurVerifyForRefreshPointerRef.current = true
+            skipBlurVerifyForRefreshPointerRef.current =
+              document.activeElement === suffixInputRef.current
           }}
           ref={refreshButtonRef}
-          title={loading ? fetchingLabel : fetchLabel}
+          title={
+            liveLookupAvailable === false
+              ? tc('hsaLookupUnavailable')
+              : loading
+                ? fetchingLabel
+                : fetchLabel
+          }
           type="button"
         >
           <RefreshCw
@@ -351,6 +415,24 @@ export default function HsaPersonVerifyField({
           />
         </button>
       </div>
+      {liveLookupAvailable === false ? (
+        <p
+          className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
+          role="status"
+          {...devMarker({
+            context: 'hsa person verification',
+            name: 'lookup unavailable status',
+            value: purpose,
+          })}
+        >
+          <ShieldAlert
+            aria-hidden="true"
+            className="mt-0.5 h-4 w-4 shrink-0"
+            focusable={false}
+          />
+          <span>{tc('hsaLookupUnavailable')}</span>
+        </p>
+      ) : null}
       {!readOnly && !selectedPrefix && prefixesLoaded ? (
         <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
           {prefixLoadError ?? tc('hsaPrefixMissing')}

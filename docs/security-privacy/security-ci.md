@@ -505,6 +505,24 @@ of CSP console violations. Release smoke verifies the real nginx-served
 redirect, HTML, JavaScript, YAML and 404 paths, exact single-value headers,
 rendered specification and absence of CSP console violations.
 
+The stable required context is
+`HSA mTLS topology / HSA mTLS topology required`. Its primary seam invokes the
+current-commit production App image and authenticated responsibility-person
+route through the production Quadlet smoke topology. The subordinate transport
+jobs build the provisioner, mock, Adapter, and exact App transport contract
+from the tested commit. They reject unauthenticated clients, cross-leg
+credentials, and a same-CA leaf with the wrong stable identity on App-to-Kong,
+Kong-to-Adapter, and Adapter-to-HSA. Same-domain wrong server leaves are
+installed one runtime bundle at a time and rejected by the corresponding
+deployed client; the full topology is restored and authenticated after every
+case. Runtime services remain active through mount and process inspection. The
+rotation matrix stops clients before servers, restarts servers before clients,
+compares the CA and both leaves, rejects stale material, verifies authenticated
+capability, and proves rollback restores the selected generation. Semantic
+running-container isolation, listener, protocol, correlation, and exactly-once
+checks fail closed; test-only probe credentials are not mounted into
+participant containers.
+
 ## Out of scope (for the PR workflow)
 
 - **Active scanning** (`zap-full-scan`, fuzzers, payload mutation).

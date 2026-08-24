@@ -5,7 +5,7 @@ FROM node:24-trixie-slim@sha256:f2925910482dc53394bc0034c5f4abffcd01de400794c050
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY package.json package-lock.json .npmrc ./
+COPY containers/hsa-person-lookup-adapter/package.json containers/hsa-person-lookup-adapter/package-lock.json containers/hsa-person-lookup-adapter/.npmrc ./
 RUN npm install --global "npm@$(node -p 'require("./package.json").packageManager.slice(4)')"
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
@@ -15,18 +15,13 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
   && rm -f /usr/local/bin/npm /usr/local/bin/npx
 
 ENV NODE_ENV=production
-ENV PORT=8080
-
-WORKDIR /app
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl \
-  && rm -rf /var/lib/apt/lists/*
+WORKDIR /app/containers/hsa-person-lookup-adapter
 
 COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
-COPY --chown=node:node package.json ./
-COPY --chown=node:node src ./src
+COPY --chown=node:node containers/hsa-person-lookup-adapter/package.json ./
+COPY --chown=node:node containers/hsa-person-lookup-adapter/src ./src
+COPY --chown=node:node lib/hsa/strict-certificate-validation.mjs /app/lib/hsa/strict-certificate-validation.mjs
 
 USER node
-EXPOSE 8080
-CMD ["node", "src/server.mjs"]
+EXPOSE 8443
+CMD ["node", "src/strict-server.mjs"]

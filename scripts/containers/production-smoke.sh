@@ -11,6 +11,7 @@ HSA_INTEGRATION_LOCK_FILE="${PRODUCTION_SMOKE_HSA_INTEGRATION_LOCK_FILE:-$PWD/co
 TOPOLOGY=single-node
 CONFIG_TEMP_DIR=''
 RECOVERY_TEMP_DIR=''
+HSA_STALE_TEMP_DIR=''
 
 cleanup_config_temp() {
   if [[ -n "$CONFIG_TEMP_DIR" && -d "$CONFIG_TEMP_DIR" ]]; then
@@ -25,9 +26,14 @@ cleanup_config_temp() {
   if [[ -n "$RECOVERY_TEMP_DIR" && -d "$RECOVERY_TEMP_DIR" ]]; then
     sudo rm -rf -- "$RECOVERY_TEMP_DIR"
   fi
+  if [[ -n "$HSA_STALE_TEMP_DIR" ]]; then
+    as_service rm -rf -- "$HSA_STALE_TEMP_DIR" >/dev/null 2>&1 || true
+  fi
 }
 
-trap cleanup_config_temp EXIT
+cleanup_hsa_app_pki() {
+  sudo rm -rf -- "$CONFIG_ROOT/secrets/hsa-mtls"
+}
 
 fail() {
   printf 'production-smoke: %s\n' "$*" >&2
@@ -177,13 +183,27 @@ configure_smoke_app_env() {
     -e "s#^AUTH_OIDC_CLIENT_SECRET=.*#AUTH_OIDC_CLIENT_SECRET=$client_secret#" \
     -e "s#^AUTH_SESSION_COOKIE_PASSWORD=.*#AUTH_SESSION_COOKIE_PASSWORD=$cookie_password#" \
     "$app_env"
+  sed -i \
+    -e '/^HSA_PERSON_LOOKUP_CA_PATH=/d' \
+    -e '/^HSA_PERSON_LOOKUP_CLIENT_CERT_PATH=/d' \
+    -e '/^HSA_PERSON_LOOKUP_CLIENT_KEY_PATH=/d' \
+    -e '/^HSA_PERSON_LOOKUP_TLS_SERVER_NAME=/d' \
+    "$app_env"
+  printf '%s\n' \
+    'HSA_PERSON_LOOKUP_CA_PATH=/run/secrets/kravhantering/hsa-mtls/kong-server-ca.crt' \
+    'HSA_PERSON_LOOKUP_CLIENT_CERT_PATH=/run/secrets/kravhantering/hsa-mtls/app-client.crt' \
+    'HSA_PERSON_LOOKUP_CLIENT_KEY_PATH=/run/secrets/kravhantering/hsa-mtls/app-client.key' \
+    'HSA_PERSON_LOOKUP_TLS_SERVER_NAME=kong' \
+    >>"$app_env"
 }
 
 install_runtime_config_directories() {
   sudo install -d -o root -g "$SERVICE_USER" -m 0750 \
     "$CONFIG_ROOT" "$CONFIG_ROOT/keycloak" "$CONFIG_ROOT/sqlserver-tls" \
     "$CONFIG_ROOT/tls" "$CONFIG_ROOT/keycloak-management-tls" \
-    "$CONFIG_ROOT/kong-tls" "$CONFIG_ROOT/secrets"
+    "$CONFIG_ROOT/secrets"
+  sudo install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0700 \
+    "$CONFIG_ROOT/secrets/hsa-mtls"
 }
 
 render_runtime_configuration() {
@@ -283,12 +303,6 @@ NODE
     'allow ::1/128;' \
     >"$CONFIG_TEMP_DIR/nginx-readiness-probes.conf"
 
-  node scripts/containers/generate-tls.mjs \
-    --hostname kong \
-    --output-dir "$CONFIG_TEMP_DIR/kong-tls" \
-    --ca-cert tmp/container-tls/ca.crt \
-    --ca-key tmp/container-tls/ca.key
-
   install_runtime_config_directories
   for file in app.env db-job.env keycloak.env release.env sqlserver.env; do
     sudo install -o root -g "$SERVICE_USER" -m 0640 \
@@ -306,10 +320,6 @@ NODE
     tmp/container-tls/kravhantering.test.key "$CONFIG_ROOT/tls/privkey.pem"
   sudo install -o root -g "$SERVICE_USER" -m 0644 \
     tmp/container-tls/ca.crt "$CONFIG_ROOT/tls/ca.crt"
-  sudo install -o root -g "$SERVICE_USER" -m 0644 \
-    "$CONFIG_TEMP_DIR/kong-tls/kong.crt" "$CONFIG_ROOT/kong-tls/kong.crt"
-  sudo install -o root -g "$SERVICE_USER" -m 0640 \
-    "$CONFIG_TEMP_DIR/kong-tls/kong.key" "$CONFIG_ROOT/kong-tls/kong.key"
   sudo install -o root -g "$SERVICE_USER" -m 0644 \
     tmp/container-tls/sqlserver.crt \
     "$CONFIG_ROOT/sqlserver-tls/server.crt"
@@ -347,6 +357,8 @@ prepare_images() {
   load_project_image "$DEMO_SEED_IMAGE_REF" "${DEMO_SEED_OCI_ARCHIVE-}"
   load_project_image "$HSA_DIRECTORY_MOCK_IMAGE_REF" \
     "${HSA_DIRECTORY_MOCK_OCI_ARCHIVE-}"
+  load_project_image "$HSA_MTLS_PROVISIONER_IMAGE_REF" \
+    "${HSA_MTLS_PROVISIONER_OCI_ARCHIVE-}"
   load_project_image "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF" \
     "${HSA_PERSON_LOOKUP_ADAPTER_OCI_ARCHIVE-}"
   as_service podman pull "$NGINX_IMAGE_REF"
@@ -358,6 +370,8 @@ prepare_images() {
   verify_project_image_id "$DEMO_SEED_IMAGE_REF" "$DEMO_SEED_IMAGE_ID"
   verify_project_image_id \
     "$HSA_DIRECTORY_MOCK_IMAGE_REF" "$HSA_DIRECTORY_MOCK_IMAGE_ID"
+  verify_project_image_id \
+    "$HSA_MTLS_PROVISIONER_IMAGE_REF" "$HSA_MTLS_PROVISIONER_IMAGE_ID"
   verify_project_image_id \
     "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF" \
     "$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID"
@@ -390,9 +404,368 @@ render_ci_overlay() {
       -e "s#@@BUNDLE_ROOT@@#$INSTALL_ROOT/current#g" \
       -e "s#@@CONFIG_ROOT@@#$CONFIG_ROOT#g" \
       -e "s#@@HSA_DIRECTORY_MOCK_IMAGE_REF@@#$HSA_DIRECTORY_MOCK_IMAGE_REF#g" \
+      -e "s#@@HSA_MTLS_PROVISIONER_IMAGE_REF@@#$HSA_MTLS_PROVISIONER_IMAGE_REF#g" \
       -e "s#@@HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF@@#$HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF#g" \
       -e "s#@@KONG_IMAGE_REF@@#$KONG_IMAGE_REF#g" \
       "$template" | as_service tee "$output" >/dev/null
+  done
+}
+
+run_hsa_mtls_provisioner() {
+  as_service podman run --rm --pull=never --user 0:0 \
+    --network none \
+    --tmpfs /run/kravhantering/hsa-mtls-issuer:rw,size=64m,mode=0700,nosuid,nodev,noexec \
+    --volume kravhantering-ci-hsa-mtls-state:/var/lib/kravhantering/hsa-mtls:Z \
+    --volume "$CONFIG_ROOT/secrets/hsa-mtls:/run/kravhantering/hsa-mtls-runtime/app:Z" \
+    --volume kravhantering-ci-hsa-mtls-kong:/run/kravhantering/hsa-mtls-runtime/kong:Z \
+    --volume kravhantering-ci-hsa-mtls-adapter:/run/kravhantering/hsa-mtls-runtime/adapter:Z \
+    --volume kravhantering-ci-hsa-mtls-mock:/run/kravhantering/hsa-mtls-runtime/mock:Z \
+    "$HSA_MTLS_PROVISIONER_IMAGE_REF" "$@"
+}
+
+stop_hsa_mtls_endpoints() {
+  service_systemctl stop kravhantering-app-runtime.service
+  service_systemctl stop kravhantering-ci-kong.service
+  service_systemctl stop kravhantering-ci-hsa-person-lookup-adapter.service
+  service_systemctl stop kravhantering-ci-hsa-directory-mock.service
+}
+
+start_hsa_mtls_endpoints() {
+  service_systemctl start kravhantering-ci-hsa-directory-mock.service
+  service_systemctl start kravhantering-ci-hsa-person-lookup-adapter.service
+  service_systemctl start kravhantering-ci-kong.service
+  service_systemctl start kravhantering-app-runtime.service
+  service_systemctl start kravhantering-single-node.target
+}
+
+verify_hsa_correlated_lookup() {
+  local correlation_id journal_since runtime_log
+  if [[ "${HSA_MTLS_FORCE_VERIFY_FAILURE:-0}" == 1 ]]; then
+    return 1
+  fi
+  journal_since="$(date -u --iso-8601=seconds)"
+  CI=true npm run test:release-smoke -- \
+    --grep 'verifies HSA person lookup through Kong and the HSA mock'
+  runtime_log="$(mktemp -d)"
+  as_service journalctl --user --since "$journal_since" --output cat \
+    -u kravhantering-app-runtime.service >"$runtime_log/app.log"
+  as_service podman logs --since "$journal_since" \
+    kravhantering-ci-kong >"$runtime_log/kong.log" 2>&1
+  as_service podman logs --since "$journal_since" \
+    kravhantering-ci-hsa-person-lookup-adapter >"$runtime_log/adapter.log" 2>&1
+  as_service podman logs --since "$journal_since" \
+    kravhantering-ci-hsa-directory-mock >"$runtime_log/mock.log" 2>&1
+  correlation_id="$(
+    grep -F '"event":"hsa_app_lookup_started"' "$runtime_log/app.log" |
+      grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}' |
+      tail -1
+  )"
+  [[ -n "$correlation_id" ]] || fail 'App emitted no HSA correlation evidence'
+  [[ "$(grep -Fc "\"correlation_id\":\"$correlation_id\",\"event\":\"hsa_app_lookup_started\"" "$runtime_log/app.log")" == 1 ]] || \
+    fail 'App HSA correlation evidence was not unique'
+  grep -F "$correlation_id" "$runtime_log/kong.log" >/dev/null || \
+    fail 'Kong correlation evidence is missing'
+  [[ "$(grep -F "$correlation_id" "$runtime_log/adapter.log" | grep -Fc '"event":"hsa_adapter_lookup_forwarded"')" == 1 ]] || \
+    fail 'Adapter HSA correlation evidence was not unique'
+  [[ "$(grep -F "$correlation_id" "$runtime_log/mock.log" | grep -Fc '"event":"hsa_mock_lookup_handled"')" == 1 ]] || \
+    fail 'HSA mock did not handle the correlated lookup exactly once'
+  grep -F "$correlation_id" "$runtime_log/mock.log" | grep -F '"handling_count":1' >/dev/null || \
+    fail 'HSA mock exactly-once evidence is missing'
+  printf '%s\n' \
+    "correlation-id=$correlation_id" \
+    'app-correlation=passed' \
+    'kong-correlation=passed' \
+    'adapter-correlation=passed' \
+    'mock-exactly-once=passed' \
+    >>"$EVIDENCE_DIR/hsa-mtls-correlation.txt"
+  rm -rf -- "$runtime_log"
+}
+
+verify_hsa_runtime_isolation() {
+  local actual container destination expected filename
+  while read -r container destination; do
+    as_service podman inspect "$container" | jq -e --arg destination "$destination" '
+      any(.[0].Mounts[]; .Destination == $destination and .RW == false) and
+      all(.[0].Mounts[]; (.Destination | contains("hsa-mtls-issuer") | not) and (.Destination | contains("/var/lib/kravhantering/hsa-mtls") | not))
+    ' >/dev/null || fail "$container did not mount only selected HSA material read-only"
+    if as_service podman exec "$container" sh -c \
+      "find '$destination' -type f \( -name '*ca*.key' -o -name '*ca-key*' \) -print -quit" | \
+      grep -q .; then
+      fail "$container exposes HSA CA signing material"
+    fi
+  done <<'CONTAINERS'
+kravhantering-app-runtime /run/secrets/kravhantering
+kravhantering-ci-kong /run/kravhantering/hsa-mtls
+kravhantering-ci-hsa-person-lookup-adapter /run/kravhantering/hsa-mtls
+kravhantering-ci-hsa-directory-mock /run/kravhantering/hsa-mtls
+CONTAINERS
+  while read -r container destination expected filename; do
+    actual="$(as_service podman exec "$container" stat -c '%a:%u:%g' "$destination/$filename")"
+    [[ "$actual" == "$expected" ]] || \
+      fail "$container has invalid HSA material ownership or mode for $filename: $actual"
+  done <<'FILES'
+kravhantering-app-runtime /run/secrets/kravhantering/hsa-mtls 444:1000:1000 app-client.crt
+kravhantering-app-runtime /run/secrets/kravhantering/hsa-mtls 400:1000:1000 app-client.key
+kravhantering-app-runtime /run/secrets/kravhantering/hsa-mtls 444:1000:1000 kong-server-ca.crt
+kravhantering-ci-kong /run/kravhantering/hsa-mtls 444:1001:1001 kong-server.crt
+kravhantering-ci-kong /run/kravhantering/hsa-mtls 400:1001:1001 kong-server.key
+kravhantering-ci-kong /run/kravhantering/hsa-mtls 444:1001:1001 app-client-ca.crt
+kravhantering-ci-kong /run/kravhantering/hsa-mtls 444:1001:1001 kong-client.crt
+kravhantering-ci-kong /run/kravhantering/hsa-mtls 400:1001:1001 kong-client.key
+kravhantering-ci-kong /run/kravhantering/hsa-mtls 444:1001:1001 adapter-server-ca.crt
+kravhantering-ci-hsa-person-lookup-adapter /run/kravhantering/hsa-mtls 444:1000:1000 adapter-server.crt
+kravhantering-ci-hsa-person-lookup-adapter /run/kravhantering/hsa-mtls 400:1000:1000 adapter-server.key
+kravhantering-ci-hsa-person-lookup-adapter /run/kravhantering/hsa-mtls 444:1000:1000 kong-client-ca.crt
+kravhantering-ci-hsa-person-lookup-adapter /run/kravhantering/hsa-mtls 444:1000:1000 adapter-client.crt
+kravhantering-ci-hsa-person-lookup-adapter /run/kravhantering/hsa-mtls 400:1000:1000 adapter-client.key
+kravhantering-ci-hsa-person-lookup-adapter /run/kravhantering/hsa-mtls 444:1000:1000 hsa-server-ca.crt
+kravhantering-ci-hsa-directory-mock /run/kravhantering/hsa-mtls 444:1000:1000 mock-server.crt
+kravhantering-ci-hsa-directory-mock /run/kravhantering/hsa-mtls 400:1000:1000 mock-server.key
+kravhantering-ci-hsa-directory-mock /run/kravhantering/hsa-mtls 444:1000:1000 adapter-client-ca.crt
+FILES
+  as_service podman exec kravhantering-ci-hsa-person-lookup-adapter sh -ec \
+    "grep -Eq ' 00000000:20FB ' /proc/net/tcp; grep -Eq ' 0100007F:1F91 ' /proc/net/tcp"
+  as_service podman exec kravhantering-ci-hsa-directory-mock sh -ec \
+    "grep -Eq ' 00000000:20FB ' /proc/net/tcp; grep -Eq ' 0100007F:1F91 ' /proc/net/tcp"
+  as_service podman exec kravhantering-ci-kong sh -ec \
+    "grep -Eq ' 00000000:20FB ' /proc/net/tcp; grep -Eq ' 0100007F:1F41 ' /proc/net/tcp"
+  as_service podman exec kravhantering-ci-hsa-person-lookup-adapter node \
+    --input-type=module -e \
+    "const r=await fetch('http://127.0.0.1:8081/health');if(!r.ok)process.exit(1)"
+  as_service podman exec kravhantering-ci-hsa-directory-mock node \
+    --input-type=module -e \
+    "const r=await fetch('http://127.0.0.1:8081/health');if(!r.ok)process.exit(1)"
+  as_service podman exec kravhantering-app-runtime node --input-type=module -e '
+    for (const url of [
+      "http://hsa-person-lookup-adapter:8081/health",
+      "http://hsa-directory-mock:8081/health",
+      "http://kong:8001/status",
+    ]) {
+      try {
+        await fetch(url)
+        process.exit(1)
+      } catch {}
+    }
+  '
+  printf '%s\n' 'role-specific-read-only-bundles=passed' \
+    'runtime-ca-signing-keys-absent=passed' \
+    'runtime-file-modes-and-ownership=passed' \
+    'https-business-listeners=passed' \
+    'loopback-health-listeners=passed' \
+    'kong-admin-loopback-only=passed' \
+    >"$EVIDENCE_DIR/hsa-mtls-runtime-isolation.txt"
+}
+
+capture_hsa_stale_probe() {
+  local domain="$1" target="$2" source_container source_ca source_cert source_key
+  case "$domain" in
+    app-to-kong)
+      source_container=kravhantering-app-runtime
+      source_ca=/run/secrets/kravhantering/hsa-mtls/kong-server-ca.crt
+      source_cert=/run/secrets/kravhantering/hsa-mtls/app-client.crt
+      source_key=/run/secrets/kravhantering/hsa-mtls/app-client.key
+      ;;
+    kong-to-adapter)
+      source_container=kravhantering-ci-kong
+      source_ca=/run/kravhantering/hsa-mtls/adapter-server-ca.crt
+      source_cert=/run/kravhantering/hsa-mtls/kong-client.crt
+      source_key=/run/kravhantering/hsa-mtls/kong-client.key
+      ;;
+    adapter-to-hsa)
+      source_container=kravhantering-ci-hsa-person-lookup-adapter
+      source_ca=/run/kravhantering/hsa-mtls/hsa-server-ca.crt
+      source_cert=/run/kravhantering/hsa-mtls/adapter-client.crt
+      source_key=/run/kravhantering/hsa-mtls/adapter-client.key
+      ;;
+  esac
+  as_service podman cp "$source_container:$source_ca" "$target/ca.crt"
+  as_service podman cp "$source_container:$source_cert" "$target/client.crt"
+  as_service podman cp "$source_container:$source_key" "$target/client.key"
+}
+
+verify_hsa_stale_rejection() {
+  local domain="$1" source="$2" host network path servername
+  case "$domain" in
+    app-to-kong)
+      host=kong; servername=kong; path=/hsa/person-records/lookup ;;
+    kong-to-adapter)
+      host=hsa-person-lookup-adapter
+      servername=hsa-person-lookup-adapter
+      path=/hsa/person-records/lookup
+      ;;
+    adapter-to-hsa)
+      host=hsa-directory-mock
+      servername=hsa-directory-mock
+      path=/svr-hsaws2/hsaws
+      ;;
+  esac
+  network="$(as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
+    print-network --topology single-node --purpose egress)"
+  as_service podman run --rm --pull=never --network "$network" \
+    --user 0 \
+    --volume "$source:/runtime/stale:ro,Z" \
+    -e STALE_HOST="$host" -e STALE_SERVER_NAME="$servername" \
+    -e STALE_PATH="$path" "$APP_RUNTIME_IMAGE_REF" node --input-type=module -e '
+      const fs = await import("node:fs")
+      const https = await import("node:https")
+      const request = https.request({
+        ca: fs.readFileSync("/runtime/stale/ca.crt"),
+        cert: fs.readFileSync("/runtime/stale/client.crt"),
+        host: process.env.STALE_HOST,
+        key: fs.readFileSync("/runtime/stale/client.key"),
+        method: "POST",
+        minVersion: "TLSv1.2",
+        path: process.env.STALE_PATH,
+        port: 8443,
+        rejectUnauthorized: true,
+        servername: process.env.STALE_SERVER_NAME,
+      })
+      request.on("response", () => process.exit(1))
+      request.on("error", error => {
+        const certificateRejections = new Set([
+          "CERT_HAS_EXPIRED",
+          "CERT_NOT_YET_VALID",
+          "DEPTH_ZERO_SELF_SIGNED_CERT",
+          "SELF_SIGNED_CERT_IN_CHAIN",
+          "UNABLE_TO_GET_ISSUER_CERT",
+          "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+          "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+        ])
+        const code = String(error.code || "")
+        const protocolRejection =
+          code.startsWith("ERR_SSL_") ||
+          (code === "EPROTO" && /SSL routines|TLS|alert/i.test(error.message))
+        process.exit(certificateRejections.has(code) || protocolRejection ? 0 : 1)
+      })
+      request.end("{}")
+    '
+}
+
+verify_hsa_rotation_metadata() {
+  local domain="$1" before="$2" after="$3" part
+  for part in ca client server; do
+    [[ "$(jq -r --arg domain "$domain" --arg part "$part" '.result.current.trustDomains[$domain][$part].digestSha256' <<<"$before")" != \
+       "$(jq -r --arg domain "$domain" --arg part "$part" '.result.current.trustDomains[$domain][$part].digestSha256' <<<"$after")" ]] || \
+      fail "$domain rotation did not change $part certificate"
+    [[ "$(jq -r --arg domain "$domain" --arg part "$part" '.result.current.trustDomains[$domain][$part].subjectRfc2253' <<<"$before")" == \
+       "$(jq -r --arg domain "$domain" --arg part "$part" '.result.current.trustDomains[$domain][$part].subjectRfc2253' <<<"$after")" ]] || \
+      fail "$domain rotation changed the stable $part subject"
+  done
+}
+
+inspect_hsa_finalization_previous() {
+  local expected_generation_id="$1" domain="$2"
+  local finalization_inspection finalization_previous selected_generation_id selection
+  finalization_inspection="$(run_hsa_mtls_provisioner inspect)" || \
+    fail "$domain HSA mTLS finalization state could not be inspected"
+  selection="$(
+    jq -cer '
+      .result.selection |
+      if type == "object" and
+        has("current") and
+        ((.current | type) == "string" and (.current | length) > 0) and
+        has("previous") and
+        (.previous == null or
+          ((.previous | type) == "string" and (.previous | length) > 0))
+      then .
+      else error("invalid HSA mTLS selection")
+      end
+    ' <<<"$finalization_inspection"
+  )" || fail "$domain HSA mTLS finalization returned invalid selection"
+  selected_generation_id="$(jq -r '.current' <<<"$selection")" || \
+    fail "$domain HSA mTLS finalization returned invalid current selection"
+  finalization_previous="$(
+    jq -r 'if .previous == null then "" else .previous end' <<<"$selection"
+  )" || \
+    fail "$domain HSA mTLS finalization returned invalid prior selection"
+  [[ "$selected_generation_id" == "$expected_generation_id" ]] || \
+    fail "$domain HSA mTLS finalization selected a generation other than the authenticated generation"
+  printf '%s\n' "$finalization_previous"
+}
+
+finalize_hsa_authenticated_generation() {
+  local expected_generation_id="$1" domain="$2" finalization_previous
+  # Finalize may complete state changes before its command outcome is observed.
+  run_hsa_mtls_provisioner finalize "$expected_generation_id" >/dev/null || true
+  if ! finalization_previous="$(
+    inspect_hsa_finalization_previous "$expected_generation_id" "$domain"
+  )"; then
+    fail "$domain HSA mTLS finalization state could not be reconciled"
+  fi
+  if [[ -z "$finalization_previous" ]]; then
+    return
+  fi
+
+  run_hsa_mtls_provisioner finalize "$expected_generation_id" >/dev/null || true
+  if ! finalization_previous="$(
+    inspect_hsa_finalization_previous "$expected_generation_id" "$domain"
+  )"; then
+    fail "$domain HSA mTLS finalization retry state could not be reconciled"
+  fi
+  [[ -z "$finalization_previous" ]] || \
+    fail "$domain HSA mTLS prior cleanup remains pending after finalization retry"
+}
+
+verify_hsa_mtls_rotation_and_rollback() {
+  local after after_inspect before before_inspect domain restored stale_dir
+  : >"$EVIDENCE_DIR/hsa-mtls-rotation.txt"
+  for domain in app-to-kong kong-to-adapter adapter-to-hsa; do
+    before_inspect="$(run_hsa_mtls_provisioner inspect)"
+    before="$(jq -er '.result.selection.current' <<<"$before_inspect")"
+    stale_dir="$(as_service mktemp -d)"
+    HSA_STALE_TEMP_DIR="$stale_dir"
+    capture_hsa_stale_probe "$domain" "$stale_dir"
+    stop_hsa_mtls_endpoints
+    run_hsa_mtls_provisioner rotate "$domain" >/dev/null
+    run_hsa_mtls_provisioner deploy >/dev/null
+    start_hsa_mtls_endpoints
+    wait_for_url https://kravhantering.test/api/ready \
+      "application readiness after $domain HSA mTLS rotation"
+    verify_hsa_correlated_lookup || \
+      fail "$domain HSA mTLS authenticated verification failed"
+    after_inspect="$(run_hsa_mtls_provisioner inspect)"
+    after="$(jq -er '.result.selection.current' <<<"$after_inspect")"
+    [[ "$after" != "$before" ]] || \
+      fail "$domain HSA mTLS rotation did not select a new generation"
+    verify_hsa_rotation_metadata "$domain" "$before_inspect" "$after_inspect"
+    verify_hsa_stale_rejection "$domain" "$stale_dir" || \
+      fail "$domain accepted stale pre-rotation material"
+    as_service rm -rf -- "$stale_dir"
+    HSA_STALE_TEMP_DIR=''
+    finalize_hsa_authenticated_generation "$after" "$domain"
+
+    stop_hsa_mtls_endpoints
+    run_hsa_mtls_provisioner rotate "$domain" >/dev/null
+    run_hsa_mtls_provisioner deploy >/dev/null
+    start_hsa_mtls_endpoints
+    if HSA_MTLS_FORCE_VERIFY_FAILURE=1 verify_hsa_correlated_lookup; then
+      fail "$domain HSA mTLS injected verification failure unexpectedly passed"
+    fi
+    stop_hsa_mtls_endpoints
+    run_hsa_mtls_provisioner rollback >/dev/null
+    run_hsa_mtls_provisioner deploy >/dev/null
+    start_hsa_mtls_endpoints
+    wait_for_url https://kravhantering.test/api/ready \
+      "application readiness after $domain HSA mTLS rollback"
+    restored="$(run_hsa_mtls_provisioner inspect | jq -er '.result.selection.current')"
+    [[ "$restored" == "$after" ]] || \
+      fail "$domain HSA mTLS rollback did not restore the verified generation"
+    verify_hsa_correlated_lookup || \
+      fail "$domain HSA mTLS rollback verification failed"
+    printf '%s\n' \
+      "domain=$domain" \
+      "before-generation=$before" \
+      "rotated-generation=$after" \
+      "restored-generation=$restored" \
+      'client-stop-server-start-order=passed' \
+      'authenticated-lookup-after-rotation=passed' \
+      'ca-and-both-leaves-changed=passed' \
+      'stable-peer-identities-preserved=passed' \
+      'stale-material-rejected=passed' \
+      'successful-finalization=passed' \
+      'injected-failure-rollback=passed' \
+      'authenticated-lookup-after-rollback=passed' \
+      >>"$EVIDENCE_DIR/hsa-mtls-rotation.txt"
   done
 }
 
@@ -1243,9 +1616,10 @@ assert_service_property() {
 up() {
   local archive="$1"
   required_env DEMO_SEED_IMAGE_REF HSA_DIRECTORY_MOCK_IMAGE_REF \
-    HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF KONG_IMAGE_REF \
+    HSA_MTLS_PROVISIONER_IMAGE_REF HSA_PERSON_LOOKUP_ADAPTER_IMAGE_REF KONG_IMAGE_REF \
     APP_RUNTIME_IMAGE_ID DB_JOB_IMAGE_ID DEMO_SEED_IMAGE_ID \
-    HSA_DIRECTORY_MOCK_IMAGE_ID HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID
+    HSA_DIRECTORY_MOCK_IMAGE_ID HSA_MTLS_PROVISIONER_IMAGE_ID \
+    HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID
   prepare_service_user
   install_archive "$archive"
   render_runtime_configuration
@@ -1286,6 +1660,9 @@ up() {
     'initial application process health'
   wait_for_url https://kravhantering.test/api/ready \
     'initial full-stack readiness'
+  bash .devcontainer/trust-container-ca.sh
+  verify_hsa_runtime_isolation
+  verify_hsa_mtls_rotation_and_rollback
   verify_containment
   service_systemctl restart kravhantering-app-runtime.service
   wait_for_url https://kravhantering.test/api/ready \
@@ -1523,6 +1900,7 @@ verify() {
 down() {
   local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
   local network purpose uid user_search_path volume volume_status
+  cleanup_hsa_app_pki
   id "$SERVICE_USER" >/dev/null 2>&1 || return 0
   mkdir -p "$EVIDENCE_DIR"
   service_systemctl disable --now kravhantering-single-node.target || true
@@ -1559,7 +1937,9 @@ down() {
   fi
   service_systemctl daemon-reload || true
   as_service podman rm --all --force || true
-  as_service podman volume rm kravhantering-ci-hsa-mtls-certs \
+  as_service podman volume rm kravhantering-ci-hsa-mtls-state \
+    kravhantering-ci-hsa-mtls-kong kravhantering-ci-hsa-mtls-adapter \
+    kravhantering-ci-hsa-mtls-mock \
     kravhantering-sqlserver-data kravhantering-keycloak-data || true
   for purpose in edge identity database egress; do
     network="$(as_service "$helper" \
@@ -1586,5 +1966,6 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  trap cleanup_config_temp EXIT
   main "$@"
 fi

@@ -571,6 +571,15 @@ export const REST_OPERATION_DECLARATIONS = [
     'focused',
   ],
   [
+    'GET',
+    '/api/hsa-person-lookup-capability',
+    'session',
+    'none',
+    'authenticated',
+    'no-store',
+    'openapi',
+  ],
+  [
     'POST',
     '/api/improvement-suggestions/[id]/request-review',
     'session',

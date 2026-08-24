@@ -828,6 +828,52 @@ describe('trusted container release helpers', () => {
     expect(productionDeploymentMetadata(undefined)).toEqual({})
   })
 
+  it('preserves provisioner-only metadata through package links and release notes', () => {
+    const plan = createTestReleasePlan({ env: env(), gitVersion })
+    const metadata = createReleaseMetadata(
+      plan,
+      buildxMetadata('sha256:app', 'sha256:app-config'),
+      buildxMetadata('sha256:db', 'sha256:db-config'),
+      undefined,
+      undefined,
+      undefined,
+      {},
+      buildxMetadata('sha256:provisioner', 'sha256:provisioner-config'),
+    )
+
+    expect(metadata.hsaIntegrationSupport).toEqual({
+      hsaMtlsProvisioner: expect.objectContaining({
+        imageId: 'sha256:provisioner-config',
+        manifestDigest: 'sha256:provisioner',
+      }),
+    })
+    expect(releaseMetadataEnv(metadata)).toMatchObject({
+      HSA_MTLS_PROVISIONER_IMAGE_ID: 'sha256:provisioner-config',
+      HSA_MTLS_PROVISIONER_MANIFEST_DIGEST: 'sha256:provisioner',
+    })
+
+    const linked = withReleasePackageUrls(plan, metadata, {
+      execFileSync: vi.fn(() =>
+        JSON.stringify([
+          { id: 123, metadata: { container: { tags: plan.tags } } },
+        ]),
+      ),
+    })
+    const provisioner = linked.hsaIntegrationSupport.hsaMtlsProvisioner
+    expect(provisioner.tagUrls[provisioner.tags[0]]).toContain(
+      '/kravhantering-hsa-mtls-provisioner/123?',
+    )
+
+    const notes = renderReleaseNotes(plan, linked, '', {
+      commits: [],
+      generatedNotes: '',
+      previousTagName: undefined,
+    })
+    expect(notes).toContain('## HSA Integration Support Container Images')
+    expect(notes).toContain('### kravhantering-hsa-mtls-provisioner')
+    expect(notes).not.toContain('### kravhantering-hsa-person-lookup-adapter')
+  })
+
   it('builds a deployment manifest from lock fallbacks without optional support', () => {
     const plan = createTestReleasePlan({
       env: env({
@@ -2097,7 +2143,8 @@ describe('trusted container release helpers', () => {
       expect(result.files).toContain(
         'nginx/templates/api-docs-security-headers.conf',
       )
-      expect(result.files).toContain('kong/kong.yml')
+      expect(result.files).toContain('kong/kong.strict.yml')
+      expect(result.files).toContain('kong/strict-app-client-subject.conf')
       expect(result.files).toContain('bin/kravhantering-images.sh')
       expect(result.files).toContain('bin/kravhantering-quadlet.sh')
       expect(result.files).toContain('sqlserver/mssql.conf')
@@ -2261,6 +2308,31 @@ describe('trusted container release helpers', () => {
         spawnSync: vi.fn(),
       }),
     ).toThrow('already points at different-sha')
+  })
+
+  it('keeps matching tags and creates missing release tags', () => {
+    const plan = createTestReleasePlan({
+      changedFiles: ['app/[locale]/page.tsx'],
+      env: env(),
+      gitVersion,
+    })
+    expect(
+      ensureGitTag(plan, {
+        execFileSync: () => `${plan.commitSha}\n`,
+        spawnSync: vi.fn(),
+      }),
+    ).toBe('exists')
+
+    const spawnSync = vi.fn(() => ({ status: 0 }))
+    expect(
+      ensureGitTag(plan, {
+        execFileSync: () => {
+          throw new Error('missing')
+        },
+        spawnSync,
+      }),
+    ).toBe('created')
+    expect(spawnSync).toHaveBeenCalledTimes(2)
   })
 
   it('configures generated release note categories with a catch-all', () => {

@@ -69,6 +69,21 @@ The locally built HSA support images share their Dockerfiles with release
 builds. Their Node base references therefore retain the same tag and digest in
 development and release builds.
 
+Both profiles activate the same strict HSA topology. A one-shot provisioner
+selects role-specific bundles before mock, Adapter, Kong, and App start in that
+order. The services use HTTPS and mandatory mTLS on all three legs, mount only
+their own bundle read-only, and expose health endpoints on loopback. Use the
+authenticated capability route or the HSA verification control to check the
+path; do not add plaintext listeners, shared certificate volumes, generated
+runtime certificates, or TLS bypass variables.
+
+Persistent certificate material renews automatically inside the 30-day
+threshold. The post-start reconciliation is a fast no-op for an ordinary
+reused generation. For a promotion it authenticates the complete chain before
+finalization. A failed promotion rolls back and deletes the failed generation,
+restarts mock, Adapter, and Kong in server-first order, and authenticates the
+restored generation before development continues.
+
 Both devcontainer profiles install the Codex CLI system-wide from OpenAI's
 current standalone release. The build resolves the release metadata, requires
 the upstream SHA-256 digest for `install.sh`, and verifies the downloaded file

@@ -749,7 +749,7 @@ stop_user_quadlet_services_before_storage_change() {
       krav-hsa-directory-mock.service \
       krav-db.service \
       krav-idp.service \
-      krav-hsa-mtls-cert-generator.service \
+      krav-hsa-mtls-provisioner.service \
       krav-support-network.service || true
 }
 
@@ -788,48 +788,6 @@ clone_or_update_repo() {
     git config --system --add safe.directory "${WORKSPACE_DIR}"
   fi
   chown -R "${VSCODE_USER}:${VSCODE_USER}" "${WORKSPACE_DIR}"
-}
-
-ensure_kong_route_protocols() {
-  local kong_config="${WORKSPACE_DIR}/containers/kong/kong.yml"
-  if [ ! -f "${kong_config}" ]; then
-    log "Kong config is missing: ${kong_config}"
-    return 1
-  fi
-
-  runuser -u "${VSCODE_USER}" -- env \
-    HOME="${VSCODE_HOME}" \
-    python3 - "${kong_config}" <<'PY'
-from pathlib import Path
-import sys
-
-import yaml
-
-path = Path(sys.argv[1])
-data = yaml.safe_load(path.read_text(encoding='utf-8')) or {}
-expected = {'http', 'https'}
-changed = False
-found = False
-
-for service in data.get('services') or []:
-    for route in service.get('routes') or []:
-        if route.get('name') != 'hsa-directory-person-lookup-rest':
-            continue
-        found = True
-        protocols = route.get('protocols')
-        if not isinstance(protocols, list) or not expected.issubset(set(protocols)):
-            route['protocols'] = ['http', 'https']
-            changed = True
-
-if not found:
-    raise SystemExit('Kong route hsa-directory-person-lookup-rest not found')
-
-if changed:
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding='utf-8')
-    print('updated Kong route protocols in /workspace/containers/kong/kong.yml')
-else:
-    print('Kong route protocols already configured')
-PY
 }
 
 configure_codex_session_policy() {
@@ -1103,7 +1061,11 @@ write_vm_env_override() {
     printf 'DB_RUNTIME_USER=kravhantering_app\n'
     printf 'DB_USER=kravhantering_app\n'
     printf 'MSSQL_SA_PASSWORD=%s\n' "${sa_password}"
-    printf 'HSA_PERSON_LOOKUP_URL=http://127.0.0.1:18000/hsa/person-records/lookup\n'
+    printf 'HSA_PERSON_LOOKUP_URL=https://127.0.0.1:18443/hsa/person-records/lookup\n'
+    printf 'HSA_PERSON_LOOKUP_CA_PATH=/workspace/.hsa-mtls/app/kong-server-ca.crt\n'
+    printf 'HSA_PERSON_LOOKUP_CLIENT_CERT_PATH=/workspace/.hsa-mtls/app/app-client.crt\n'
+    printf 'HSA_PERSON_LOOKUP_CLIENT_KEY_PATH=/workspace/.hsa-mtls/app/app-client.key\n'
+    printf 'HSA_PERSON_LOOKUP_TLS_SERVER_NAME=kong\n'
     printf '%s\n' "${end}"
   } >> "${tmp}"
 
@@ -1142,10 +1104,13 @@ build_hsa_images_once() {
   fi
 
   run_as_vscode \
-    "cd '${WORKSPACE_DIR}' && podman build ${no_cache_option}--tag localhost/kravhantering/hsa-person-lookup-adapter:local --file containers/hsa-person-lookup-adapter/Dockerfile containers/hsa-person-lookup-adapter" ||
+    "cd '${WORKSPACE_DIR}' && podman build ${no_cache_option}--tag localhost/kravhantering/hsa-person-lookup-adapter:local --file containers/hsa-person-lookup-adapter/Dockerfile ." ||
     return
   run_as_vscode \
-    "cd '${WORKSPACE_DIR}' && podman build ${no_cache_option}--tag localhost/kravhantering/hsa-directory-mock:local --file containers/hsa-directory-mock/Dockerfile containers/hsa-directory-mock"
+    "cd '${WORKSPACE_DIR}' && podman build ${no_cache_option}--tag localhost/kravhantering/hsa-directory-mock:local --file containers/hsa-directory-mock/Dockerfile ." ||
+    return
+  run_as_vscode \
+    "cd '${WORKSPACE_DIR}' && podman build ${no_cache_option}--tag localhost/kravhantering/hsa-mtls-provisioner:local --file containers/hsa-mtls-provisioner/Dockerfile ."
 }
 
 build_hsa_images() {
@@ -1318,7 +1283,9 @@ ensure_base_podman_resources() {
   fi
 
   local volume
-  for volume in krav-sqlserver krav-hsa-mtls-certs; do
+  install -d -m 0700 -o "${VSCODE_USER}" -g "${VSCODE_USER}" \
+    "${WORKSPACE_DIR}/.hsa-mtls/app"
+  for volume in krav-sqlserver krav-hsa-mtls-state krav-hsa-mtls-kong krav-hsa-mtls-adapter krav-hsa-mtls-mock; do
     if ! run_user_podman "${uid}" volume exists "${volume}"; then
       log "creating missing Podman volume ${volume}"
       if ! run_user_podman "${uid}" volume create "${volume}"; then
@@ -1338,7 +1305,7 @@ stop_managed_containers() {
     krav-hsa-directory-mock.service \
     krav-db.service \
     krav-idp.service \
-    krav-hsa-mtls-cert-generator.service \
+    krav-hsa-mtls-provisioner.service \
     krav-support-network.service || true
 
   run_user_podman "${uid}" rm --force \
@@ -1347,7 +1314,7 @@ stop_managed_containers() {
     hsa-directory-mock \
     db \
     idp \
-    hsa-mtls-cert-generator >/dev/null 2>&1 || true
+    hsa-mtls-provisioner >/dev/null 2>&1 || true
 
   run_user_podman "${uid}" network rm --force krav-support >/dev/null 2>&1 || true
 }
@@ -1367,8 +1334,11 @@ start_user_quadlets() {
   run_user_systemctl "${uid}" reset-failed \
       krav-support-network.service \
       krav-sqlserver-volume.service \
-      krav-hsa-mtls-certs-volume.service \
-      krav-hsa-mtls-cert-generator.service \
+      krav-hsa-mtls-state-volume.service \
+      krav-hsa-mtls-kong-volume.service \
+      krav-hsa-mtls-adapter-volume.service \
+      krav-hsa-mtls-mock-volume.service \
+      krav-hsa-mtls-provisioner.service \
       krav-hsa-directory-mock.service \
       krav-hsa-person-lookup-adapter.service \
       krav-db.service \
@@ -1378,11 +1348,14 @@ start_user_quadlets() {
   run_user_systemctl_or_diagnose "${uid}" "restart base Quadlet resources" restart \
       krav-support-network.service \
       krav-sqlserver-volume.service \
-      krav-hsa-mtls-certs-volume.service
+      krav-hsa-mtls-state-volume.service \
+      krav-hsa-mtls-kong-volume.service \
+      krav-hsa-mtls-adapter-volume.service \
+      krav-hsa-mtls-mock-volume.service
   ensure_base_podman_resources "${uid}"
 
-  run_user_systemctl_or_diagnose "${uid}" "generate HSA mTLS certificates" restart \
-      krav-hsa-mtls-cert-generator.service
+  run_user_systemctl_or_diagnose "${uid}" "ensure isolated HSA mTLS bundles" restart \
+      krav-hsa-mtls-provisioner.service
 
   run_user_systemctl_or_diagnose "${uid}" "start database service" start \
       krav-db.service
@@ -1398,6 +1371,90 @@ start_user_quadlets() {
 
   run_user_systemctl_or_diagnose "${uid}" "start Kong proxy service" restart \
       krav-kong.service
+}
+
+run_persistent_hsa_provisioner() {
+  local uid="$1"
+  shift
+  run_user_podman "${uid}" run --rm --pull=never --user 0:0 \
+    --network none \
+    --tmpfs /run/kravhantering/hsa-mtls-issuer:rw,size=64m,mode=0700,nosuid,nodev,noexec \
+    --volume krav-hsa-mtls-state:/var/lib/kravhantering/hsa-mtls:Z \
+    --volume "${WORKSPACE_DIR}/.hsa-mtls/app:/run/kravhantering/hsa-mtls-runtime/app:Z" \
+    --volume krav-hsa-mtls-kong:/run/kravhantering/hsa-mtls-runtime/kong:Z \
+    --volume krav-hsa-mtls-adapter:/run/kravhantering/hsa-mtls-runtime/adapter:Z \
+    --volume krav-hsa-mtls-mock:/run/kravhantering/hsa-mtls-runtime/mock:Z \
+    localhost/kravhantering/hsa-mtls-provisioner:local "$@"
+}
+
+reconcile_persistent_hsa_renewal() {
+  local uid
+  uid="$(id -u "${VSCODE_USER}")"
+  # shellcheck source=../hsa-persistent-renewal.sh
+  source "${WORKSPACE_DIR}/scripts/azure-dev/hsa-persistent-renewal.sh"
+
+  hsa_renewal_inspect() {
+    run_persistent_hsa_provisioner "${uid}" inspect
+  }
+  hsa_renewal_verify() {
+    local attempt response status
+    response="$(mktemp)"
+    for attempt in $(seq 1 30); do
+      status='000'
+      if status="$(curl -sS --resolve kong:18443:127.0.0.1 \
+        --cacert "${WORKSPACE_DIR}/.hsa-mtls/app/kong-server-ca.crt" \
+        --cert "${WORKSPACE_DIR}/.hsa-mtls/app/app-client.crt" \
+        --key "${WORKSPACE_DIR}/.hsa-mtls/app/app-client.key" \
+        -o "${response}" -w '%{http_code}' -X POST \
+        https://kong:18443/hsa/person-records/lookup \
+        -H 'Accept: application/json' \
+        -H 'Content-Type: application/json' \
+        -H "X-Kravhantering-HSA-Correlation-ID: $(cat /proc/sys/kernel/random/uuid)" \
+        --data '{"hsaId":"SE5560000001-manualarea1"}')" && \
+        [[ "${status}" == 200 ]] && jq -e \
+          '.hsaId == "SE5560000001-manualarea1" and (.givenName | type == "string")' \
+          "${response}" >/dev/null; then
+        rm -f "${response}"
+        return 0
+      fi
+      sleep 1
+    done
+    rm -f "${response}"
+    return 1
+  }
+  hsa_renewal_finalize() {
+    local authenticated_generation_id="$1"
+    run_persistent_hsa_provisioner "${uid}" finalize \
+      "${authenticated_generation_id}" >/dev/null
+  }
+  hsa_renewal_stop_endpoints() {
+    run_user_systemctl_or_diagnose "${uid}" \
+      'stop Kong for HSA mTLS renewal rollback' stop krav-kong.service
+    run_user_systemctl_or_diagnose "${uid}" \
+      'stop HSA Adapter for mTLS renewal rollback' stop \
+      krav-hsa-person-lookup-adapter.service
+    run_user_systemctl_or_diagnose "${uid}" \
+      'stop HSA mock for mTLS renewal rollback' stop \
+      krav-hsa-directory-mock.service
+  }
+  hsa_renewal_rollback() {
+    run_persistent_hsa_provisioner "${uid}" rollback >/dev/null
+  }
+  hsa_renewal_deploy() {
+    run_persistent_hsa_provisioner "${uid}" deploy >/dev/null
+  }
+  hsa_renewal_start_endpoints() {
+    run_user_systemctl_or_diagnose "${uid}" \
+      'restart HSA mock after mTLS renewal rollback' restart \
+      krav-hsa-directory-mock.service
+    run_user_systemctl_or_diagnose "${uid}" \
+      'restart HSA Adapter after mTLS renewal rollback' restart \
+      krav-hsa-person-lookup-adapter.service
+    run_user_systemctl_or_diagnose "${uid}" \
+      'restart Kong after HSA mTLS renewal rollback' restart krav-kong.service
+  }
+
+  hsa_reconcile_persistent_renewal
 }
 
 install_optional_tailscale() {
@@ -1442,8 +1499,8 @@ dump_support_stack_diagnostics() {
   local units=(
     krav-support-network.service
     krav-sqlserver-volume.service
-    krav-hsa-mtls-certs-volume.service
-    krav-hsa-mtls-cert-generator.service
+    krav-hsa-mtls-state-volume.service
+    krav-hsa-mtls-provisioner.service
     krav-db.service
     krav-idp.service
     krav-hsa-directory-mock.service
@@ -1474,7 +1531,7 @@ dump_support_stack_diagnostics() {
   local containers=(
     db
     idp
-    hsa-mtls-cert-generator
+    hsa-mtls-provisioner
     hsa-directory-mock
     hsa-person-lookup-adapter
     kong
@@ -1486,15 +1543,32 @@ dump_support_stack_diagnostics() {
 }
 
 validate_loopback_ports() {
+  local response status
+  response="$(mktemp)"
   for _ in $(seq 1 90); do
+    status='000'
     if ss -ltn | grep '127.0.0.1:1433' >/dev/null &&
       ss -ltn | grep '127.0.0.1:8080' >/dev/null &&
-      ss -ltn | grep '127.0.0.1:18000' >/dev/null &&
-      curl -s -o /dev/null http://127.0.0.1:18000/; then
+      ss -ltn | grep '127.0.0.1:18443' >/dev/null &&
+      status="$(curl -sS --resolve kong:18443:127.0.0.1 \
+        --cacert "${WORKSPACE_DIR}/.hsa-mtls/app/kong-server-ca.crt" \
+        --cert "${WORKSPACE_DIR}/.hsa-mtls/app/app-client.crt" \
+        --key "${WORKSPACE_DIR}/.hsa-mtls/app/app-client.key" \
+        -o "${response}" -w '%{http_code}' -X POST \
+        https://kong:18443/hsa/person-records/lookup \
+        -H 'Accept: application/json' \
+        -H 'Content-Type: application/json' \
+        -H "X-Kravhantering-HSA-Correlation-ID: $(cat /proc/sys/kernel/random/uuid)" \
+        --data '{"hsaId":"SE5560000001-manualarea1"}')" &&
+      [[ "${status}" == 200 ]] && jq -e \
+        '.hsaId == "SE5560000001-manualarea1" and (.givenName | type == "string")' \
+        "${response}" >/dev/null; then
+      rm -f "${response}"
       return
     fi
     sleep 5
   done
+  rm -f "${response}"
   log 'timed out waiting for support stack loopback ports'
   dump_support_stack_diagnostics
   return 1
@@ -1520,7 +1594,6 @@ main() {
   configure_codex_sandbox
   configure_podman_storage
   clone_or_update_repo
-  ensure_kong_route_protocols
   configure_codex_session_policy
   install_storage_tools
   configure_codex_home
@@ -1529,6 +1602,7 @@ main() {
   install_quadlet_units
   build_hsa_images
   start_user_quadlets
+  reconcile_persistent_hsa_renewal
   install_optional_tailscale
   validate_loopback_ports
   log "host bootstrap completed"

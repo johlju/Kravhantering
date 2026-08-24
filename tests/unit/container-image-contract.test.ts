@@ -147,7 +147,7 @@ describe('container image contract', () => {
     )
   })
 
-  it('runs the HSA certificate generator without runtime npm', () => {
+  it('runs the isolated HSA test-PKI provisioner without runtime npm', () => {
     for (const relativePath of [
       '.devcontainer/docker-compose.yml',
       '.devcontainer/elevated/docker-compose.yml',
@@ -156,16 +156,17 @@ describe('container image contract', () => {
         services?: Record<string, { command?: string[] }>
       }
 
-      expect(compose.services?.['hsa-mtls-cert-generator']?.command).toEqual([
-        'node',
-        'src/generate-certs.mjs',
+      expect(compose.services?.['hsa-mtls-provisioner']?.command).toEqual([
+        'activate',
+        '--lifetime',
+        'persistent',
       ])
     }
 
     const azureQuadlet = readWorkspaceFile(
-      'scripts/azure-dev/templates/quadlet/krav-hsa-mtls-cert-generator.container',
+      'scripts/azure-dev/templates/quadlet/krav-hsa-mtls-provisioner.container',
     )
-    expect(azureQuadlet).toContain('Exec=node src/generate-certs.mjs')
+    expect(azureQuadlet).toContain('Exec=activate --lifetime persistent')
     expect(azureQuadlet).not.toContain('Exec=npm')
   })
 
@@ -288,8 +289,8 @@ describe('container image contract', () => {
   it('excludes developer credentials and SSH state from production build contexts', () => {
     for (const relativePath of [
       'containers/app/Dockerfile.dockerignore',
-      'containers/hsa-directory-mock/.dockerignore',
-      'containers/hsa-person-lookup-adapter/.dockerignore',
+      'containers/hsa-directory-mock/Dockerfile.dockerignore',
+      'containers/hsa-person-lookup-adapter/Dockerfile.dockerignore',
     ]) {
       const patterns = dockerignorePatterns(readWorkspaceFile(relativePath))
 
@@ -369,6 +370,16 @@ describe('container image contract', () => {
         version: 'latest',
       })
     }
+  })
+
+  it('exports HSA topology candidates as archives Docker can load', () => {
+    const workflow = readWorkspaceFile(
+      '.github/workflows/hsa-mtls-topology.yml',
+    )
+
+    expect(workflow.match(/--output type=docker,dest=/gu)).toHaveLength(4)
+    expect(workflow).not.toContain('--output type=oci,dest=')
+    expect(workflow.match(/docker load --input/gu)).toHaveLength(2)
   })
 
   it('shares Codex project defaults across development environments', () => {
@@ -459,12 +470,15 @@ describe('container image contract', () => {
       'docker buildx build --no-cache --file containers/app/Dockerfile --target demo-seed --tag localhost/kravhantering/demo-seed:local --load .',
     )
     expect(packageJson.scripts['container:build:hsa-directory-mock']).toBe(
-      'docker buildx build --file containers/hsa-directory-mock/Dockerfile --tag localhost/kravhantering/hsa-directory-mock:local --load containers/hsa-directory-mock',
+      'docker buildx build --file containers/hsa-directory-mock/Dockerfile --tag localhost/kravhantering/hsa-directory-mock:local --load .',
     )
     expect(
       packageJson.scripts['container:build:hsa-person-lookup-adapter'],
     ).toBe(
-      'docker buildx build --file containers/hsa-person-lookup-adapter/Dockerfile --tag localhost/kravhantering/hsa-person-lookup-adapter:local --load containers/hsa-person-lookup-adapter',
+      'docker buildx build --file containers/hsa-person-lookup-adapter/Dockerfile --tag localhost/kravhantering/hsa-person-lookup-adapter:local --load .',
+    )
+    expect(packageJson.scripts['container:build:hsa-mtls-provisioner']).toBe(
+      'docker buildx build --file containers/hsa-mtls-provisioner/Dockerfile --tag localhost/kravhantering/hsa-mtls-provisioner:local --load .',
     )
   })
 

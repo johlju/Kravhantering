@@ -1,0 +1,169 @@
+name: kravhantering-hsa-mtls-topology
+
+x-wrong-server-decoy: &wrong-server-decoy
+  image: localhost/kravhantering/hsa-transport-contract-test:topology
+  command: ["node", "wrong-server-decoy.mjs"]
+  profiles: ["wrong-server-probes"]
+  user: "0:0"
+  healthcheck:
+    test: ["CMD", "node", "--input-type=module", "-e", "const r=await fetch('http://127.0.0.1:8081/health');if(!r.ok)process.exit(1)"]
+    interval: 1s
+    timeout: 3s
+    retries: 15
+
+services:
+  provisioner:
+    image: localhost/kravhantering/hsa-mtls-provisioner:topology
+    build:
+      context: ../..
+      dockerfile: containers/hsa-mtls-provisioner/Dockerfile
+    command: ["activate", "--lifetime", "ephemeral"]
+    environment:
+      HSA_MTLS_INCLUDE_PROBES: "true"
+    user: "0:0"
+    tmpfs:
+      - /run/kravhantering/hsa-mtls-issuer:mode=0700
+    volumes:
+      - state:/var/lib/kravhantering/hsa-mtls
+      - app-material:/run/kravhantering/hsa-mtls-runtime/app
+      - kong-material:/run/kravhantering/hsa-mtls-runtime/kong
+      - adapter-material:/run/kravhantering/hsa-mtls-runtime/adapter
+      - mock-material:/run/kravhantering/hsa-mtls-runtime/mock
+      - probe-material:/run/kravhantering/hsa-mtls-runtime/probe
+
+  mock:
+    image: localhost/kravhantering/hsa-directory-mock:topology
+    build:
+      context: ../..
+      dockerfile: containers/hsa-directory-mock/Dockerfile
+    depends_on:
+      provisioner:
+        condition: service_completed_successfully
+    environment:
+      HSA_MOCK_TLS_CA_PATH: /run/kravhantering/hsa-mtls/adapter-client-ca.crt
+      HSA_MOCK_TLS_CERT_PATH: /run/kravhantering/hsa-mtls/mock-server.crt
+      HSA_MOCK_TLS_EXPECTED_CLIENT_SERIAL_NUMBER: SE5560000000-MOCK001
+      HSA_MOCK_TLS_KEY_PATH: /run/kravhantering/hsa-mtls/mock-server.key
+    networks:
+      default:
+        aliases: [hsa-directory-mock]
+    volumes:
+      - mock-material:/run/kravhantering/hsa-mtls:ro
+    healthcheck:
+      test: ["CMD", "node", "--input-type=module", "-e", "const r=await fetch('http://127.0.0.1:8081/health');if(!r.ok)process.exit(1)"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  adapter:
+    image: localhost/kravhantering/hsa-person-lookup-adapter:topology
+    build:
+      context: ../..
+      dockerfile: containers/hsa-person-lookup-adapter/Dockerfile
+    depends_on:
+      mock:
+        condition: service_healthy
+    environment:
+      HSA_ADAPTER_INGRESS_CA_PATH: /run/kravhantering/hsa-mtls/kong-client-ca.crt
+      HSA_ADAPTER_INGRESS_CERT_PATH: /run/kravhantering/hsa-mtls/adapter-server.crt
+      HSA_ADAPTER_INGRESS_EXPECTED_CLIENT_SUBJECT: CN=kravhantering-kong
+      HSA_ADAPTER_INGRESS_KEY_PATH: /run/kravhantering/hsa-mtls/adapter-server.key
+      HSA_SOAP_CA_PATH: /run/kravhantering/hsa-mtls/hsa-server-ca.crt
+      HSA_SOAP_CLIENT_CERT_PATH: /run/kravhantering/hsa-mtls/adapter-client.crt
+      HSA_SOAP_CLIENT_KEY_PATH: /run/kravhantering/hsa-mtls/adapter-client.key
+      HSA_SOAP_ENDPOINT_URL: https://mock:8443/svr-hsaws2/hsaws
+      HSA_SOAP_TLS_SERVER_NAME: hsa-directory-mock
+    networks:
+      default:
+        aliases: [hsa-person-lookup-adapter]
+    volumes:
+      - adapter-material:/run/kravhantering/hsa-mtls:ro
+    healthcheck:
+      test: ["CMD", "node", "--input-type=module", "-e", "const r=await fetch('http://127.0.0.1:8081/health');if(!r.ok)process.exit(1)"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  kong:
+    image: docker.io/kong/kong-gateway:3.15.0.2-20260721-ubuntu
+    depends_on:
+      adapter:
+        condition: service_healthy
+    env_file: ../kong/strict-runtime.env
+    volumes:
+      - ../kong/kong.strict.yml:/kong/declarative/kong.strict.yml:ro
+      - ../kong/strict-app-client-subject.conf:/kong/includes/strict-app-client-subject.conf:ro
+      - kong-material:/run/kravhantering/hsa-mtls:ro
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  test:
+    image: localhost/kravhantering/hsa-transport-contract-test:topology
+    build:
+      context: ../..
+      dockerfile: containers/hsa-mtls-topology/Dockerfile
+    depends_on:
+      kong:
+        condition: service_healthy
+    environment:
+      HSA_PERSON_LOOKUP_CA_PATH: /runtime/app/kong-server-ca.crt
+      HSA_PERSON_LOOKUP_CLIENT_CERT_PATH: /runtime/app/app-client.crt
+      HSA_PERSON_LOOKUP_CLIENT_KEY_PATH: /runtime/app/app-client.key
+      HSA_PERSON_LOOKUP_TLS_SERVER_NAME: kong
+      HSA_PERSON_LOOKUP_URL: https://kong:8443/hsa/person-records/lookup
+    user: "0:0"
+    volumes:
+      - app-material:/runtime/app:ro
+      - adapter-material:/runtime/adapter:ro
+      - kong-material:/runtime/kong:ro
+      - probe-material:/runtime/probe:ro
+
+  decoy-kong:
+    <<: *wrong-server-decoy
+    environment:
+      HSA_WRONG_SERVER_CLIENT_CA_PATH: /runtime/server/app-client-ca.crt
+      HSA_WRONG_SERVER_CERT_PATH: /runtime/server/kong-server.crt
+      HSA_WRONG_SERVER_KEY_PATH: /runtime/server/kong-server.key
+      HSA_WRONG_SERVER_ROLE: app-to-kong
+    networks:
+      default:
+        aliases: [kong]
+    volumes:
+      - kong-material:/runtime/server:ro
+
+  decoy-adapter:
+    <<: *wrong-server-decoy
+    environment:
+      HSA_WRONG_SERVER_CLIENT_CA_PATH: /runtime/server/kong-client-ca.crt
+      HSA_WRONG_SERVER_CERT_PATH: /runtime/server/adapter-server.crt
+      HSA_WRONG_SERVER_KEY_PATH: /runtime/server/adapter-server.key
+      HSA_WRONG_SERVER_ROLE: kong-to-adapter
+    networks:
+      default:
+        aliases: [adapter, hsa-person-lookup-adapter]
+    volumes:
+      - adapter-material:/runtime/server:ro
+
+  decoy-mock:
+    <<: *wrong-server-decoy
+    environment:
+      HSA_WRONG_SERVER_CLIENT_CA_PATH: /runtime/server/adapter-client-ca.crt
+      HSA_WRONG_SERVER_CERT_PATH: /runtime/server/mock-server.crt
+      HSA_WRONG_SERVER_KEY_PATH: /runtime/server/mock-server.key
+      HSA_WRONG_SERVER_ROLE: adapter-to-hsa
+    networks:
+      default:
+        aliases: [mock, hsa-directory-mock]
+    volumes:
+      - mock-material:/runtime/server:ro
+
+volumes:
+  state:
+  app-material:
+  kong-material:
+  adapter-material:
+  mock-material:
+  probe-material:

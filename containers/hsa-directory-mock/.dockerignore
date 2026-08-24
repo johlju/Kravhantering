@@ -1,8 +1,0 @@
-.auth/
-.codex/
-.ssh/
-node_modules/
-
-.env
-.env.*
-npm-debug.log*

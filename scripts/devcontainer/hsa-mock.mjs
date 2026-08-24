@@ -3,7 +3,7 @@ import os from 'node:os'
 
 const SERVICE_NAME = 'hsa-directory-mock'
 const ADAPTER_SERVICE_NAME = 'hsa-person-lookup-adapter'
-const CERT_SERVICE_NAME = 'hsa-mtls-cert-generator'
+const CERT_SERVICE_NAME = 'hsa-mtls-provisioner'
 const KONG_SERVICE_NAME = 'kong'
 const APP_SERVICE_NAME = 'app'
 const HSA_SERVICES = [
@@ -24,7 +24,7 @@ const PROFILES = [
 ]
 
 const USAGE = `Usage:
-  node scripts/devcontainer/hsa-mock.mjs <config|build|up|recreate|status|verify|logs|restart|down> [docker compose args]`
+  node scripts/devcontainer/hsa-mock.mjs <config|build|up|recreate|status|ensure|inspect|verify|renew-startup|rotate|rollback-verify|logs|restart|down> [trust-domain|docker compose args]`
 
 function run(command, args, options = {}) {
   const spawnSync = options.spawnSync ?? childProcess.spawnSync
@@ -171,19 +171,9 @@ function runStatus(profile, options) {
   )
 
   const statusScript = `
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-    const checks = [
-      ['HSA directory mock', 'https://127.0.0.1:8443/health'],
-      ['HSA person lookup adapter', 'http://hsa-person-lookup-adapter:8080/health'],
-    ]
-    for (const [name, url] of checks) {
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error(\`\${name} returned \${response.status}\`)
-      }
-      const body = await response.json()
-      console.log(JSON.stringify({ name, ...body }, null, 2))
-    }
+    const response = await fetch('http://127.0.0.1:8081/health')
+    if (!response.ok) throw new Error(\`health returned \${response.status}\`)
+    console.log(JSON.stringify(await response.json()))
   `
 
   console.log('Verifying HSA directory mock and adapter health...')
@@ -203,40 +193,72 @@ function runStatus(profile, options) {
     ),
     'HSA directory mock health check',
   )
-}
-
-function runVerify(profile, options) {
   assertSuccess(
     runCompose(
       profile,
-      ['up', '--build', '-d', '--force-recreate', ...HSA_SERVICES],
+      [
+        'exec',
+        '-T',
+        ADAPTER_SERVICE_NAME,
+        'node',
+        '--input-type=module',
+        '-e',
+        statusScript,
+      ],
       options,
     ),
-    'docker compose recreate HSA lookup services',
+    'HSA person lookup adapter health check',
   )
+}
+
+function runVerify(
+  profile,
+  options,
+  { forceFailure = false, recreate = true } = {},
+) {
+  if (recreate) {
+    assertSuccess(
+      runCompose(
+        profile,
+        ['up', '--build', '-d', '--force-recreate', ...HSA_SERVICES],
+        options,
+      ),
+      'docker compose recreate HSA lookup services',
+    )
+  }
 
   const verifyScript = `
+    if (process.env.HSA_MTLS_FORCE_VERIFY_FAILURE === 'true') throw new Error('injected post-promotion verification failure')
+    const fs = await import('node:fs')
+    const https = await import('node:https')
+    const crypto = await import('node:crypto')
     async function postRest() {
-      const response = await fetch('http://kong:8000/hsa/person-records/lookup', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ hsaId: 'SE5560000001-marias' })
+      const body = JSON.stringify({ hsaId: 'SE5560000001-marias' })
+      return await new Promise((resolve, reject) => {
+        const request = https.request({
+          host: 'kong', port: 8443, path: '/hsa/person-records/lookup', method: 'POST', servername: 'kong',
+          ca: fs.readFileSync('/run/kravhantering/hsa-mtls/kong-server-ca.crt'),
+          cert: fs.readFileSync('/run/kravhantering/hsa-mtls/app-client.crt'),
+          key: fs.readFileSync('/run/kravhantering/hsa-mtls/app-client.key'),
+          minVersion: 'TLSv1.2', rejectUnauthorized: true,
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'X-Kravhantering-HSA-Correlation-ID': crypto.randomUUID() },
+        }, response => {
+          const chunks = []
+          response.on('data', chunk => chunks.push(chunk))
+          response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }))
+        })
+        request.on('error', reject)
+        request.end(body)
       })
-      const body = await response.json()
-      if (!response.ok || body.hsaId !== 'SE5560000001-marias' || body.givenName !== 'Maria' || body.surname !== 'Svensson') {
-        throw new Error(\`Kong HSA REST verification failed with \${response.status}: \${JSON.stringify(body).slice(0, 300)}\`)
-      }
-      return body
     }
 
     let lastError
     let verified = false
     for (let attempt = 1; attempt <= 30; attempt += 1) {
       try {
-        const restPerson = await postRest()
+        const result = await postRest()
+        const restPerson = result.body
+        if (result.status !== 200 || restPerson.hsaId !== 'SE5560000001-marias' || restPerson.givenName !== 'Maria' || restPerson.surname !== 'Svensson') throw new Error('bounded verification failure')
         console.log(
           \`REST HSA lookup OK: \${restPerson.hsaId} \${restPerson.givenName} \${restPerson.surname}\`,
         )
@@ -257,7 +279,8 @@ function runVerify(profile, options) {
       [
         'exec',
         '-T',
-        SERVICE_NAME,
+        ...(forceFailure ? ['-e', 'HSA_MTLS_FORCE_VERIFY_FAILURE=true'] : []),
+        APP_SERVICE_NAME,
         'node',
         '--input-type=module',
         '-e',
@@ -268,6 +291,296 @@ function runVerify(profile, options) {
     'Kong HSA REST verification',
   )
   console.log('Kong HSA verification completed.')
+}
+
+function assertExternalLifecycleRunner(profile) {
+  const app = runningService(profile, APP_SERVICE_NAME)
+  const id = String(app?.ID ?? app?.Id ?? app?.id ?? '')
+  if (id?.startsWith(os.hostname())) {
+    throw new Error(
+      'HSA certificate lifecycle changes must be launched from the host checkout because they recreate the devcontainer app service',
+    )
+  }
+}
+
+function provision(profile, options, ...args) {
+  assertSuccess(
+    runCompose(profile, ['run', '--rm', CERT_SERVICE_NAME, ...args], options),
+    `HSA mTLS provisioner ${args[0]}`,
+  )
+}
+
+function provisionResult(profile, options, ...args) {
+  const result = runCompose(
+    profile,
+    ['run', '--rm', CERT_SERVICE_NAME, ...args],
+    { ...options, stdio: ['ignore', 'pipe', 'inherit'] },
+  )
+  assertSuccess(result, `HSA mTLS provisioner ${args[0]}`)
+  const payload = JSON.parse(String(result.stdout))
+  if (payload.ok !== true || !payload.result) {
+    throw new Error(`HSA mTLS provisioner ${args[0]} returned invalid output`)
+  }
+  return payload.result
+}
+
+function inspectSelection(profile, options) {
+  const result = runCompose(
+    profile,
+    ['run', '--rm', CERT_SERVICE_NAME, 'inspect'],
+    { ...options, stdio: ['ignore', 'pipe', 'pipe'] },
+  )
+  assertSuccess(result, 'HSA mTLS provisioner inspect')
+  const payload = JSON.parse(String(result.stdout))
+  if (payload.ok !== true || !payload.result) {
+    throw new Error('HSA mTLS provisioner inspect returned invalid output')
+  }
+  return payload.result.selection
+}
+
+function finalizationIsPending(selection, expectedGenerationId, cause) {
+  if (selection.current !== expectedGenerationId) {
+    throw new Error(
+      'HSA mTLS selection changed while reconciling finalization',
+      { cause },
+    )
+  }
+  if (selection.previous === null) return false
+  if (typeof selection.previous === 'string' && selection.previous.length > 0) {
+    return true
+  }
+  throw new Error('HSA mTLS provisioner inspect returned invalid selection')
+}
+
+function finalizeAuthenticatedPromotion(
+  profile,
+  options,
+  expectedGenerationId,
+) {
+  if (
+    typeof expectedGenerationId !== 'string' ||
+    expectedGenerationId.length === 0
+  ) {
+    throw new Error(
+      'Expected the authenticated HSA mTLS generation for finalization',
+    )
+  }
+  let finalizeError = null
+  try {
+    provision(profile, options, 'finalize', expectedGenerationId)
+  } catch (error) {
+    finalizeError = error
+  }
+
+  let selection = null
+  try {
+    selection = inspectSelection(profile, options)
+  } catch (inspectionError) {
+    finalizeError ??= inspectionError
+  }
+  if (
+    selection &&
+    !finalizationIsPending(selection, expectedGenerationId, finalizeError)
+  ) {
+    if (finalizeError) {
+      console.warn(
+        'HSA mTLS finalization reported failure after the promotion was reconciled.',
+      )
+    }
+    return
+  }
+
+  let retryError = null
+  try {
+    provision(profile, options, 'finalize', expectedGenerationId)
+  } catch (error) {
+    retryError = error
+  }
+  selection = inspectSelection(profile, options)
+  if (!finalizationIsPending(selection, expectedGenerationId, retryError)) {
+    if (retryError) {
+      console.warn(
+        'HSA mTLS finalization retry reported failure after the promotion was reconciled.',
+      )
+    }
+    return
+  }
+  throw new Error(
+    'HSA mTLS promotion remains pending after finalization retry',
+    { cause: retryError ?? finalizeError ?? undefined },
+  )
+}
+
+function stopEndpoints(profile, options) {
+  for (const service of [
+    APP_SERVICE_NAME,
+    KONG_SERVICE_NAME,
+    ADAPTER_SERVICE_NAME,
+    SERVICE_NAME,
+  ]) {
+    assertSuccess(
+      runCompose(profile, ['stop', service], options),
+      `docker compose stop ${service}`,
+    )
+  }
+}
+
+function startEndpoints(profile, options, { recreate = false } = {}) {
+  for (const service of [
+    SERVICE_NAME,
+    ADAPTER_SERVICE_NAME,
+    KONG_SERVICE_NAME,
+    APP_SERVICE_NAME,
+  ]) {
+    assertSuccess(
+      runCompose(
+        profile,
+        [
+          'up',
+          '-d',
+          '--wait',
+          ...(recreate ? ['--force-recreate'] : []),
+          service,
+        ],
+        options,
+      ),
+      `docker compose start ${service}`,
+    )
+  }
+}
+
+function stopTransportEndpoints(profile, options) {
+  for (const service of [
+    KONG_SERVICE_NAME,
+    ADAPTER_SERVICE_NAME,
+    SERVICE_NAME,
+  ]) {
+    assertSuccess(
+      runCompose(profile, ['stop', service], options),
+      `docker compose stop ${service}`,
+    )
+  }
+}
+
+function runStartupRenewal(profile, options) {
+  const selection = inspectSelection(profile, options)
+  if (!selection.previous) {
+    console.log('HSA mTLS startup renewal: current generation reused.')
+    return
+  }
+
+  try {
+    runVerify(profile, options, { recreate: false })
+  } catch (promotionError) {
+    stopTransportEndpoints(profile, options)
+    provision(profile, options, 'rollback')
+    provision(profile, options, 'deploy')
+    startEndpoints(profile, options, { recreate: true })
+    runVerify(profile, options, { recreate: false })
+    console.warn(
+      `HSA mTLS startup renewal failed and the prior generation was restored: ${promotionError.message}`,
+    )
+    return
+  }
+  finalizeAuthenticatedPromotion(profile, options, selection.current)
+  console.log('HSA mTLS startup renewal authenticated and finalized.')
+}
+
+function runEnsure(profile, options) {
+  assertExternalLifecycleRunner(profile)
+  stopEndpoints(profile, options)
+
+  let ensured
+  try {
+    ensured = provisionResult(profile, options, 'ensure')
+  } catch (error) {
+    startEndpoints(profile, options)
+    throw error
+  }
+
+  if (ensured.action === 'reused') {
+    startEndpoints(profile, options)
+    runVerify(profile, options, { recreate: false })
+    return
+  }
+  if (ensured.action !== 'promoted') {
+    startEndpoints(profile, options)
+    throw new Error('HSA mTLS provisioner ensure returned an unknown action')
+  }
+
+  try {
+    provision(profile, options, 'deploy')
+    startEndpoints(profile, options, { recreate: true })
+    runVerify(profile, options, { recreate: false })
+  } catch (promotionError) {
+    stopEndpoints(profile, options)
+    if (!ensured.previousGenerationId) {
+      try {
+        provision(profile, options, 'deploy')
+        startEndpoints(profile, options, { recreate: true })
+      } catch {
+        // The original promotion failure remains the actionable lifecycle error.
+      }
+      throw promotionError
+    }
+    provision(profile, options, 'rollback')
+    provision(profile, options, 'deploy')
+    startEndpoints(profile, options, { recreate: true })
+    runVerify(profile, options, { recreate: false })
+    throw promotionError
+  }
+  finalizeAuthenticatedPromotion(profile, options, ensured.generationId)
+}
+
+function requireTrustDomain(value) {
+  if (!['app-to-kong', 'kong-to-adapter', 'adapter-to-hsa'].includes(value)) {
+    throw new Error('Expected one HSA mTLS trust domain')
+  }
+  return value
+}
+
+function runRotation(profile, options, trustDomain) {
+  stopEndpoints(profile, options)
+  const rotated = provisionResult(
+    profile,
+    options,
+    'rotate',
+    requireTrustDomain(trustDomain),
+  )
+  provision(profile, options, 'deploy')
+  startEndpoints(profile, options)
+  try {
+    runVerify(profile, options, { recreate: false })
+  } catch (error) {
+    stopEndpoints(profile, options)
+    provision(profile, options, 'rollback')
+    provision(profile, options, 'deploy')
+    startEndpoints(profile, options)
+    runVerify(profile, options, { recreate: false })
+    throw error
+  }
+  finalizeAuthenticatedPromotion(profile, options, rotated.generationId)
+}
+
+function runRollbackVerification(profile, options, trustDomain) {
+  stopEndpoints(profile, options)
+  provision(profile, options, 'rotate', requireTrustDomain(trustDomain))
+  provision(profile, options, 'deploy')
+  startEndpoints(profile, options)
+  let injectedFailureObserved = false
+  try {
+    runVerify(profile, options, { forceFailure: true, recreate: false })
+  } catch {
+    injectedFailureObserved = true
+  }
+  if (!injectedFailureObserved) {
+    throw new Error('Injected post-promotion verification unexpectedly passed')
+  }
+  stopEndpoints(profile, options)
+  provision(profile, options, 'rollback')
+  provision(profile, options, 'deploy')
+  startEndpoints(profile, options)
+  runVerify(profile, options, { recreate: false })
 }
 
 function runAction(action, extraArgs, profile) {
@@ -292,6 +605,10 @@ function runAction(action, extraArgs, profile) {
     )
   }
 
+  if (action === 'renew-startup') {
+    return runStartupRenewal(profile, options)
+  }
+
   if (action === 'up') {
     return assertSuccess(
       runCompose(profile, ['up', '--build', '-d', ...HSA_SERVICES], options),
@@ -312,7 +629,23 @@ function runAction(action, extraArgs, profile) {
 
   if (action === 'status') return runStatus(profile, options)
 
+  if (action === 'ensure') {
+    return runEnsure(profile, options)
+  }
+
+  if (action === 'inspect') return provision(profile, options, 'inspect')
+
   if (action === 'verify') return runVerify(profile, options)
+
+  if (action === 'rotate') {
+    assertExternalLifecycleRunner(profile)
+    return runRotation(profile, options, extraArgs[0])
+  }
+
+  if (action === 'rollback-verify') {
+    assertExternalLifecycleRunner(profile)
+    return runRollbackVerification(profile, options, extraArgs[0])
+  }
 
   if (action === 'logs') {
     return assertSuccess(

@@ -46,6 +46,13 @@ for (const viewport of viewports) {
     test('REQ-14a: filters and inspects requirement packages with HSA-id responsibility controls', async ({
       page,
     }) => {
+      await page.route('**/api/hsa-person-lookup-capability', route =>
+        route.fulfill({
+          body: JSON.stringify({ available: true }),
+          contentType: 'application/json',
+          status: 200,
+        }),
+      )
       const hsaVerifyRequests: Record<string, unknown>[] = []
       await page.route(
         '**/api/requirement-responsibility-people/verify',
@@ -307,7 +314,7 @@ for (const viewport of viewports) {
           'Nya kravpaketsansvarigs HSA-id',
           'SE5560000001-admin1',
         )
-        await nextLeadInput.press('Tab')
+        await changeDialog.getByRole('button', { name: 'Hämta' }).click()
         await expect(
           changeDialog.getByText('Ada Admin (ada.admin@example.test)'),
         ).toBeVisible()
@@ -330,6 +337,104 @@ for (const viewport of viewports) {
         )
         await expect(changeDialog.getByRole('alert')).toContainText(
           'Kravpaketsansvarig kan inte samtidigt vara',
+        )
+      })
+    })
+  })
+}
+
+for (const viewport of viewports) {
+  test.describe(`HSA lookup capability — ${viewport.name} (${viewport.width}×${viewport.height})`, () => {
+    test.use({
+      viewport: { height: viewport.height, width: viewport.width },
+    })
+
+    test('REQ-14a: keeps local responsibility data visible when external lookup is unavailable', async ({
+      page,
+    }) => {
+      const localReuseRequests: Record<string, unknown>[] = []
+      await test.step('set up unavailable HSA and local reuse responses', async () => {
+        await page.route('**/api/hsa-person-lookup-capability', route =>
+          route.fulfill({
+            body: JSON.stringify({ available: false }),
+            contentType: 'application/json',
+            status: 200,
+          }),
+        )
+        await page.route(
+          '**/api/requirement-responsibility-people/verify',
+          async route => {
+            const payload = route.request().postDataJSON() as Record<
+              string,
+              unknown
+            >
+            localReuseRequests.push(payload)
+            await route.fulfill({
+              body: JSON.stringify({
+                evidence: 'local-reuse-evidence',
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                person: {
+                  displayName: 'Lokal Kravansvarsperson',
+                  email: 'local.person@example.test',
+                  givenName: 'Lokal',
+                  hasProtectedPersonalData: false,
+                  hsaId: 'SE5560000001-local1',
+                  middleName: null,
+                  surname: 'Kravansvarsperson',
+                },
+              }),
+              contentType: 'application/json',
+              status: 200,
+            })
+          },
+        )
+      })
+
+      const changeDialog = page.getByRole('dialog', {
+        name: 'Byt kravpaketsansvarig',
+      })
+      await test.step('open the package-lead change dialog', async () => {
+        await page.goto('/sv/requirements/stewardship?tab=packages')
+        const row = page.getByRole('row', { name: /Mobil användning/ })
+        await expect(row).toContainText('Anna Johansson')
+        await row.getByRole('button', { name: 'Redigera' }).click()
+        const editDialog = page.getByRole('dialog', {
+          name: 'Redigera kravpaket',
+        })
+        await expect(editDialog.getByText(/Anna Johansson/)).toBeVisible()
+        await editDialog
+          .getByRole('button', { name: 'Byt kravpaketsansvarig' })
+          .click()
+      })
+
+      await test.step('show that direct HSA lookup is unavailable', async () => {
+        await expect(changeDialog.getByRole('status')).toContainText(
+          'Direktuppslag i HSA är inte tillgängligt',
+        )
+        await expect(
+          changeDialog.getByRole('button', { name: 'Hämta' }),
+        ).toBeDisabled()
+      })
+
+      await test.step('reuse an existing local responsibility person', async () => {
+        await fillEditableHsaId(
+          changeDialog,
+          'Nya kravpaketsansvarigs HSA-id',
+          'SE5560000001-local1',
+        )
+        await changeDialog
+          .getByRole('textbox', { name: 'Nya kravpaketsansvarigs HSA-id' })
+          .press('Tab')
+        await expect(changeDialog).toContainText(
+          'Lokal Kravansvarsperson (local.person@example.test)',
+        )
+        expect(localReuseRequests).toContainEqual(
+          expect.objectContaining({
+            hsaId: 'SE5560000001-local1',
+            mode: 'reuse_local',
+            purpose: 'requirement_package_lead',
+            scopeId: 1,
+          }),
         )
       })
     })

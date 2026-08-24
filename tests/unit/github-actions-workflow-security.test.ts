@@ -30,10 +30,12 @@ type WorkflowDocument = {
 type WorkflowJob = {
   if?: unknown
   name?: unknown
+  needs?: unknown
   permissions?: Record<string, unknown>
   'runs-on'?: unknown
   steps?: WorkflowStep[]
   strategy?: unknown
+  uses?: unknown
 }
 
 type WorkflowStep = {
@@ -414,9 +416,9 @@ describe('GitHub Actions workflow security', () => {
       String(step.name).match(/^Generate .+ SBOM$/u),
     )
 
-    expect(candidateBuilds).toHaveLength(5)
-    expect(prCandidateBuilds).toHaveLength(5)
-    expect(candidateSbomSteps).toHaveLength(5)
+    expect(candidateBuilds).toHaveLength(6)
+    expect(prCandidateBuilds).toHaveLength(6)
+    expect(candidateSbomSteps).toHaveLength(6)
     for (const step of candidateSbomSteps) {
       expect(step.with?.format).toBe('spdx-json')
       expect(step.with?.['upload-artifact']).toBe(false)

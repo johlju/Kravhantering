@@ -1,0 +1,400 @@
+{
+  "schemaVersion": 1,
+  "profileName": "kravhantering-hsa-test-pki",
+  "runtimeMountPath": "/run/kravhantering/hsa-mtls",
+  "algorithms": {
+    "ca": {
+      "keyAlgorithm": "RSA",
+      "keyBits": 4096
+    },
+    "leaf": {
+      "keyAlgorithm": "RSA",
+      "keyBits": 2048
+    },
+    "signature": "sha256WithRSAEncryption"
+  },
+  "validity": {
+    "persistent": {
+      "caDays": 425,
+      "leafDays": 397
+    },
+    "ephemeral": {
+      "caDays": 7,
+      "leafDays": 7
+    },
+    "renewalThresholdDays": 30
+  },
+  "fileModes": {
+    "privateKey": "0400",
+    "publicCertificate": "0444"
+  },
+  "trustDomains": {
+    "app-to-kong": {
+      "ca": {
+        "materialId": "app-to-kong-ca",
+        "subjectRfc2253": "CN=Kravhantering App to Kong Test CA",
+        "basicConstraints": {
+          "critical": true,
+          "ca": true,
+          "pathLength": 0
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["keyCertSign", "cRLSign"]
+        }
+      },
+      "server": {
+        "runtimeRole": "kong",
+        "certificateMaterialId": "kong-server-certificate",
+        "privateKeyMaterialId": "kong-server-private-key",
+        "subjectRfc2253": "CN=kong",
+        "dnsSans": ["kong"],
+        "basicConstraints": {
+          "critical": true,
+          "ca": false
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature", "keyEncipherment"]
+        },
+        "extendedKeyUsage": ["serverAuth"],
+        "authorization": {
+          "type": "dns-san",
+          "value": "kong",
+          "allowCommonNameFallback": false,
+          "allowWildcard": false
+        }
+      },
+      "client": {
+        "runtimeRole": "app",
+        "certificateMaterialId": "app-client-certificate",
+        "privateKeyMaterialId": "app-client-private-key",
+        "subjectRfc2253": "CN=kravhantering-app",
+        "dnsSans": [],
+        "basicConstraints": {
+          "critical": true,
+          "ca": false
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature"]
+        },
+        "extendedKeyUsage": ["clientAuth"],
+        "authorization": {
+          "type": "subject-rfc2253",
+          "value": "CN=kravhantering-app"
+        }
+      },
+      "wrongClient": {
+        "runtimeRole": "probe",
+        "certificateMaterialId": "wrong-app-client-certificate",
+        "privateKeyMaterialId": "wrong-app-client-private-key",
+        "subjectRfc2253": "CN=kravhantering-app-wrong",
+        "dnsSans": [],
+        "basicConstraints": { "critical": true, "ca": false },
+        "keyUsage": { "critical": true, "values": ["digitalSignature"] },
+        "extendedKeyUsage": ["clientAuth"],
+        "authorization": {
+          "type": "subject-rfc2253",
+          "value": "CN=kravhantering-app-wrong"
+        }
+      },
+      "wrongServer": {
+        "runtimeRole": "probe",
+        "certificateMaterialId": "wrong-kong-server-certificate",
+        "privateKeyMaterialId": "wrong-kong-server-private-key",
+        "subjectRfc2253": "CN=kong-wrong",
+        "dnsSans": ["kong-wrong"],
+        "basicConstraints": { "critical": true, "ca": false },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature", "keyEncipherment"]
+        },
+        "extendedKeyUsage": ["serverAuth"],
+        "authorization": {
+          "type": "dns-san",
+          "value": "kong-wrong",
+          "allowCommonNameFallback": false,
+          "allowWildcard": false
+        }
+      }
+    },
+    "kong-to-adapter": {
+      "ca": {
+        "materialId": "kong-to-adapter-ca",
+        "subjectRfc2253": "CN=Kravhantering Kong to Adapter Test CA",
+        "basicConstraints": {
+          "critical": true,
+          "ca": true,
+          "pathLength": 0
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["keyCertSign", "cRLSign"]
+        }
+      },
+      "server": {
+        "runtimeRole": "adapter",
+        "certificateMaterialId": "adapter-server-certificate",
+        "privateKeyMaterialId": "adapter-server-private-key",
+        "subjectRfc2253": "CN=hsa-person-lookup-adapter",
+        "dnsSans": ["hsa-person-lookup-adapter"],
+        "basicConstraints": {
+          "critical": true,
+          "ca": false
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature", "keyEncipherment"]
+        },
+        "extendedKeyUsage": ["serverAuth"],
+        "authorization": {
+          "type": "dns-san",
+          "value": "hsa-person-lookup-adapter",
+          "allowCommonNameFallback": false,
+          "allowWildcard": false
+        }
+      },
+      "client": {
+        "runtimeRole": "kong",
+        "certificateMaterialId": "kong-client-certificate",
+        "privateKeyMaterialId": "kong-client-private-key",
+        "subjectRfc2253": "CN=kravhantering-kong",
+        "dnsSans": [],
+        "basicConstraints": {
+          "critical": true,
+          "ca": false
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature"]
+        },
+        "extendedKeyUsage": ["clientAuth"],
+        "authorization": {
+          "type": "subject-rfc2253",
+          "value": "CN=kravhantering-kong"
+        }
+      },
+      "wrongClient": {
+        "runtimeRole": "probe",
+        "certificateMaterialId": "wrong-kong-client-certificate",
+        "privateKeyMaterialId": "wrong-kong-client-private-key",
+        "subjectRfc2253": "CN=kravhantering-kong-wrong",
+        "dnsSans": [],
+        "basicConstraints": { "critical": true, "ca": false },
+        "keyUsage": { "critical": true, "values": ["digitalSignature"] },
+        "extendedKeyUsage": ["clientAuth"],
+        "authorization": {
+          "type": "subject-rfc2253",
+          "value": "CN=kravhantering-kong-wrong"
+        }
+      },
+      "wrongServer": {
+        "runtimeRole": "probe",
+        "certificateMaterialId": "wrong-adapter-server-certificate",
+        "privateKeyMaterialId": "wrong-adapter-server-private-key",
+        "subjectRfc2253": "CN=hsa-person-lookup-adapter-wrong",
+        "dnsSans": ["hsa-person-lookup-adapter-wrong"],
+        "basicConstraints": { "critical": true, "ca": false },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature", "keyEncipherment"]
+        },
+        "extendedKeyUsage": ["serverAuth"],
+        "authorization": {
+          "type": "dns-san",
+          "value": "hsa-person-lookup-adapter-wrong",
+          "allowCommonNameFallback": false,
+          "allowWildcard": false
+        }
+      }
+    },
+    "adapter-to-hsa": {
+      "ca": {
+        "materialId": "adapter-to-hsa-ca",
+        "subjectRfc2253": "CN=Kravhantering Adapter to HSA Mock Test CA",
+        "basicConstraints": {
+          "critical": true,
+          "ca": true,
+          "pathLength": 0
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["keyCertSign", "cRLSign"]
+        }
+      },
+      "server": {
+        "runtimeRole": "mock",
+        "certificateMaterialId": "mock-server-certificate",
+        "privateKeyMaterialId": "mock-server-private-key",
+        "subjectRfc2253": "CN=hsa-directory-mock",
+        "dnsSans": ["hsa-directory-mock"],
+        "basicConstraints": {
+          "critical": true,
+          "ca": false
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature", "keyEncipherment"]
+        },
+        "extendedKeyUsage": ["serverAuth"],
+        "authorization": {
+          "type": "dns-san",
+          "value": "hsa-directory-mock",
+          "allowCommonNameFallback": false,
+          "allowWildcard": false
+        }
+      },
+      "client": {
+        "runtimeRole": "adapter",
+        "certificateMaterialId": "adapter-client-certificate",
+        "privateKeyMaterialId": "adapter-client-private-key",
+        "subjectRfc2253": "serialNumber=SE5560000000-MOCK001,CN=Kravhantering HSA Person Lookup Adapter",
+        "dnsSans": [],
+        "basicConstraints": {
+          "critical": true,
+          "ca": false
+        },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature"]
+        },
+        "extendedKeyUsage": ["clientAuth"],
+        "authorization": {
+          "type": "subject-field",
+          "field": "serialNumber",
+          "value": "SE5560000000-MOCK001"
+        }
+      },
+      "wrongClient": {
+        "runtimeRole": "probe",
+        "certificateMaterialId": "wrong-adapter-client-certificate",
+        "privateKeyMaterialId": "wrong-adapter-client-private-key",
+        "subjectRfc2253": "serialNumber=SE5560000000-WRONG,CN=Kravhantering HSA Person Lookup Adapter Wrong",
+        "dnsSans": [],
+        "basicConstraints": { "critical": true, "ca": false },
+        "keyUsage": { "critical": true, "values": ["digitalSignature"] },
+        "extendedKeyUsage": ["clientAuth"],
+        "authorization": {
+          "type": "subject-field",
+          "field": "serialNumber",
+          "value": "SE5560000000-WRONG"
+        }
+      },
+      "wrongServer": {
+        "runtimeRole": "probe",
+        "certificateMaterialId": "wrong-mock-server-certificate",
+        "privateKeyMaterialId": "wrong-mock-server-private-key",
+        "subjectRfc2253": "CN=hsa-directory-mock-wrong",
+        "dnsSans": ["hsa-directory-mock-wrong"],
+        "basicConstraints": { "critical": true, "ca": false },
+        "keyUsage": {
+          "critical": true,
+          "values": ["digitalSignature", "keyEncipherment"]
+        },
+        "extendedKeyUsage": ["serverAuth"],
+        "authorization": {
+          "type": "dns-san",
+          "value": "hsa-directory-mock-wrong",
+          "allowCommonNameFallback": false,
+          "allowWildcard": false
+        }
+      }
+    }
+  },
+  "runtimeBundles": {
+    "app": {
+      "owner": {
+        "uid": 1000,
+        "gid": 1000
+      },
+      "files": {
+        "app-client.crt": "app-client-certificate",
+        "app-client.key": "app-client-private-key",
+        "kong-server-ca.crt": "app-to-kong-ca"
+      }
+    },
+    "kong": {
+      "owner": {
+        "uid": 1001,
+        "gid": 1001
+      },
+      "files": {
+        "kong-server.crt": "kong-server-certificate",
+        "kong-server.key": "kong-server-private-key",
+        "app-client-ca.crt": "app-to-kong-ca",
+        "kong-client.crt": "kong-client-certificate",
+        "kong-client.key": "kong-client-private-key",
+        "adapter-server-ca.crt": "kong-to-adapter-ca"
+      }
+    },
+    "adapter": {
+      "owner": {
+        "uid": 1000,
+        "gid": 1000
+      },
+      "files": {
+        "adapter-server.crt": "adapter-server-certificate",
+        "adapter-server.key": "adapter-server-private-key",
+        "kong-client-ca.crt": "kong-to-adapter-ca",
+        "adapter-client.crt": "adapter-client-certificate",
+        "adapter-client.key": "adapter-client-private-key",
+        "hsa-server-ca.crt": "adapter-to-hsa-ca"
+      }
+    },
+    "mock": {
+      "owner": {
+        "uid": 1000,
+        "gid": 1000
+      },
+      "files": {
+        "mock-server.crt": "mock-server-certificate",
+        "mock-server.key": "mock-server-private-key",
+        "adapter-client-ca.crt": "adapter-to-hsa-ca"
+      }
+    },
+    "probe": {
+      "owner": {
+        "uid": 1000,
+        "gid": 1000
+      },
+      "files": {
+        "kong-server-ca.crt": "app-to-kong-ca",
+        "wrong-kong-server.crt": "wrong-kong-server-certificate",
+        "wrong-kong-server.key": "wrong-kong-server-private-key",
+        "wrong-app-client.crt": "wrong-app-client-certificate",
+        "wrong-app-client.key": "wrong-app-client-private-key",
+        "adapter-server-ca.crt": "kong-to-adapter-ca",
+        "wrong-adapter-server.crt": "wrong-adapter-server-certificate",
+        "wrong-adapter-server.key": "wrong-adapter-server-private-key",
+        "wrong-kong-client.crt": "wrong-kong-client-certificate",
+        "wrong-kong-client.key": "wrong-kong-client-private-key",
+        "hsa-server-ca.crt": "adapter-to-hsa-ca",
+        "wrong-mock-server.crt": "wrong-mock-server-certificate",
+        "wrong-mock-server.key": "wrong-mock-server-private-key",
+        "wrong-adapter-client.crt": "wrong-adapter-client-certificate",
+        "wrong-adapter-client.key": "wrong-adapter-client-private-key"
+      }
+    }
+  },
+  "generationMetadata": {
+    "allowedTopLevelFields": [
+      "schemaVersion",
+      "profileDigest",
+      "generationId",
+      "createdAt",
+      "lifetime",
+      "rotatedTrustDomains",
+      "trustDomains"
+    ],
+    "allowedCertificateFields": [
+      "materialId",
+      "digestSha256",
+      "subjectRfc2253",
+      "issuerRfc2253",
+      "notBefore",
+      "notAfter"
+    ],
+    "forbiddenFieldFragments": ["privateKey", "signingKey", "pem", "secret"]
+  }
+}

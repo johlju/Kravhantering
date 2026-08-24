@@ -141,10 +141,11 @@ uses the server-side person lookup flow in
 [hsa-person-lookup-integration.md](../integrations/hsa-person-lookup-integration.md).
 
 In the devcontainer, the `app` service receives
-`HSA_PERSON_LOOKUP_URL=http://kong:8000/hsa/person-records/lookup`. The app
+`HSA_PERSON_LOOKUP_URL=https://kong:8443/hsa/person-records/lookup` plus its
+role-specific client certificate, key, CA, and `kong` server name. The app
 posts to the internal Kong route, Kong routes to
 `hsa-person-lookup-adapter`, and the adapter calls the HSA directory mock SOAP
-`GetHsaPerson` endpoint with mTLS. No Kong ports are forwarded to the host.
+`GetHsaPerson` endpoint with strict mTLS. No Kong ports are forwarded to the host.
 
 Use these checks from the workspace when HSA-id verification behaves
 unexpectedly:
@@ -153,7 +154,31 @@ unexpectedly:
 npm run devcontainer:kong:status
 npm run devcontainer:hsa-mock:status
 npm run devcontainer:hsa-mock:verify
+npm run devcontainer:hsa-mock:inspect
 ```
+
+Ensure and rotation recreate the `app` service when certificate material
+changes. Launch these lifecycle actions from a host terminal in the same
+checkout, not from the devcontainer that they stop:
+
+```sh
+node scripts/devcontainer/hsa-mock.mjs ensure
+node scripts/devcontainer/hsa-mock.mjs rotate app-to-kong
+node scripts/devcontainer/hsa-mock.mjs rollback-verify app-to-kong
+```
+
+Ensure stops the endpoint processes before inspecting the persistent
+generation. It restarts and authenticates reusable material without copying it.
+For automatic renewal it deploys the promoted generation, force-recreates the
+endpoints, authenticates the complete chain, and finalizes. A failed
+authentication restores and authenticates the prior generation.
+
+The same lifecycle is available as a persistent local demo with
+`npm run hsa:mtls:ensure`, `npm run hsa:mtls:verify`,
+`npm run hsa:mtls:inspect`, `npm run hsa:mtls:rotate -- <trust-domain>`, and
+`npm run hsa:mtls:rollback-verify -- <trust-domain>`. Rotation authenticates
+the complete chain before finalization; rollback verification injects a failed
+post-promotion check, restores the prior generation, and authenticates it.
 
 Host-based development with only `npm run idp:up` starts Keycloak but not
 Kong, the adapter or the HSA directory mock. To test responsibility-assignment
