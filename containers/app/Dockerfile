@@ -46,9 +46,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     "libssl3t64=${OPENSSL_PACKAGE_VERSION}" \
     "openssl-provider-legacy=${OPENSSL_PACKAGE_VERSION}" \
-  && rm -rf /var/lib/apt/lists/* \
-  && rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+  && rm -rf /var/lib/apt/lists/*
 
 FROM production-runtime-base AS db-job-dependencies
 
@@ -80,7 +78,12 @@ NODE
 npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
 EOF
 
-FROM production-runtime-base AS app-runtime
+FROM production-runtime-base AS production-runtime
+
+RUN rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
+FROM production-runtime AS app-runtime
 
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -98,7 +101,7 @@ USER node
 EXPOSE 3000
 CMD ["node", "start-runtime.mjs"]
 
-FROM production-runtime-base AS db-job
+FROM production-runtime AS db-job
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -123,7 +126,7 @@ USER node
 ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]
 CMD ["health"]
 
-FROM production-runtime-base AS demo-seed
+FROM production-runtime AS demo-seed
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production

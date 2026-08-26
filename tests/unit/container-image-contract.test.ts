@@ -136,10 +136,10 @@ describe('container image contract', () => {
     const npmRemoval =
       'rm -rf /usr/local/lib/node_modules/npm \\\n  && rm -f /usr/local/bin/npm /usr/local/bin/npx'
 
-    expect(dockerfileTarget('production-runtime-base')).toContain(npmRemoval)
+    expect(dockerfileTarget('production-runtime')).toContain(npmRemoval)
     for (const targetName of ['app-runtime', 'db-job', 'demo-seed']) {
       expect(dockerfileTarget(targetName)).toContain(
-        `FROM production-runtime-base AS ${targetName}`,
+        `FROM production-runtime AS ${targetName}`,
       )
     }
     for (const relativePath of [
