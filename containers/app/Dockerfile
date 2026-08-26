@@ -38,7 +38,19 @@ ENV NODE_ENV=production
 COPY . .
 RUN npm run build
 
-FROM node:24-trixie-slim@sha256:f2925910482dc53394bc0034c5f4abffcd01de400794c050ca343fe0d733b486 AS db-job-dependencies
+FROM node:24-trixie-slim@sha256:f2925910482dc53394bc0034c5f4abffcd01de400794c050ca343fe0d733b486 AS production-runtime-base
+
+ARG OPENSSL_PACKAGE_VERSION=3.5.7-1~deb13u2
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    "libssl3t64=${OPENSSL_PACKAGE_VERSION}" \
+    "openssl-provider-legacy=${OPENSSL_PACKAGE_VERSION}" \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
+FROM production-runtime-base AS db-job-dependencies
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -68,10 +80,7 @@ NODE
 npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
 EOF
 
-FROM node:24-trixie-slim@sha256:f2925910482dc53394bc0034c5f4abffcd01de400794c050ca343fe0d733b486 AS app-runtime
-
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+FROM production-runtime-base AS app-runtime
 
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -89,10 +98,7 @@ USER node
 EXPOSE 3000
 CMD ["node", "start-runtime.mjs"]
 
-FROM node:24-trixie-slim@sha256:f2925910482dc53394bc0034c5f4abffcd01de400794c050ca343fe0d733b486 AS db-job
-
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+FROM production-runtime-base AS db-job
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -117,10 +123,7 @@ USER node
 ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]
 CMD ["health"]
 
-FROM node:24-trixie-slim@sha256:f2925910482dc53394bc0034c5f4abffcd01de400794c050ca343fe0d733b486 AS demo-seed
-
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+FROM production-runtime-base AS demo-seed
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
