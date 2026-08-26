@@ -139,6 +139,46 @@ function makeDb(rows: Array<Record<string, unknown>>[] = []) {
 }
 
 describe('AssignmentBasedAuthorizationService', () => {
+  it.each(['list', 'search', 'get'] as const)(
+    'allows Reviewer to %s specification needs references without authorship',
+    async operation => {
+      const { lookup, service } = makeService({ specAuthor: false })
+
+      await expect(
+        service.assertAuthorized(
+          {
+            kind: 'manage_specification_needs_reference',
+            operation,
+            specificationId: 42,
+          },
+          makeContext(['Reviewer']),
+        ),
+      ).resolves.toBeUndefined()
+      expect(lookup.isSpecificationAuthor).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['create', 'update', 'delete'] as const)(
+    'requires specification authorship for Reviewer to %s a needs reference',
+    async operation => {
+      const { service } = makeService({ specAuthor: false })
+
+      await expect(
+        service.assertAuthorized(
+          {
+            kind: 'manage_specification_needs_reference',
+            operation,
+            specificationId: 42,
+          },
+          makeContext(['Reviewer']),
+        ),
+      ).rejects.toMatchObject({
+        code: 'forbidden',
+        details: { reason: 'specification_author_required' },
+      })
+    },
+  )
+
   it('requires authentication before evaluating assignment-based rules', async () => {
     const { lookup, service } = makeService({ areaAuthor: true })
     const context = makeContext([])
@@ -374,7 +414,7 @@ describe('AssignmentBasedAuthorizationService', () => {
     {
       kind: 'manage_specification_needs_reference',
       needsReferenceId: 8,
-      operation: 'edit',
+      operation: 'update',
       specificationId: 42,
     },
   ])('requires specification authorship for %s', async action => {

@@ -120,12 +120,15 @@ newest preview release. Change those bounded counts through normal review when
 the product support policy changes.
 
 For each supported release, the monitor downloads `release-metadata.json` and
-all six project-owned SPDX assets. It verifies every GitHub Release asset
-against the SHA-256 digest returned by the GitHub Releases API, requires the
-metadata to name the expected `ghcr.io/viscalyx` image and immutable manifest
-digest, and verifies the SBOM attestation against the trusted container release
-workflow and source commit. The scan uses the release asset only when its JSON
-content exactly matches a verified SPDX attestation predicate.
+every project-owned SPDX asset declared by that release. Releases predating the
+strict-PKI provisioner declare five images; newer releases declare six. The
+monitor requires the metadata and release assets to declare the same image set.
+It verifies every GitHub Release asset against the SHA-256 digest returned by
+the GitHub Releases API, requires the metadata to name the expected
+`ghcr.io/viscalyx` image and immutable manifest digest, and verifies the SBOM
+attestation against the trusted container release workflow and source commit.
+The scan uses the release asset only when its JSON content exactly matches a
+verified SPDX attestation predicate.
 
 The monitor updates the Grype database once and scans every verified SBOM
 without pulling or rebuilding an image. It evaluates all supported releases

@@ -177,7 +177,7 @@ export type RequirementsAction =
     }
   | {
       kind: 'manage_specification_needs_reference'
-      operation: string
+      operation: 'create' | 'delete' | 'get' | 'list' | 'search' | 'update'
       specificationId?: number
       needsReferenceId?: number
     }

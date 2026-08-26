@@ -10,8 +10,8 @@ const lock = Object.freeze({
   baseTag: '24-trixie-slim',
   caCertificatesPackageVersion: '20250419',
   nodeVersion: '24',
-  opensslPackageVersion: '3.5.6-1~deb13u2',
-  opensslVersion: '3.5.6',
+  opensslPackageVersion: '3.5.7-1~deb13u2',
+  opensslVersion: '3.5.7',
   schemaVersion: 1,
 })
 

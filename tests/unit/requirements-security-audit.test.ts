@@ -190,7 +190,7 @@ describe('requirements security audit', () => {
     {
       kind: 'manage_specification_needs_reference',
       needsReferenceId: 2,
-      operation: 'edit',
+      operation: 'update',
       specificationId: 1,
     },
     { id: 1, kind: 'get_requirement', uniqueId: 'REQ1', view: 'detail' },

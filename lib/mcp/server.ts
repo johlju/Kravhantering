@@ -35,9 +35,10 @@ import {
   type GraduateSpecificationLocalRequirementInput,
   type ListGraduationTargetAreasInput,
   type ManageImportInput,
-  type ManageNeedsReferenceInput,
   type ManageNormReferenceInput,
   type ManageRequirementInput,
+  type NeedsReferenceWorkflowInput,
+  type NeedsReferenceWorkflowOutput,
   type QueryCatalogInput,
   type RequirementsService,
   type TransitionRequirementInput,
@@ -348,6 +349,34 @@ const ManageNeedsReferenceOutputSchema = z
   .describe(
     'Specification needs-reference management result. Shape depends on operation: result or needsReference.',
   )
+
+type McpNeedsReferenceInput = Extract<
+  NeedsReferenceWorkflowInput,
+  { operation: 'create' | 'get' | 'list' | 'search' }
+>
+
+function toMcpNeedsReferencePayload(
+  output: NeedsReferenceWorkflowOutput,
+): Record<string, unknown> {
+  if ('needsReferenceMatches' in output) {
+    return {
+      result: output.needsReferenceMatches.map(({ match, needsReference }) => ({
+        ...needsReference,
+        match,
+      })),
+    }
+  }
+
+  if ('needsReferences' in output) {
+    return { result: output.needsReferences }
+  }
+
+  if ('needsReference' in output) {
+    return { needsReference: output.needsReference }
+  }
+
+  throw new Error('Unsupported needs-reference outcome for MCP')
+}
 
 const NormReferenceOutputSchema = z
   .object({
@@ -2010,10 +2039,12 @@ export function createKravhanteringMcpServer(
     },
     async input => {
       try {
-        const payload = await service.manageNeedsReference(
+        const needsReferenceInput = input as McpNeedsReferenceInput
+        const domainOutput = await service.manageNeedsReference(
           await getBaseContext(request, 'requirements_manage_needs_reference'),
-          input as ManageNeedsReferenceInput,
+          needsReferenceInput,
         )
+        const payload = toMcpNeedsReferencePayload(domainOutput)
         return {
           content: [
             {

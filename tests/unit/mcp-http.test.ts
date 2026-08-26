@@ -267,7 +267,7 @@ function createFakeService(
       result: [],
     }),
     manageNeedsReference: vi.fn().mockResolvedValue({
-      result: [],
+      needsReferences: [],
     }),
     manageNormReference: vi.fn().mockResolvedValue({
       result: [],
@@ -2661,7 +2661,15 @@ describe('handleRequirementsMcpRequest', () => {
       updatedAt: '2026-08-05T00:00:00.000Z',
     }
     fakeService.manageNeedsReference
-      .mockResolvedValueOnce({ result: [needsReference] })
+      .mockResolvedValueOnce({ needsReferences: [needsReference] })
+      .mockResolvedValueOnce({
+        needsReferenceMatches: [
+          {
+            match: { matchedFields: ['text'], quality: 'contains' },
+            needsReference,
+          },
+        ],
+      })
       .mockResolvedValueOnce({ needsReference })
     serviceState.getService.mockReturnValue(fakeService)
     const { client, transport } = await createClient()
@@ -2673,6 +2681,24 @@ describe('handleRequirementsMcpRequest', () => {
     expect(listResponse.isError).not.toBe(true)
     expect(listResponse.structuredContent).toEqual({
       result: [needsReference],
+    })
+
+    const searchResponse = await client.callTool({
+      arguments: {
+        operation: 'search',
+        search: 'health',
+        specificationId: 7,
+      },
+      name: 'requirements_manage_needs_reference',
+    })
+    expect(searchResponse.isError).not.toBe(true)
+    expect(searchResponse.structuredContent).toEqual({
+      result: [
+        {
+          ...needsReference,
+          match: { matchedFields: ['text'], quality: 'contains' },
+        },
+      ],
     })
 
     const getResponse = await client.callTool({

@@ -106,13 +106,10 @@ describe('container image contract', () => {
       return match ? [{ reference: match[1], stage: match[2] }] : []
     })
 
-    expect(fromLines).toHaveLength(5)
+    expect(fromLines).toHaveLength(2)
     expect(fromLines.map(line => line.stage)).toEqual([
       'dependencies',
-      'db-job-dependencies',
-      'app-runtime',
-      'db-job',
-      'demo-seed',
+      'production-runtime-base',
     ])
     expect(new Set(fromLines.map(line => line.reference)).size).toBe(1)
   })
@@ -139,8 +136,11 @@ describe('container image contract', () => {
     const npmRemoval =
       'rm -rf /usr/local/lib/node_modules/npm \\\n  && rm -f /usr/local/bin/npm /usr/local/bin/npx'
 
+    expect(dockerfileTarget('production-runtime')).toContain(npmRemoval)
     for (const targetName of ['app-runtime', 'db-job', 'demo-seed']) {
-      expect(dockerfileTarget(targetName)).toContain(npmRemoval)
+      expect(dockerfileTarget(targetName)).toContain(
+        `FROM production-runtime AS ${targetName}`,
+      )
     }
     for (const relativePath of [
       'containers/hsa-directory-mock/Dockerfile',
