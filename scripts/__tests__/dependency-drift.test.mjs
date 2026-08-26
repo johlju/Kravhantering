@@ -191,6 +191,66 @@ describe('dependency drift selection', () => {
       ).tag,
     ).toBe('1.29.4-alpine')
   })
+
+  it('lists Docker Hub tags through registry cursor pagination', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(null, {
+          headers: {
+            'www-authenticate':
+              'Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/nginx:pull"',
+          },
+          status: 401,
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ token: 'registry-token' }))
+      .mockResolvedValueOnce(
+        Response.json(
+          { name: 'library/nginx', tags: ['1.29.4-alpine'] },
+          {
+            headers: {
+              link: '</v2/library/nginx/tags/list?last=1.29.4-alpine&n=1000>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          headers: {
+            'www-authenticate':
+              'Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/nginx:pull"',
+          },
+          status: 401,
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ token: 'registry-token' }))
+      .mockResolvedValueOnce(
+        Response.json({
+          name: 'library/nginx',
+          tags: ['1.30.0-alpine'],
+        }),
+      )
+
+    await expect(IMAGE_CONFIGS.nginx.listTags()).resolves.toEqual([
+      '1.29.4-alpine',
+      '1.30.0-alpine',
+    ])
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'https://registry-1.docker.io/v2/library/nginx/tags/list?n=1000',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer registry-token',
+        }),
+      }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      'https://registry-1.docker.io/v2/library/nginx/tags/list?last=1.29.4-alpine&n=1000',
+      expect.any(Object),
+    )
+  })
 })
 
 describe('drift detection', () => {
