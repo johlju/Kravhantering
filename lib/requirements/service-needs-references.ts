@@ -127,6 +127,7 @@ export function createNeedsReferenceWorkflow(
             'needsReferenceId' in input ? input.needsReferenceId : undefined,
         },
         context,
+        db,
       )
 
       return withLogging(

@@ -4,7 +4,6 @@ import {
   createSpecificationNeedsReference,
   linkRequirementsToSpecificationAtomically,
 } from '@/lib/dal/requirements-specifications'
-import { forbiddenError } from '@/lib/requirements/errors'
 import { createRequirementsService } from '@/lib/requirements/service'
 import {
   createArea,
@@ -173,19 +172,11 @@ describe('requirements specification mutations', () => {
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
-    const deniedService = createRequirementsService(appDb(), {
-      authorization: {
-        assertAuthorized: () =>
-          Promise.reject(
-            forbiddenError('Specification author assignment is required', {
-              reason: 'specification_author_required',
-              specificationId: specification.id,
-            }),
-          ),
-      },
-    })
+    const unassignedContext = await makeRequestContext()
+    unassignedContext.actor.roles = []
+    unassignedContext.actor.hsaId = 'SE5560000001-unassigned-sql-needs'
     await expect(
-      deniedService.manageNeedsReference(context, {
+      service.manageNeedsReference(unassignedContext, {
         operation: 'create',
         specificationId: specification.id,
         text: 'Unauthorized need',

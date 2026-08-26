@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   findSpecificationIdentity: vi.fn(),
   getSpecificationNeedsReference: vi.fn(),
   listSpecificationNeedsReferences: vi.fn(),
+  recordAuthorizationDenied: vi.fn(),
+  recordAuthorizationDeniedWithDatabase: vi.fn(),
   updateSpecificationNeedsReference: vi.fn(),
 }))
 
@@ -32,6 +34,12 @@ vi.mock('@/lib/dal/requirements-specifications', () => ({
   getSpecificationNeedsReference: mocks.getSpecificationNeedsReference,
   listSpecificationNeedsReferences: mocks.listSpecificationNeedsReferences,
   updateSpecificationNeedsReference: mocks.updateSpecificationNeedsReference,
+}))
+
+vi.mock('@/lib/requirements/security-audit', () => ({
+  recordAuthorizationDenied: mocks.recordAuthorizationDenied,
+  recordAuthorizationDeniedWithDatabase:
+    mocks.recordAuthorizationDeniedWithDatabase,
 }))
 
 function makeContext(): RequestContext {
@@ -422,12 +430,13 @@ describe('needs reference service workflow', () => {
 
   it('allows Reviewer reads but requires assignment for writes through the shared interface', async () => {
     const logger = { error: vi.fn(), info: vi.fn() }
+    const db = {} as never
     const authorization = assignmentAuthorization(
       'SE5560000001-assigned-needs-reference',
     )
     const workflow = createNeedsReferenceWorkflow({
       authorization,
-      db: {} as never,
+      db,
       logger,
     })
     const reviewer = makeContext()
@@ -451,6 +460,16 @@ describe('needs reference service workflow', () => {
       code: 'forbidden',
       details: { reason: 'specification_author_required' },
     })
+    expect(mocks.recordAuthorizationDeniedWithDatabase).toHaveBeenCalledWith(
+      db,
+      reviewer,
+      expect.objectContaining({
+        kind: 'manage_specification_needs_reference',
+        operation: 'create',
+        specificationId: 8,
+      }),
+      expect.objectContaining({ code: 'forbidden' }),
+    )
     expect(createSpecificationNeedsReference).not.toHaveBeenCalled()
 
     const assignedActor = makeContext()
