@@ -79,7 +79,7 @@ export const IMAGE_CONFIGS = {
   },
   nginx: {
     image: 'docker.io/library/nginx',
-    listTags: () => fetchDockerHubTags('library', 'nginx'),
+    listTags: () => fetchRegistryTags('registry-1.docker.io', 'library/nginx'),
     lockPath: 'containers/nginx/image.lock.json',
     name: 'nginx',
     parseTag: parseNginxTag,
@@ -114,7 +114,8 @@ export const IMAGE_CONFIGS = {
   },
   kong: {
     image: 'docker.io/kong/kong-gateway',
-    listTags: () => fetchDockerHubTags('kong', 'kong-gateway'),
+    listTags: () =>
+      fetchRegistryTags('registry-1.docker.io', 'kong/kong-gateway'),
     lockPath: 'containers/kong/image.lock.json',
     name: 'kong',
     parseTag: parseKongTag,
@@ -330,30 +331,6 @@ async function fetchLatestLycheeRelease(repository) {
     `https://api.github.com/repos/${repository}/releases/latest`,
     { headers },
   )
-}
-
-function dockerHubHeaders() {
-  const token =
-    readNonEmpty(process.env.DOCKERHUB_TOKEN) ??
-    readNonEmpty(process.env.DOCKER_HUB_TOKEN)
-  return token
-    ? { Accept: 'application/json', Authorization: `Bearer ${token}` }
-    : { Accept: 'application/json' }
-}
-
-async function fetchDockerHubTags(namespace, repository) {
-  const tags = []
-  let url =
-    `https://hub.docker.com/v2/repositories/${namespace}/${repository}` +
-    '/tags?page_size=100'
-  while (url) {
-    const payload = await fetchJson(url, { headers: dockerHubHeaders() })
-    for (const item of payload.results ?? []) {
-      if (typeof item.name === 'string') tags.push(item.name)
-    }
-    url = readNonEmpty(payload.next)
-  }
-  return tags
 }
 
 function nextLink(header, host) {
