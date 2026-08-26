@@ -2662,7 +2662,14 @@ describe('handleRequirementsMcpRequest', () => {
     }
     fakeService.manageNeedsReference
       .mockResolvedValueOnce({ needsReferences: [needsReference] })
-      .mockResolvedValueOnce({ needsReferences: [needsReference] })
+      .mockResolvedValueOnce({
+        needsReferenceMatches: [
+          {
+            match: { matchedFields: ['text'], quality: 'contains' },
+            needsReference,
+          },
+        ],
+      })
       .mockResolvedValueOnce({ needsReference })
     serviceState.getService.mockReturnValue(fakeService)
     const { client, transport } = await createClient()

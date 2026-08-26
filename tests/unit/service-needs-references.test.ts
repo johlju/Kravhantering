@@ -142,7 +142,7 @@ describe('needs reference service workflow', () => {
     )
   })
 
-  it('searches needs references without transport-specific match metadata', async () => {
+  it('searches needs references with transport-neutral match metadata', async () => {
     const authorization = { assertAuthorized: vi.fn() }
     const logger = { error: vi.fn(), info: vi.fn() }
     vi.mocked(listSpecificationNeedsReferences).mockResolvedValue([
@@ -166,12 +166,15 @@ describe('needs reference service workflow', () => {
     })
 
     expect(result).toEqual({
-      needsReferences: [
-        needsReferenceRow({
-          id: 1,
-          description: 'Stödjer GDPR artikel 32.',
-          text: 'Personuppgiftsbehandling',
-        }),
+      needsReferenceMatches: [
+        {
+          match: { matchedFields: ['description'], quality: 'contains' },
+          needsReference: needsReferenceRow({
+            id: 1,
+            description: 'Stödjer GDPR artikel 32.',
+            text: 'Personuppgiftsbehandling',
+          }),
+        },
       ],
     })
   })

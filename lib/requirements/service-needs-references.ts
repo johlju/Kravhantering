@@ -64,8 +64,16 @@ export type NeedsReferenceWorkflowOutput =
       needsReference: SpecificationNeedsReferenceSummary
     }
   | {
+      needsReferenceMatches: NeedsReferenceSearchResult[]
+    }
+  | {
       needsReferences: SpecificationNeedsReferenceSummary[]
     }
+
+export interface NeedsReferenceSearchResult {
+  match: SearchMatch
+  needsReference: SpecificationNeedsReferenceSummary
+}
 
 interface NeedsReferenceWorkflowDependencies {
   authorization: AuthorizationService
@@ -233,9 +241,7 @@ export function createNeedsReferenceWorkflow(
             )
 
           return {
-            needsReferences: matched.map(
-              ({ needsReference }) => needsReference,
-            ),
+            needsReferenceMatches: matched,
           }
         },
       )

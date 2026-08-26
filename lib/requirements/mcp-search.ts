@@ -1,3 +1,4 @@
+/** Compatibility names for MCP workflows that still expose search metadata. */
 export {
   compareSearchMatches as compareMcpSearchMatches,
   findSearchMatch as findMcpSearchMatch,

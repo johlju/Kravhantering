@@ -28,7 +28,6 @@ import {
   type RequirementsErrorCode,
 } from '@/lib/requirements/errors'
 import { REQUIREMENT_SORT_FIELDS } from '@/lib/requirements/list-view'
-import { findSearchMatch } from '@/lib/requirements/search-match'
 import { createRequirementsRuntime } from '@/lib/requirements/server'
 import {
   buildRequirementViewUri,
@@ -357,24 +356,19 @@ type McpNeedsReferenceInput = Extract<
 >
 
 function toMcpNeedsReferencePayload(
-  input: McpNeedsReferenceInput,
   output: NeedsReferenceWorkflowOutput,
 ): Record<string, unknown> {
-  if ('needsReferences' in output) {
+  if ('needsReferenceMatches' in output) {
     return {
-      result: output.needsReferences.map(needsReference => {
-        if (input.operation !== 'search') return needsReference
-        const match = findSearchMatch(
-          {
-            description: needsReference.description,
-            id: needsReference.id,
-            text: needsReference.text,
-          },
-          input.search,
-        )
-        return match ? { ...needsReference, match } : needsReference
-      }),
+      result: output.needsReferenceMatches.map(({ match, needsReference }) => ({
+        ...needsReference,
+        match,
+      })),
     }
+  }
+
+  if ('needsReferences' in output) {
+    return { result: output.needsReferences }
   }
 
   if ('needsReference' in output) {
@@ -2050,10 +2044,7 @@ export function createKravhanteringMcpServer(
           await getBaseContext(request, 'requirements_manage_needs_reference'),
           needsReferenceInput,
         )
-        const payload = toMcpNeedsReferencePayload(
-          needsReferenceInput,
-          domainOutput,
-        )
+        const payload = toMcpNeedsReferencePayload(domainOutput)
         return {
           content: [
             {
