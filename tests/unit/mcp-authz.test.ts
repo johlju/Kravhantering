@@ -184,7 +184,7 @@ function createService() {
     listSuggestions,
     manageDeviation: vi.fn(),
     manageImport: vi.fn(async () => ({ result: [] })),
-    manageNeedsReference: vi.fn(async () => ({ result: [] })),
+    manageNeedsReference: vi.fn(async () => ({ needsReferences: [] })),
     manageNormReference: vi.fn(async () => ({ result: [] })),
     manageRequirement,
     manageSuggestion,

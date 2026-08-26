@@ -6,18 +6,13 @@ import {
   PATCH,
   POST,
 } from '@/app/api/requirements-specifications/[id]/needs-references/route'
-import { conflictError } from '@/lib/requirements/errors'
+import { conflictError, notFoundError } from '@/lib/requirements/errors'
 
 const mockDb = {}
 
 const mocks = {
-  assertAuthorized: vi.fn(),
   createRequirementsRestRuntime: vi.fn(),
-  createSpecificationNeedsReference: vi.fn(),
-  deleteSpecificationNeedsReference: vi.fn(),
-  getSpecificationById: vi.fn(),
-  listSpecificationNeedsReferences: vi.fn(),
-  updateSpecificationNeedsReference: vi.fn(),
+  manageNeedsReference: vi.fn(),
 }
 
 const mockContext = {
@@ -36,19 +31,6 @@ const mockContext = {
 
 vi.mock('@/lib/db', () => ({
   getRequestSqlServerDataSource: () => mockDb,
-}))
-
-vi.mock('@/lib/dal/requirements-specifications', () => ({
-  createSpecificationNeedsReference: (...args: unknown[]) =>
-    mocks.createSpecificationNeedsReference(...args),
-  deleteSpecificationNeedsReference: (...args: unknown[]) =>
-    mocks.deleteSpecificationNeedsReference(...args),
-  getSpecificationById: (...args: unknown[]) =>
-    mocks.getSpecificationById(...args),
-  listSpecificationNeedsReferences: (...args: unknown[]) =>
-    mocks.listSpecificationNeedsReferences(...args),
-  updateSpecificationNeedsReference: (...args: unknown[]) =>
-    mocks.updateSpecificationNeedsReference(...args),
 }))
 
 vi.mock('@/lib/requirements/auth', async importOriginal => {
@@ -88,32 +70,44 @@ describe('requirements-specifications/[id]/needs-references route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.createRequirementsRestRuntime.mockResolvedValue({
-      authorization: { assertAuthorized: mocks.assertAuthorized },
       context: mockContext,
       db: mockDb,
+      service: { manageNeedsReference: mocks.manageNeedsReference },
     })
-    mocks.createSpecificationNeedsReference.mockResolvedValue({
-      description: 'For IAM work',
-      id: 11,
-      text: 'IAM-42',
-    })
-    mocks.deleteSpecificationNeedsReference.mockResolvedValue(true)
-    mocks.getSpecificationById.mockResolvedValue({ id: 5 })
-    mocks.listSpecificationNeedsReferences.mockResolvedValue([
-      {
-        description: 'For IAM work',
-        id: 11,
-        linkedItemCount: 2,
-        text: 'IAM-42',
+    mocks.manageNeedsReference.mockImplementation(
+      async (_context, input: { operation: string }) => {
+        if (input.operation === 'list') {
+          return {
+            needsReferences: [
+              {
+                description: 'For IAM work',
+                id: 11,
+                linkedItemCount: 2,
+                text: 'IAM-42',
+              },
+            ],
+          }
+        }
+        if (input.operation === 'delete') {
+          return { deletedNeedsReferenceId: 11 }
+        }
+        return {
+          needsReference:
+            input.operation === 'update'
+              ? {
+                  description: 'Updated',
+                  id: 11,
+                  linkedItemCount: 2,
+                  text: 'IAM-43',
+                }
+              : {
+                  description: 'For IAM work',
+                  id: 11,
+                  text: 'IAM-42',
+                },
+        }
       },
-    ])
-    mocks.updateSpecificationNeedsReference.mockResolvedValue({
-      description: 'Updated',
-      id: 11,
-      linkedItemCount: 2,
-      text: 'IAM-43',
-    })
-    mocks.assertAuthorized.mockResolvedValue(undefined)
+    )
   })
 
   it('lists specification needs references', async () => {
@@ -135,10 +129,10 @@ describe('requirements-specifications/[id]/needs-references route', () => {
         },
       ],
     })
-    expect(mocks.listSpecificationNeedsReferences).toHaveBeenCalledWith(
-      mockDb,
-      5,
-    )
+    expect(mocks.manageNeedsReference).toHaveBeenCalledWith(mockContext, {
+      operation: 'list',
+      specificationId: 5,
+    })
   })
 
   it('rejects invalid and missing needs-reference scopes', async () => {
@@ -148,7 +142,11 @@ describe('requirements-specifications/[id]/needs-references route', () => {
       ),
       makeParams('nope'),
     )
-    mocks.getSpecificationById.mockResolvedValueOnce(null)
+    mocks.manageNeedsReference.mockRejectedValueOnce(
+      notFoundError('Requirements specification not found', {
+        specificationId: 404,
+      }),
+    )
     const missing = await GET(
       new NextRequest(
         'http://localhost/api/requirements-specifications/404/needs-references',
@@ -158,11 +156,11 @@ describe('requirements-specifications/[id]/needs-references route', () => {
 
     expect(invalid.status).toBe(400)
     expect(missing.status).toBe(404)
-    expect(mocks.listSpecificationNeedsReferences).not.toHaveBeenCalled()
+    expect(mocks.manageNeedsReference).toHaveBeenCalledTimes(1)
   })
 
   it('maps authorization and list failures for needs references', async () => {
-    mocks.assertAuthorized.mockRejectedValueOnce(
+    mocks.manageNeedsReference.mockRejectedValueOnce(
       new Error('authorization unavailable'),
     )
     const denied = await GET(
@@ -171,7 +169,7 @@ describe('requirements-specifications/[id]/needs-references route', () => {
       ),
       makeParams('5'),
     )
-    mocks.listSpecificationNeedsReferences.mockRejectedValueOnce(
+    mocks.manageNeedsReference.mockRejectedValueOnce(
       new Error('database unavailable'),
     )
     const failed = await GET(
@@ -195,11 +193,12 @@ describe('requirements-specifications/[id]/needs-references route', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(mocks.createSpecificationNeedsReference).toHaveBeenCalledWith(
-      mockDb,
-      5,
-      { description: 'For IAM work', text: 'IAM-42' },
-    )
+    expect(mocks.manageNeedsReference).toHaveBeenCalledWith(mockContext, {
+      description: 'For IAM work',
+      operation: 'create',
+      specificationId: 5,
+      text: 'IAM-42',
+    })
   })
 
   it('creates a needs reference with a null description default', async () => {
@@ -209,15 +208,16 @@ describe('requirements-specifications/[id]/needs-references route', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(mocks.createSpecificationNeedsReference).toHaveBeenCalledWith(
-      mockDb,
-      5,
-      { description: null, text: 'IAM-42' },
-    )
+    expect(mocks.manageNeedsReference).toHaveBeenCalledWith(mockContext, {
+      description: null,
+      operation: 'create',
+      specificationId: 5,
+      text: 'IAM-42',
+    })
   })
 
   it('returns conflict when creating a duplicate needs reference', async () => {
-    mocks.createSpecificationNeedsReference.mockRejectedValueOnce(
+    mocks.manageNeedsReference.mockRejectedValueOnce(
       conflictError('Needs reference already exists in this specification', {
         reason: 'duplicate_needs_reference',
       }),
@@ -246,12 +246,13 @@ describe('requirements-specifications/[id]/needs-references route', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(mocks.updateSpecificationNeedsReference).toHaveBeenCalledWith(
-      mockDb,
-      5,
-      11,
-      { description: 'Updated', text: 'IAM-43' },
-    )
+    expect(mocks.manageNeedsReference).toHaveBeenCalledWith(mockContext, {
+      description: 'Updated',
+      needsReferenceId: 11,
+      operation: 'update',
+      specificationId: 5,
+      text: 'IAM-43',
+    })
   })
 
   it('updates a needs reference with a null description default', async () => {
@@ -261,16 +262,17 @@ describe('requirements-specifications/[id]/needs-references route', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(mocks.updateSpecificationNeedsReference).toHaveBeenCalledWith(
-      mockDb,
-      5,
-      11,
-      { description: null, text: 'IAM-43' },
-    )
+    expect(mocks.manageNeedsReference).toHaveBeenCalledWith(mockContext, {
+      description: null,
+      needsReferenceId: 11,
+      operation: 'update',
+      specificationId: 5,
+      text: 'IAM-43',
+    })
   })
 
   it('blocks deleting needs references that are in use', async () => {
-    mocks.deleteSpecificationNeedsReference.mockRejectedValueOnce(
+    mocks.manageNeedsReference.mockRejectedValueOnce(
       conflictError(
         'Needs reference is used by requirement applications or unique requirements',
         {
@@ -295,11 +297,11 @@ describe('requirements-specifications/[id]/needs-references route', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(mocks.deleteSpecificationNeedsReference).toHaveBeenCalledWith(
-      mockDb,
-      5,
-      11,
-    )
+    expect(mocks.manageNeedsReference).toHaveBeenCalledWith(mockContext, {
+      needsReferenceId: 11,
+      operation: 'delete',
+      specificationId: 5,
+    })
   })
 
   it.each([
@@ -309,7 +311,11 @@ describe('requirements-specifications/[id]/needs-references route', () => {
   ] as const)(
     '%s returns not found when the owning specification disappears',
     async (method, handler, body) => {
-      mocks.getSpecificationById.mockResolvedValueOnce(null)
+      mocks.manageNeedsReference.mockRejectedValueOnce(
+        notFoundError('Requirements specification not found', {
+          specificationId: 404,
+        }),
+      )
 
       const response = await handler(
         makeMutationRequest(method, body),
@@ -321,7 +327,12 @@ describe('requirements-specifications/[id]/needs-references route', () => {
   )
 
   it('returns not found when a needs reference was not deleted', async () => {
-    mocks.deleteSpecificationNeedsReference.mockResolvedValueOnce(false)
+    mocks.manageNeedsReference.mockRejectedValueOnce(
+      notFoundError('Needs reference not found', {
+        needsReferenceId: 999,
+        specificationId: 5,
+      }),
+    )
 
     const response = await DELETE(
       makeMutationRequest('DELETE', { id: 999 }),

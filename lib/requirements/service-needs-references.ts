@@ -1,8 +1,11 @@
 import {
   createSpecificationNeedsReference,
+  deleteSpecificationNeedsReference,
+  findSpecificationIdentity,
   getSpecificationNeedsReference,
   listSpecificationNeedsReferences,
   type SpecificationNeedsReferenceSummary,
+  updateSpecificationNeedsReference,
 } from '@/lib/dal/requirements-specifications'
 import type { SqlServerDatabase } from '@/lib/db'
 import type {
@@ -12,19 +15,14 @@ import type {
 import { notFoundError, validationError } from '@/lib/requirements/errors'
 import type { RequirementsLogger } from '@/lib/requirements/logging'
 import {
-  compareMcpSearchMatches,
-  findMcpSearchMatch,
-  type McpSearchMatch,
-} from '@/lib/requirements/mcp-search'
+  compareSearchMatches,
+  findSearchMatch,
+  type SearchMatch,
+} from '@/lib/requirements/search-match'
 import type { RequirementsService } from '@/lib/requirements/service'
 import { authorize, withLogging } from '@/lib/requirements/service-shared'
 
-export interface McpNeedsReferenceRow
-  extends SpecificationNeedsReferenceSummary {
-  match?: McpSearchMatch
-}
-
-export type ManageNeedsReferenceInput =
+export type NeedsReferenceWorkflowInput =
   | {
       operation: 'list'
       specificationId: number
@@ -45,13 +43,28 @@ export type ManageNeedsReferenceInput =
       specificationId: number
       text: string
     }
-
-export type ManageNeedsReferenceOutput =
   | {
-      needsReference: McpNeedsReferenceRow
+      description?: string | null
+      needsReferenceId: number
+      operation: 'update'
+      specificationId: number
+      text: string
     }
   | {
-      result: McpNeedsReferenceRow[]
+      needsReferenceId: number
+      operation: 'delete'
+      specificationId: number
+    }
+
+export type NeedsReferenceWorkflowOutput =
+  | {
+      deletedNeedsReferenceId: number
+    }
+  | {
+      needsReference: SpecificationNeedsReferenceSummary
+    }
+  | {
+      needsReferences: SpecificationNeedsReferenceSummary[]
     }
 
 interface NeedsReferenceWorkflowDependencies {
@@ -67,26 +80,11 @@ function compareNeedsReferences(
   return left.text.localeCompare(right.text, 'sv') || left.id - right.id
 }
 
-function toMcpNeedsReferenceRow(
-  row: SpecificationNeedsReferenceSummary,
-  match: McpSearchMatch,
-): McpNeedsReferenceRow & { match: McpSearchMatch }
-function toMcpNeedsReferenceRow(
-  row: SpecificationNeedsReferenceSummary,
-  match?: McpSearchMatch,
-): McpNeedsReferenceRow
-function toMcpNeedsReferenceRow(
-  row: SpecificationNeedsReferenceSummary,
-  match?: McpSearchMatch,
-): McpNeedsReferenceRow {
-  return match ? { ...row, match } : { ...row }
-}
-
 function findNeedsReferenceMatch(
   row: SpecificationNeedsReferenceSummary,
   search: string,
-): McpSearchMatch | null {
-  return findMcpSearchMatch(
+): SearchMatch | null {
+  return findSearchMatch(
     {
       description: row.description,
       id: row.id,
@@ -131,20 +129,57 @@ export function createNeedsReferenceWorkflow(
           operation: input.operation,
           specification_id: input.specificationId,
         },
-        async (): Promise<ManageNeedsReferenceOutput> => {
+        async (): Promise<NeedsReferenceWorkflowOutput> => {
+          const specification = await findSpecificationIdentity(
+            db,
+            input.specificationId,
+          )
+          if (!specification) {
+            throw notFoundError('Requirements specification not found', {
+              specificationId: input.specificationId,
+            })
+          }
+
           if (input.operation === 'create') {
             return {
-              needsReference: toMcpNeedsReferenceRow(
-                await createSpecificationNeedsReference(
-                  db,
-                  input.specificationId,
-                  {
-                    description: input.description ?? null,
-                    text: input.text,
-                  },
-                ),
+              needsReference: await createSpecificationNeedsReference(
+                db,
+                input.specificationId,
+                {
+                  description: input.description ?? null,
+                  text: input.text,
+                },
               ),
             }
+          }
+
+          if (input.operation === 'update') {
+            return {
+              needsReference: await updateSpecificationNeedsReference(
+                db,
+                input.specificationId,
+                input.needsReferenceId,
+                {
+                  description: input.description ?? null,
+                  text: input.text,
+                },
+              ),
+            }
+          }
+
+          if (input.operation === 'delete') {
+            const deleted = await deleteSpecificationNeedsReference(
+              db,
+              input.specificationId,
+              input.needsReferenceId,
+            )
+            if (!deleted) {
+              throw notFoundError('Needs reference not found', {
+                needsReferenceId: input.needsReferenceId,
+                specificationId: input.specificationId,
+              })
+            }
+            return { deletedNeedsReferenceId: input.needsReferenceId }
           }
 
           const search = input.operation === 'search' ? input.search.trim() : ''
@@ -164,7 +199,7 @@ export function createNeedsReferenceWorkflow(
                 specificationId: input.specificationId,
               })
             }
-            return { needsReference: toMcpNeedsReferenceRow(row) }
+            return { needsReference: row }
           }
 
           const rows = await listNeedsReferences(
@@ -173,25 +208,35 @@ export function createNeedsReferenceWorkflow(
           )
 
           if (input.operation === 'list') {
-            return { result: rows.map(row => toMcpNeedsReferenceRow(row)) }
+            return { needsReferences: rows }
           }
 
           const matched = rows
             .flatMap(
               (
                 row,
-              ): Array<McpNeedsReferenceRow & { match: McpSearchMatch }> => {
+              ): Array<{
+                match: SearchMatch
+                needsReference: SpecificationNeedsReferenceSummary
+              }> => {
                 const match = findNeedsReferenceMatch(row, search)
-                return match ? [toMcpNeedsReferenceRow(row, match)] : []
+                return match ? [{ match, needsReference: row }] : []
               },
             )
             .sort(
               (left, right) =>
-                compareMcpSearchMatches(left.match, right.match) ||
-                compareNeedsReferences(left, right),
+                compareSearchMatches(left.match, right.match) ||
+                compareNeedsReferences(
+                  left.needsReference,
+                  right.needsReference,
+                ),
             )
 
-          return { result: matched }
+          return {
+            needsReferences: matched.map(
+              ({ needsReference }) => needsReference,
+            ),
+          }
         },
       )
     },

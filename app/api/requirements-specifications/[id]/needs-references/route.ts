@@ -1,14 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
-  createSpecificationNeedsReference,
-  deleteSpecificationNeedsReference,
-  getSpecificationById,
-  listSpecificationNeedsReferences,
-  updateSpecificationNeedsReference,
-} from '@/lib/dal/requirements-specifications'
-import { getRequestSqlServerDataSource } from '@/lib/db'
-import {
   requirementsMutationPolicy,
   secureMutationRoute,
 } from '@/lib/http/secure-mutation-route'
@@ -21,7 +13,6 @@ import {
 } from '@/lib/http/validation'
 import { toHttpErrorPayload } from '@/lib/requirements/http-errors'
 import { createRequirementsRestRuntime } from '@/lib/requirements/server'
-import { authorize } from '@/lib/requirements/service-shared'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,24 +51,15 @@ export async function GET(
   }
   try {
     const { id } = parsedParams.data
-    const { authorization, context, db } =
-      await createRequirementsRestRuntime(request)
-    const specification = await getSpecificationById(db, id)
-    if (!specification) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const { context, service } = await createRequirementsRestRuntime(request)
+    const payload = await service.manageNeedsReference(context, {
+      operation: 'list',
+      specificationId: id,
+    })
+    if (!('needsReferences' in payload)) {
+      throw new Error('Needs-reference list returned an invalid outcome')
     }
-    await authorize(
-      authorization,
-      {
-        kind: 'get_specification_items',
-        specificationId: specification.id,
-      },
-      context,
-    )
-    const needsReferences = await listSpecificationNeedsReferences(
-      db,
-      specification.id,
-    )
+    const { needsReferences } = payload
     return NextResponse.json({ needsReferences })
   } catch (error) {
     const { body, status } = toHttpErrorPayload(error)
@@ -99,21 +81,21 @@ export const POST = secureMutationRoute<
     operation: 'create',
     specificationId: params.id,
   })),
-  handler: async ({ body, params }) => {
-    const db = await getRequestSqlServerDataSource()
-    const specification = await getSpecificationById(db, params.id)
-    if (!specification) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
-
-    const needsReference = await createSpecificationNeedsReference(
+  handler: async ({ body, context, db, params, request }) => {
+    const { service } = await createRequirementsRestRuntime(request, {
+      context,
       db,
-      specification.id,
-      {
-        description: body.description ?? null,
-        text: body.text,
-      },
-    )
+    })
+    const payload = await service.manageNeedsReference(context, {
+      description: body.description ?? null,
+      operation: 'create',
+      specificationId: params.id,
+      text: body.text,
+    })
+    if (!('needsReference' in payload)) {
+      throw new Error('Needs-reference create returned an invalid outcome')
+    }
+    const { needsReference } = payload
     return NextResponse.json({ needsReference, ok: true }, { status: 201 })
   },
 })
@@ -133,22 +115,22 @@ export const PATCH = secureMutationRoute<
     operation: 'update',
     specificationId: params.id,
   })),
-  handler: async ({ body, params }) => {
-    const db = await getRequestSqlServerDataSource()
-    const specification = await getSpecificationById(db, params.id)
-    if (!specification) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
-
-    const needsReference = await updateSpecificationNeedsReference(
+  handler: async ({ body, context, db, params, request }) => {
+    const { service } = await createRequirementsRestRuntime(request, {
+      context,
       db,
-      specification.id,
-      body.id,
-      {
-        description: body.description ?? null,
-        text: body.text,
-      },
-    )
+    })
+    const payload = await service.manageNeedsReference(context, {
+      description: body.description ?? null,
+      needsReferenceId: body.id,
+      operation: 'update',
+      specificationId: params.id,
+      text: body.text,
+    })
+    if (!('needsReference' in payload)) {
+      throw new Error('Needs-reference update returned an invalid outcome')
+    }
+    const { needsReference } = payload
     return NextResponse.json({ needsReference, ok: true })
   },
 })
@@ -168,22 +150,16 @@ export const DELETE = secureMutationRoute<
     operation: 'delete',
     specificationId: params.id,
   })),
-  handler: async ({ body, params }) => {
-    const db = await getRequestSqlServerDataSource()
-    const specification = await getSpecificationById(db, params.id)
-    if (!specification) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
-
-    const deleted = await deleteSpecificationNeedsReference(
+  handler: async ({ body, context, db, params, request }) => {
+    const { service } = await createRequirementsRestRuntime(request, {
+      context,
       db,
-      specification.id,
-      body.id,
-    )
-    if (!deleted) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
-
+    })
+    await service.manageNeedsReference(context, {
+      needsReferenceId: body.id,
+      operation: 'delete',
+      specificationId: params.id,
+    })
     return NextResponse.json({ ok: true })
   },
 })

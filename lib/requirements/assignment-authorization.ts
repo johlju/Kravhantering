@@ -745,6 +745,13 @@ export class AssignmentBasedAuthorizationService
       }
       case 'manage_specification_needs_reference': {
         const specificationId = await this.lookup.resolveSpecificationId(action)
+        if (
+          action.operation === 'list' ||
+          action.operation === 'search' ||
+          action.operation === 'get'
+        ) {
+          return this.assertCanReadSpecification(context, specificationId)
+        }
         return this.assertSpecificationAuthor(context, specificationId)
       }
       case 'manage_specification_requirement_selection_answers': {

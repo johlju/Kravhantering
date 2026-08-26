@@ -28,6 +28,7 @@ import {
   type RequirementsErrorCode,
 } from '@/lib/requirements/errors'
 import { REQUIREMENT_SORT_FIELDS } from '@/lib/requirements/list-view'
+import { findSearchMatch } from '@/lib/requirements/search-match'
 import { createRequirementsRuntime } from '@/lib/requirements/server'
 import {
   buildRequirementViewUri,
@@ -35,9 +36,10 @@ import {
   type GraduateSpecificationLocalRequirementInput,
   type ListGraduationTargetAreasInput,
   type ManageImportInput,
-  type ManageNeedsReferenceInput,
   type ManageNormReferenceInput,
   type ManageRequirementInput,
+  type NeedsReferenceWorkflowInput,
+  type NeedsReferenceWorkflowOutput,
   type QueryCatalogInput,
   type RequirementsService,
   type TransitionRequirementInput,
@@ -348,6 +350,39 @@ const ManageNeedsReferenceOutputSchema = z
   .describe(
     'Specification needs-reference management result. Shape depends on operation: result or needsReference.',
   )
+
+type McpNeedsReferenceInput = Extract<
+  NeedsReferenceWorkflowInput,
+  { operation: 'create' | 'get' | 'list' | 'search' }
+>
+
+function toMcpNeedsReferencePayload(
+  input: McpNeedsReferenceInput,
+  output: NeedsReferenceWorkflowOutput,
+): Record<string, unknown> {
+  if ('needsReferences' in output) {
+    return {
+      result: output.needsReferences.map(needsReference => {
+        if (input.operation !== 'search') return needsReference
+        const match = findSearchMatch(
+          {
+            description: needsReference.description,
+            id: needsReference.id,
+            text: needsReference.text,
+          },
+          input.search,
+        )
+        return match ? { ...needsReference, match } : needsReference
+      }),
+    }
+  }
+
+  if ('needsReference' in output) {
+    return { needsReference: output.needsReference }
+  }
+
+  throw new Error('Unsupported needs-reference outcome for MCP')
+}
 
 const NormReferenceOutputSchema = z
   .object({
@@ -2010,9 +2045,14 @@ export function createKravhanteringMcpServer(
     },
     async input => {
       try {
-        const payload = await service.manageNeedsReference(
+        const needsReferenceInput = input as McpNeedsReferenceInput
+        const domainOutput = await service.manageNeedsReference(
           await getBaseContext(request, 'requirements_manage_needs_reference'),
-          input as ManageNeedsReferenceInput,
+          needsReferenceInput,
+        )
+        const payload = toMcpNeedsReferencePayload(
+          needsReferenceInput,
+          domainOutput,
         )
         return {
           content: [

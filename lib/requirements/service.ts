@@ -53,8 +53,8 @@ import type {
 import { recordSensitiveMutationSucceeded } from '@/lib/requirements/security-audit'
 import {
   createNeedsReferenceWorkflow,
-  type ManageNeedsReferenceInput,
-  type ManageNeedsReferenceOutput,
+  type NeedsReferenceWorkflowInput,
+  type NeedsReferenceWorkflowOutput,
 } from '@/lib/requirements/service-needs-references'
 import {
   createNormReferenceWorkflow,
@@ -86,8 +86,8 @@ export type {
   ManageImportOutput,
 } from '@/lib/requirements/import-service'
 export type {
-  ManageNeedsReferenceInput,
-  ManageNeedsReferenceOutput,
+  NeedsReferenceWorkflowInput,
+  NeedsReferenceWorkflowOutput,
 } from '@/lib/requirements/service-needs-references'
 export type {
   ManageNormReferenceInput,
@@ -512,8 +512,8 @@ export interface RequirementsService extends RfiQuestionQueryService {
   ): Promise<ManageImportOutput>
   manageNeedsReference(
     context: RequestContext,
-    input: ManageNeedsReferenceInput,
-  ): Promise<ManageNeedsReferenceOutput>
+    input: NeedsReferenceWorkflowInput,
+  ): Promise<NeedsReferenceWorkflowOutput>
   manageNormReference(
     context: RequestContext,
     input: ManageNormReferenceInput,
