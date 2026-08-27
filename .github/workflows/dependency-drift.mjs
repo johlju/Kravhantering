@@ -786,6 +786,10 @@ export async function detectLycheeDrift(
 const ISSUE_METADATA_PREFIX = '<!-- dependency-drift-metadata:v1:'
 const SNAPSHOT_METADATA_PREFIX = '<!-- dependency-drift-snapshot:v1:'
 const SUPERSESSION_METADATA_PREFIX = '<!-- dependency-drift-supersession:v1:'
+const SUPERSESSION_RELATIONSHIP = Object.freeze({
+  SUPERSEDED_BY: 'superseded-by',
+  SUPERSEDES: 'supersedes',
+})
 
 function dependencyState(state) {
   if (state.tool === 'lychee') {
@@ -811,6 +815,14 @@ function dependencyState(state) {
 
 function encodeMetadata(metadata) {
   return Buffer.from(JSON.stringify(metadata)).toString('base64url')
+}
+
+function lifecycleMetadata(detection) {
+  return {
+    current: dependencyState(detection.current),
+    target: dependencyState(detection.available),
+    unit: detection.unit,
+  }
 }
 
 function readEncodedMetadata(body, pattern) {
@@ -850,11 +862,9 @@ function readSnapshotMetadata(body) {
 }
 
 function issueMarker(detection) {
-  return `${ISSUE_METADATA_PREFIX}${encodeMetadata({
-    current: dependencyState(detection.current),
-    target: dependencyState(detection.available),
-    unit: detection.unit,
-  })} -->`
+  return `${ISSUE_METADATA_PREFIX}${encodeMetadata(
+    lifecycleMetadata(detection),
+  )} -->`
 }
 
 export function formatState(state) {
@@ -1000,13 +1010,10 @@ function latestCurrentState(issue, issueMetadata) {
 }
 
 function renderCurrentChangeComment(detection, previous, now) {
-  const metadata = {
-    current: dependencyState(detection.current),
-    target: dependencyState(detection.available),
-    unit: detection.unit,
-  }
   return [
-    `${SNAPSHOT_METADATA_PREFIX}${encodeMetadata(metadata)} -->`,
+    `${SNAPSHOT_METADATA_PREFIX}${encodeMetadata(
+      lifecycleMetadata(detection),
+    )} -->`,
     '',
     `Current-state change detected at \`${now.toISOString()}\`.`,
     '',
@@ -1046,21 +1053,39 @@ function renderReconciliationComment(kind, retainedIssue, now) {
   ].join('\n')
 }
 
+function issueReference(issue) {
+  const issueNumber = issue.issue ?? issue.number
+  if (!Number.isInteger(issueNumber)) {
+    throw new Error('Dependency Drift issue reference has no issue number.')
+  }
+  return { issue: issueNumber, url: issue.url }
+}
+
 function supersessionMarker(relationship, relatedIssue) {
+  const reference = issueReference(relatedIssue)
   return `${SUPERSESSION_METADATA_PREFIX}${encodeMetadata({
     relationship,
-    relatedIssue: relatedIssue.issue,
+    relatedIssue: reference.issue,
   })} -->`
 }
 
 function renderSupersessionComment(relationship, relatedIssue) {
-  const reference = relatedIssue.url ?? `#${relatedIssue.issue}`
+  const reference = issueReference(relatedIssue)
+  const relationshipText = {
+    [SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY]: `Superseded by ${
+      reference.url ?? `#${reference.issue}`
+    }.`,
+    [SUPERSESSION_RELATIONSHIP.SUPERSEDES]: `This issue supersedes ${
+      reference.url ?? `#${reference.issue}`
+    }.`,
+  }[relationship]
+  if (!relationshipText) {
+    throw new Error(`Unknown supersession relationship: ${relationship}`)
+  }
   return [
-    supersessionMarker(relationship, relatedIssue),
+    supersessionMarker(relationship, reference),
     '',
-    relationship === 'supersedes'
-      ? `This issue supersedes ${reference}.`
-      : `Superseded by ${reference}.`,
+    relationshipText,
     '',
   ].join('\n')
 }
@@ -1130,10 +1155,17 @@ export function planIssueActions(detections, issues, registry, now) {
       const sameTarget = statesMatch(duplicateMetadata?.target, target)
       if (
         !sameTarget &&
-        !hasSupersessionComment(primary, 'supersedes', duplicate)
+        !hasSupersessionComment(
+          primary,
+          SUPERSESSION_RELATIONSHIP.SUPERSEDES,
+          duplicate,
+        )
       ) {
         actions.push({
-          body: renderSupersessionComment('supersedes', duplicate),
+          body: renderSupersessionComment(
+            SUPERSESSION_RELATIONSHIP.SUPERSEDES,
+            duplicate,
+          ),
           issue: primary.number,
           type: 'comment',
           unit: detection.unit,
@@ -1142,12 +1174,19 @@ export function planIssueActions(detections, issues, registry, now) {
       actions.push({
         comment: sameTarget
           ? renderReconciliationComment('duplicate', primary, now)
-          : hasSupersessionComment(duplicate, 'superseded-by', primary)
+          : hasSupersessionComment(
+                duplicate,
+                SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY,
+                primary,
+              )
             ? undefined
-            : renderSupersessionComment('superseded-by', primary),
+            : renderSupersessionComment(
+                SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY,
+                primary,
+              ),
         issue: duplicate.number,
         reason: 'not planned',
-        type: 'close',
+        type: sameTarget ? 'close' : 'supersede',
         unit: detection.unit,
       })
     }
@@ -1219,7 +1258,7 @@ export function executeIssueActions(actions, runCommand = run) {
   for (const action of actions) {
     if (action.type === 'unchanged') {
       results.unchanged.push(action.unit)
-    } else if (action.type === 'close') {
+    } else if (action.type === 'close' || action.type === 'supersede') {
       if (action.comment) {
         addIssueComment(action.issue, action.comment, runCommand)
         results.commented.push(`${action.unit} (#${action.issue})`)
@@ -1230,6 +1269,9 @@ export function executeIssueActions(actions, runCommand = run) {
         { stdio: 'inherit' },
       )
       results.closed.push(`${action.unit} (#${action.issue})`)
+      if (action.type === 'supersede') {
+        results.superseded.push(`${action.unit} (#${action.issue})`)
+      }
     } else if (action.type === 'comment') {
       addIssueComment(action.issue, action.body, runCommand)
       results.commented.push(`${action.unit} (#${action.issue})`)
@@ -1260,13 +1302,19 @@ export function executeIssueActions(actions, runCommand = run) {
         }
         addIssueComment(
           createdUrl,
-          renderSupersessionComment('supersedes', previous),
+          renderSupersessionComment(
+            SUPERSESSION_RELATIONSHIP.SUPERSEDES,
+            previous,
+          ),
           runCommand,
         )
         results.commented.push(`${action.unit} (${createdUrl})`)
         addIssueComment(
           previous.issue,
-          renderSupersessionComment('superseded-by', replacement),
+          renderSupersessionComment(
+            SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY,
+            replacement,
+          ),
           runCommand,
         )
         results.commented.push(`${action.unit} (#${previous.issue})`)

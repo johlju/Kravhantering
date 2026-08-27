@@ -1032,7 +1032,7 @@ describe('issue contract', () => {
 
     expect(actions.map(action => [action.type, action.issue])).toEqual([
       ['comment', 8],
-      ['close', 4],
+      ['supersede', 4],
       ['close', 12],
     ])
     expect(actions[0].body).toContain(
@@ -1063,23 +1063,32 @@ describe('issue contract', () => {
       now,
     )
 
-    expect(
-      planIssueActions(
-        [current],
-        [
-          { ...previousIssue, comments: [{ body: firstPlan[1].comment }] },
-          { ...currentIssue, comments: [{ body: firstPlan[0].body }] },
-        ],
-        registry,
-        now,
-      ),
-    ).toEqual([
+    const resumedPlan = planIssueActions(
+      [current],
+      [
+        { ...previousIssue, comments: [{ body: firstPlan[1].comment }] },
+        { ...currentIssue, comments: [{ body: firstPlan[0].body }] },
+      ],
+      registry,
+      now,
+    )
+    expect(resumedPlan).toEqual([
       expect.objectContaining({
         comment: undefined,
         issue: 4,
-        type: 'close',
+        type: 'supersede',
       }),
     ])
+
+    const run = vi.fn(() => '')
+    const results = executeIssueActions(resumedPlan, run)
+    expect(run).toHaveBeenCalledWith(
+      'gh',
+      ['issue', 'close', '4', '--reason', 'not planned'],
+      { stdio: 'inherit' },
+    )
+    expect(results.commented).toEqual([])
+    expect(results.superseded).toEqual(['keycloak (#4)'])
   })
 
   it('lists labeled detector issues so the hidden marker remains authoritative', () => {
