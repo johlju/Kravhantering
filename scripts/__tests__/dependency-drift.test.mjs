@@ -121,6 +121,18 @@ function drift(unit = 'keycloak') {
   }
 }
 
+function detectorIssue(detection, number, state = 'OPEN', overrides = {}) {
+  return {
+    body: renderIssueBody(detection, new Date('2026-07-26T12:34:56.000Z')),
+    comments: [],
+    number,
+    state,
+    title: 'Original detector title',
+    url: `https://github.com/viscalyx/Kravhantering/issues/${number}`,
+    ...overrides,
+  }
+}
+
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
     fs.rmSync(directory, { recursive: true })
@@ -644,7 +656,9 @@ describe('issue contract', () => {
 
   it('renders outcome-focused detector fields', () => {
     const body = renderIssueBody(drift(), now)
-    expect(body).toContain('<!-- dependency-drift:keycloak -->')
+    expect(body).toMatch(
+      /^<!-- dependency-drift-metadata:v1:[A-Za-z0-9_-]+ -->/u,
+    )
     expect(body).toContain('Maintenance unit: `keycloak`')
     expect(body).toContain('Skill: `resolve-dependency-drift`')
     expect(body).toContain('Detected: `2026-07-27T12:34:56.000Z`')
@@ -699,76 +713,259 @@ describe('issue contract', () => {
   it('creates one issue when no marker exists', () => {
     expect(planIssueActions([drift()], [], registry, now)).toEqual([
       expect.objectContaining({
-        title: 'Dependency drift: keycloak',
+        title: 'Dependency drift: keycloak → 26.8.0 @ sha256:cccccccccccc',
         type: 'create',
         unit: 'keycloak',
       }),
     ])
   })
 
-  it('refreshes an open issue identified by its marker', () => {
-    const actions = planIssueActions(
-      [drift()],
-      [
-        {
-          body: '<!-- dependency-drift:keycloak -->',
-          number: 42,
-          state: 'OPEN',
-          title: 'renamed manually',
-        },
-      ],
-      registry,
-      now,
-    )
-    expect(actions).toEqual([
-      expect.objectContaining({ issue: 42, type: 'edit' }),
-    ])
-  })
-
-  it('reopens a manually closed issue while drift remains', () => {
-    const actions = planIssueActions(
-      [drift()],
-      [
-        {
-          body: '<!-- dependency-drift:keycloak -->',
-          number: 42,
-          state: 'CLOSED',
-        },
-      ],
-      registry,
-      now,
-    )
-    expect(actions.map(action => action.type)).toEqual(['reopen', 'edit'])
-  })
-
-  it('closes resolved drift and active reviewed deferrals', () => {
-    const issue = {
-      body: '<!-- dependency-drift:keycloak -->',
-      number: 42,
-      state: 'OPEN',
-    }
-    expect(
-      planIssueActions([{ ...drift(), drift: false }], [issue], registry, now),
-    ).toEqual([expect.objectContaining({ reason: 'completed', type: 'close' })])
+  it('performs no mutation for an identical later scan', () => {
+    const detection = drift()
     expect(
       planIssueActions(
-        [drift()],
-        [issue],
-        {
-          deferrals: [
-            {
-              available: '26.8.0',
-              expiresOn: '2026-07-28',
-              rationale: 'Reviewed compatibility hold.',
-              unit: 'keycloak',
-            },
-          ],
-        },
+        [detection],
+        [detectorIssue(detection, 42)],
+        registry,
+        now,
+      ),
+    ).toEqual([{ type: 'unchanged', unit: 'keycloak' }])
+  })
+
+  it('creates a fresh issue after unresolved drift is manually closed', () => {
+    const detection = drift()
+    expect(
+      planIssueActions(
+        [detection],
+        [detectorIssue(detection, 42, 'CLOSED')],
+        registry,
         now,
       ),
     ).toEqual([
-      expect.objectContaining({ reason: 'not planned', type: 'close' }),
+      expect.objectContaining({
+        title: 'Dependency drift: keycloak → 26.8.0 @ sha256:cccccccccccc',
+        type: 'create',
+      }),
     ])
+  })
+
+  it('does not mutate a closed issue when creating its replacement', () => {
+    const detection = drift()
+    const actions = planIssueActions(
+      [detection],
+      [detectorIssue(detection, 42, 'CLOSED')],
+      registry,
+      now,
+    )
+    expect(actions.some(action => action.issue === 42)).toBe(false)
+  })
+
+  it('comments once when current state changes for the same target', () => {
+    const initial = drift()
+    const changed = {
+      ...initial,
+      current: {
+        imageId: digest('f'),
+        manifestDigest: digest('a'),
+        tag: '26.7.1',
+      },
+    }
+    const issue = detectorIssue(initial, 42)
+    const actions = planIssueActions([changed], [issue], registry, now)
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        issue: 42,
+        type: 'comment',
+        unit: 'keycloak',
+      }),
+    ])
+    expect(actions[0].body).toContain('2026-07-27T12:34:56.000Z')
+    expect(actions[0].body).toContain(
+      `Previous snapshot: \`${formatState(initial.current)}\``,
+    )
+    expect(actions[0].body).toContain(
+      `New snapshot: \`${formatState(changed.current)}\``,
+    )
+
+    expect(
+      planIssueActions(
+        [changed],
+        [{ ...issue, comments: [{ body: actions[0].body }] }],
+        registry,
+        now,
+      ),
+    ).toEqual([{ type: 'unchanged', unit: 'keycloak' }])
+  })
+
+  it('creates a new target issue before superseding the active issue', () => {
+    const initial = drift()
+    const nextTarget = {
+      ...initial,
+      available: {
+        imageId: digest('1'),
+        manifestDigest: digest('2'),
+        tag: '26.9.0',
+      },
+    }
+
+    expect(
+      planIssueActions(
+        [nextTarget],
+        [detectorIssue(initial, 42)],
+        registry,
+        now,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        supersedes: [
+          {
+            issue: 42,
+            url: 'https://github.com/viscalyx/Kravhantering/issues/42',
+          },
+        ],
+        title: 'Dependency drift: keycloak → 26.9.0 @ sha256:222222222222',
+        type: 'create',
+      }),
+    ])
+  })
+
+  it('uses immutable digest data to distinguish a republished image target', () => {
+    const initial = drift()
+    const republished = {
+      ...initial,
+      available: {
+        ...initial.available,
+        imageId: digest('1'),
+        manifestDigest: digest('2'),
+      },
+    }
+
+    const [action] = planIssueActions(
+      [republished],
+      [detectorIssue(initial, 42)],
+      registry,
+      now,
+    )
+    expect(action).toEqual(
+      expect.objectContaining({
+        supersedes: [expect.objectContaining({ issue: 42 })],
+        title: 'Dependency drift: keycloak → 26.8.0 @ sha256:222222222222',
+        type: 'create',
+      }),
+    )
+  })
+
+  it('distinguishes Lychee checksum-only targets in metadata and title', () => {
+    const initial = {
+      available: {
+        checksums: { amd64: 'a'.repeat(64), arm64: 'b'.repeat(64) },
+        tool: 'lychee',
+        version: 'v1.2.4',
+      },
+      current: {
+        checksums: { amd64: 'c'.repeat(64), arm64: 'd'.repeat(64) },
+        tool: 'lychee',
+        version: 'v1.2.3',
+      },
+      drift: true,
+      skill: 'resolve-dependency-drift',
+      unit: 'lychee-toolchain',
+    }
+    const republished = {
+      ...initial,
+      available: {
+        ...initial.available,
+        checksums: { ...initial.available.checksums, arm64: 'e'.repeat(64) },
+      },
+    }
+    const initialAction = planIssueActions([initial], [], registry, now)[0]
+    const replacementAction = planIssueActions(
+      [republished],
+      [detectorIssue(initial, 42)],
+      registry,
+      now,
+    )[0]
+
+    expect(initialAction.title).toMatch(
+      /^Dependency drift: lychee-toolchain → v1\.2\.4 @ sha256:[a-f0-9]{12}$/u,
+    )
+    expect(replacementAction).toEqual(
+      expect.objectContaining({
+        supersedes: [expect.objectContaining({ issue: 42 })],
+        type: 'create',
+      }),
+    )
+    expect(replacementAction.title).not.toBe(initialAction.title)
+  })
+
+  it('uses the npm version as the complete target identity in the title', () => {
+    const npmDrift = {
+      available: { version: '12.0.3' },
+      current: { version: '12.0.2' },
+      drift: true,
+      skill: 'resolve-dependency-drift',
+      unit: 'npm-toolchain',
+    }
+    expect(planIssueActions([npmDrift], [], registry, now)[0].title).toBe(
+      'Dependency drift: npm-toolchain → 12.0.3',
+    )
+  })
+
+  it('comments with the resolution before closing as completed', () => {
+    const initial = drift()
+    const resolved = {
+      ...initial,
+      current: initial.available,
+      drift: false,
+    }
+    const [action] = planIssueActions(
+      [resolved],
+      [detectorIssue(initial, 42)],
+      registry,
+      now,
+    )
+
+    expect(action).toEqual(
+      expect.objectContaining({
+        issue: 42,
+        reason: 'completed',
+        type: 'close',
+      }),
+    )
+    expect(action.comment).toContain('Dependency drift resolved')
+    expect(action.comment).toContain('2026-07-27T12:34:56.000Z')
+    expect(action.comment).toContain(formatState(resolved.current))
+  })
+
+  it('comments with reviewed deferral details before closing as not planned', () => {
+    const detection = drift()
+    const [action] = planIssueActions(
+      [detection],
+      [detectorIssue(detection, 42)],
+      {
+        deferrals: [
+          {
+            available: '26.8.0',
+            expiresOn: '2026-07-28',
+            rationale: 'Reviewed compatibility hold.',
+            unit: 'keycloak',
+          },
+        ],
+      },
+      now,
+    )
+
+    expect(action).toEqual(
+      expect.objectContaining({
+        issue: 42,
+        reason: 'not planned',
+        type: 'close',
+      }),
+    )
+    expect(action.comment).toContain('Reviewed compatibility hold.')
+    expect(action.comment).toContain('2026-07-28')
+    expect(action.comment).toContain(formatState(detection.available))
   })
 
   it('does not let a major deferral suppress same-lane drift', () => {
@@ -792,10 +989,11 @@ describe('issue contract', () => {
   })
 
   it('resumes issue creation after a deferral expires', () => {
+    const detection = drift()
     expect(
       planIssueActions(
-        [drift()],
-        [],
+        [detection],
+        [detectorIssue(detection, 42, 'CLOSED')],
         {
           deferrals: [
             {
@@ -811,34 +1009,101 @@ describe('issue contract', () => {
     ).toEqual([expect.objectContaining({ type: 'create', unit: 'keycloak' })])
   })
 
-  it('closes duplicate open markers and keeps one authoritative issue', () => {
+  it('retains the oldest current-target issue and closes other active issues', () => {
+    const current = drift()
+    const previousTarget = {
+      ...current,
+      available: {
+        imageId: digest('8'),
+        manifestDigest: digest('9'),
+        tag: '26.7.5',
+      },
+    }
     const actions = planIssueActions(
-      [drift()],
+      [current],
       [
-        {
-          body: '<!-- dependency-drift:keycloak -->',
-          number: 4,
-          state: 'OPEN',
-        },
-        {
-          body: '<!-- dependency-drift:keycloak -->',
-          number: 8,
-          state: 'OPEN',
-        },
+        detectorIssue(previousTarget, 4),
+        detectorIssue(current, 8),
+        detectorIssue(current, 12),
       ],
       registry,
       now,
     )
-    expect(actions).toEqual([
-      expect.objectContaining({ issue: 8, type: 'close' }),
-      expect.objectContaining({ issue: 4, type: 'edit' }),
+
+    expect(actions.map(action => [action.type, action.issue])).toEqual([
+      ['comment', 8],
+      ['supersede', 4],
+      ['close', 12],
     ])
+    expect(actions[0].body).toContain(
+      'https://github.com/viscalyx/Kravhantering/issues/4',
+    )
+    expect(actions[1].comment).toContain(
+      'https://github.com/viscalyx/Kravhantering/issues/8',
+    )
+    expect(actions[2].comment).toContain('duplicate of #8')
+  })
+
+  it('resumes supersession without repeating completed cross-links', () => {
+    const current = drift()
+    const previousTarget = {
+      ...current,
+      available: {
+        imageId: digest('8'),
+        manifestDigest: digest('9'),
+        tag: '26.7.5',
+      },
+    }
+    const currentIssue = detectorIssue(current, 8)
+    const previousIssue = detectorIssue(previousTarget, 4)
+    const firstPlan = planIssueActions(
+      [current],
+      [previousIssue, currentIssue],
+      registry,
+      now,
+    )
+
+    const resumedPlan = planIssueActions(
+      [current],
+      [
+        { ...previousIssue, comments: [{ body: firstPlan[1].comment }] },
+        { ...currentIssue, comments: [{ body: firstPlan[0].body }] },
+      ],
+      registry,
+      now,
+    )
+    expect(resumedPlan).toEqual([
+      expect.objectContaining({
+        comment: undefined,
+        issue: 4,
+        type: 'supersede',
+      }),
+    ])
+
+    const run = vi.fn(() => '')
+    const results = executeIssueActions(resumedPlan, run)
+    expect(run).toHaveBeenCalledWith(
+      'gh',
+      ['issue', 'close', '4', '--reason', 'not planned'],
+      { stdio: 'inherit' },
+    )
+    expect(results.commented).toEqual([])
+    expect(results.superseded).toEqual(['keycloak (#4)'])
   })
 
   it('lists labeled detector issues so the hidden marker remains authoritative', () => {
-    const run = vi.fn(() => '[{"number":1}]')
-    expect(listDetectorIssues(run)).toEqual([{ number: 1 }])
-    expect(run).toHaveBeenCalledWith('gh', [
+    const run = vi
+      .fn()
+      .mockReturnValueOnce('[{"number":1,"state":"OPEN"}]')
+      .mockReturnValueOnce('[[{"body":"first page"}],[{"body":"second page"}]]')
+    expect(listDetectorIssues(run)).toEqual([
+      {
+        comments: [{ body: 'first page' }, { body: 'second page' }],
+        number: 1,
+        state: 'OPEN',
+      },
+    ])
+    expect(run).toHaveBeenNthCalledWith(1, 'gh', [
       'issue',
       'list',
       '--state',
@@ -848,11 +1113,17 @@ describe('issue contract', () => {
       '--limit',
       '1000',
       '--json',
-      'number,state,title,body',
+      'number,state,title,body,url',
+    ])
+    expect(run).toHaveBeenNthCalledWith(2, 'gh', [
+      'api',
+      '--paginate',
+      '--slurp',
+      'repos/{owner}/{repo}/issues/1/comments?per_page=100',
     ])
   })
 
-  it('executes issue edits with all required labels', () => {
+  it('creates issues with all required labels', () => {
     const calls = []
     const run = vi.fn((_command, args) => {
       calls.push(args)
@@ -880,6 +1151,85 @@ describe('issue contract', () => {
         'automation:dependency-drift,dependencies,ready-for-agent',
       ]),
     )
+  })
+
+  it('comments before closing an issue', () => {
+    const calls = []
+    const commentBodies = []
+    const run = vi.fn((_command, args) => {
+      calls.push(args)
+      const bodyFileIndex = args.indexOf('--body-file')
+      if (bodyFileIndex !== -1) {
+        commentBodies.push(fs.readFileSync(args[bodyFileIndex + 1], 'utf8'))
+      }
+      return ''
+    })
+
+    const results = executeIssueActions(
+      [
+        {
+          comment: 'Resolution details',
+          issue: 42,
+          reason: 'completed',
+          type: 'close',
+          unit: 'keycloak',
+        },
+      ],
+      run,
+    )
+
+    expect(calls.map(args => args.slice(0, 2))).toEqual([
+      ['issue', 'comment'],
+      ['issue', 'close'],
+    ])
+    expect(commentBodies).toEqual(['Resolution details'])
+    expect(results.commented).toEqual(['keycloak (#42)'])
+    expect(results.closed).toEqual(['keycloak (#42)'])
+  })
+
+  it('creates and cross-links a replacement before superseding', () => {
+    const calls = []
+    const commentBodies = []
+    const replacementUrl =
+      'https://github.com/viscalyx/Kravhantering/issues/1206'
+    const run = vi.fn((_command, args) => {
+      calls.push(args)
+      const bodyFileIndex = args.indexOf('--body-file')
+      if (bodyFileIndex !== -1 && args[1] === 'comment') {
+        commentBodies.push(fs.readFileSync(args[bodyFileIndex + 1], 'utf8'))
+      }
+      return args[1] === 'create' ? `${replacementUrl}\n` : ''
+    })
+
+    const results = executeIssueActions(
+      [
+        {
+          body: 'New immutable issue body',
+          supersedes: [
+            {
+              issue: 42,
+              url: 'https://github.com/viscalyx/Kravhantering/issues/42',
+            },
+          ],
+          title: 'Dependency drift: keycloak → 26.9.0',
+          type: 'create',
+          unit: 'keycloak',
+        },
+      ],
+      run,
+    )
+
+    expect(calls.map(args => args.slice(0, 3))).toEqual([
+      ['issue', 'create', '--title'],
+      ['issue', 'comment', replacementUrl],
+      ['issue', 'comment', '42'],
+      ['issue', 'close', '42'],
+    ])
+    expect(commentBodies[0]).toContain(
+      'https://github.com/viscalyx/Kravhantering/issues/42',
+    )
+    expect(commentBodies[1]).toContain(replacementUrl)
+    expect(results.superseded).toEqual(['keycloak (#42)'])
   })
 
   it('preserves callback failures when the body directory is already absent', () => {
@@ -912,10 +1262,10 @@ describe('issue contract', () => {
     const summaryPath = path.join(root, 'summary.md')
     const results = {
       closed: [],
+      commented: [],
       created: ['npm-toolchain'],
-      reopened: [],
+      superseded: [],
       unchanged: [],
-      updated: [],
     }
 
     await expect(
@@ -932,7 +1282,45 @@ describe('issue contract', () => {
         },
       ),
     ).resolves.toBe(0)
-    expect(fs.readFileSync(summaryPath, 'utf8')).toContain('- npm-toolchain')
+    const summary = fs.readFileSync(summaryPath, 'utf8')
+    expect(summary).toContain('## Created issues')
+    expect(summary).toContain('## Comments added')
+    expect(summary).toContain('## Superseded issues')
+    expect(summary).toContain('## Closed issues')
+    expect(summary).toContain('## No action')
+    expect(summary).toContain('- npm-toolchain')
+  })
+
+  it('does not perform a GitHub mutation for an identical scan', async () => {
+    const detection = drift('npm-toolchain')
+    const run = vi.fn()
+    const execute = vi.fn(() => ({
+      closed: [],
+      commented: [],
+      created: [],
+      superseded: [],
+      unchanged: ['npm-toolchain'],
+    }))
+
+    await expect(
+      main(
+        ['--unit', 'npm'],
+        {},
+        {
+          detectNpmDrift: async () => detection,
+          executeIssueActions: execute,
+          listDetectorIssues: () => [detectorIssue(detection, 42)],
+          root: process.cwd(),
+          run,
+          validateDependencyMaintenance: () => [],
+        },
+      ),
+    ).resolves.toBe(0)
+    expect(run).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledWith(
+      [{ type: 'unchanged', unit: 'npm-toolchain' }],
+      run,
+    )
   })
 
   it('does not mutate GitHub when remote detection fails', async () => {

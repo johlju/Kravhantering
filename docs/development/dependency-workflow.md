@@ -93,6 +93,47 @@ npm toolchain, Lychee toolchain, devcontainer base image, and production image
 drift creates issues labeled `automation:dependency-drift`, `dependencies`,
 and `ready-for-agent`.
 
+### Dependency Drift Issue Lifecycle
+
+Each actionable available target has its own Dependency Drift issue. Hidden,
+versioned metadata in the original issue body records the maintenance unit, the
+available target, and the initial current-state snapshot. Target identity uses:
+
+- the exact npm version for the npm toolchain
+- the tag, manifest digest, and image ID for container images
+- the Lychee version and both architecture checksums for Lychee
+
+Titles include the maintenance unit and available version or tag. Image and
+Lychee titles also include a compact digest so same-version republishing remains
+visible. The workflow does not edit an issue title or body after creation and
+never reopens a closed issue.
+
+An identical scan performs no issue mutation. If the current state changes while
+the available target remains the same, the workflow adds one timestamped comment
+with the previous and new snapshots. Metadata in that comment makes the next
+identical scan a no-op.
+
+When a different target becomes available, the workflow creates its issue first,
+adds cross-links between the replacement and the previous active issue, and then
+closes the previous issue as not planned. Resolution adds an explanatory comment
+before closing the active issue as completed. Manually closing unresolved drift
+does not suppress detection; the next scan creates a fresh issue.
+
+The dependency-maintenance deferral registry is the only supported suppression
+mechanism. An active reviewed deferral that matches the available version or tag
+adds the rationale, expiry, and target to a comment before closing the active
+issue as not planned. If drift remains after the deferral expires, the workflow
+creates a fresh issue instead of reopening the deferred issue.
+
+At most one automated issue remains active per maintenance unit. If duplicate
+active issues exist, an issue for the current target is retained. When several
+issues match that target, the oldest matching issue is retained. The workflow
+comments on and closes all other active issues without rewriting their history.
+
+The workflow summary reports created issues, comments, superseded issues, closed
+issues, and units requiring no action. Updated and reopened issues are not normal
+lifecycle categories.
+
 The scheduled Lychee detector reads the aligned version and AMD64 and ARM64
 asset checksums from the devcontainer, Azure bootstrap, and quality workflow.
 It compares that state with the latest supported stable GitHub release and its
