@@ -1092,9 +1092,18 @@ describe('issue contract', () => {
   })
 
   it('lists labeled detector issues so the hidden marker remains authoritative', () => {
-    const run = vi.fn(() => '[{"number":1}]')
-    expect(listDetectorIssues(run)).toEqual([{ number: 1 }])
-    expect(run).toHaveBeenCalledWith('gh', [
+    const run = vi
+      .fn()
+      .mockReturnValueOnce('[{"number":1,"state":"OPEN"}]')
+      .mockReturnValueOnce('[[{"body":"first page"}],[{"body":"second page"}]]')
+    expect(listDetectorIssues(run)).toEqual([
+      {
+        comments: [{ body: 'first page' }, { body: 'second page' }],
+        number: 1,
+        state: 'OPEN',
+      },
+    ])
+    expect(run).toHaveBeenNthCalledWith(1, 'gh', [
       'issue',
       'list',
       '--state',
@@ -1104,7 +1113,13 @@ describe('issue contract', () => {
       '--limit',
       '1000',
       '--json',
-      'number,state,title,body,comments,url',
+      'number,state,title,body,url',
+    ])
+    expect(run).toHaveBeenNthCalledWith(2, 'gh', [
+      'api',
+      '--paginate',
+      '--slurp',
+      'repos/{owner}/{repo}/issues/1/comments?per_page=100',
     ])
   })
 

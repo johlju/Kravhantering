@@ -786,6 +786,14 @@ export async function detectLycheeDrift(
 const ISSUE_METADATA_PREFIX = '<!-- dependency-drift-metadata:v1:'
 const SNAPSHOT_METADATA_PREFIX = '<!-- dependency-drift-snapshot:v1:'
 const SUPERSESSION_METADATA_PREFIX = '<!-- dependency-drift-supersession:v1:'
+const ISSUE_METADATA_PATTERN = new RegExp(
+  `${ISSUE_METADATA_PREFIX}(?<encoded>[A-Za-z0-9_-]+) -->`,
+  'u',
+)
+const SNAPSHOT_METADATA_PATTERN = new RegExp(
+  `${SNAPSHOT_METADATA_PREFIX}(?<encoded>[A-Za-z0-9_-]+) -->`,
+  'u',
+)
 const SUPERSESSION_RELATIONSHIP = Object.freeze({
   SUPERSEDED_BY: 'superseded-by',
   SUPERSEDES: 'supersedes',
@@ -846,18 +854,12 @@ function isLifecycleMetadata(metadata) {
 }
 
 function readIssueMetadata(body) {
-  const metadata = readEncodedMetadata(
-    body,
-    /<!-- dependency-drift-metadata:v1:(?<encoded>[A-Za-z0-9_-]+) -->/u,
-  )
+  const metadata = readEncodedMetadata(body, ISSUE_METADATA_PATTERN)
   return isLifecycleMetadata(metadata) ? metadata : null
 }
 
 function readSnapshotMetadata(body) {
-  const metadata = readEncodedMetadata(
-    body,
-    /<!-- dependency-drift-snapshot:v1:(?<encoded>[A-Za-z0-9_-]+) -->/u,
-  )
+  const metadata = readEncodedMetadata(body, SNAPSHOT_METADATA_PATTERN)
   return isLifecycleMetadata(metadata) ? metadata : null
 }
 
@@ -950,7 +952,7 @@ function run(command, args, options = {}) {
 }
 
 export function listDetectorIssues(runCommand = run) {
-  return JSON.parse(
+  const issues = JSON.parse(
     runCommand('gh', [
       'issue',
       'list',
@@ -961,9 +963,20 @@ export function listDetectorIssues(runCommand = run) {
       '--limit',
       ISSUE_LIST_LIMIT,
       '--json',
-      'number,state,title,body,comments,url',
+      'number,state,title,body,url',
     ]),
   )
+  return issues.map(issue => {
+    const commentPages = JSON.parse(
+      runCommand('gh', [
+        'api',
+        '--paginate',
+        '--slurp',
+        `repos/{owner}/{repo}/issues/${issue.number}/comments?per_page=100`,
+      ]),
+    )
+    return { ...issue, comments: commentPages.flat() }
+  })
 }
 
 function detectionTarget(detection) {
