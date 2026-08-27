@@ -1405,6 +1405,50 @@ _Avoid_: Huvudterm i UI eller dokumentation.
 
 ### Drift och leverans
 
+**Verifiering av driftsättning enligt guide**:
+En manuellt initierad och avgränsad kontroll där en publicerad release
+driftsätts enligt en dokumenterad guide och uttryckligen angivna värd- och
+guidekontrakt verifieras. Resultatet gäller endast den provade releasen,
+topologin och miljön och utgör inte RHEL-certifiering, RHEL-kvalificering eller
+någon utfästelse om support från Red Hat.
+
+- `en`: Guide-based deployment verification
+
+_Avoid_: Röktest av driftsättningsguide, guideverifiering, RHEL-certifiering,
+RHEL-kvalificering.
+
+**Driftsättningsverifiering**:
+Accepterad kortform för verifiering av driftsättning enligt guide när
+sammanhanget tydligt visar att en dokumenterad guide följs.
+
+- `en`: Deployment verification
+
+_Avoid_: Driftsättningsverifiering när sammanhanget inte visar att en
+dokumenterad guide följs.
+
+**Topologispecifik verifieringsmiljö**:
+En avgränsad miljö för verifiering av driftsättning enligt guide som
+representerar exakt en vald driftsättningstopologi från en ren
+förstagångsinstallation. Den har egen topologilokal identitet, konfiguration,
+tillstånd och evidens även när externa tjänsteplattformar delas med andra
+verifieringsmiljöer.
+
+- `en`: Topology-specific verification environment
+
+_Avoid_: Topologikörning när miljön avses, topologi när den avgränsade miljön
+avses.
+
+**Delat beroendeplan för driftsättningsverifiering**:
+En gemensam plattform av externa stödtjänster som betjänar flera
+topologispecifika verifieringsmiljöer i samma driftsättningsverifiering.
+Tjänsteplattformen kan delas, men varje verifieringsmiljö behåller egna
+logiska data, identiteter och hemligheter.
+
+- `en`: Shared deployment-verification dependency plane
+
+_Avoid_: Delad verifieringsmiljö när beroendeplanet avses, gemensam databas,
+gemensam identitet.
+
 **Frånkopplad produktionsmiljö**:
 En produktionsmiljö som har intern nätverksanslutning men saknar internetåtkomst
 till releasekällor, containerregister eller andra externa artefaktkällor.
