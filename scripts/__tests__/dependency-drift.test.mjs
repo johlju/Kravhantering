@@ -1031,13 +1031,55 @@ describe('issue contract', () => {
     )
 
     expect(actions.map(action => [action.type, action.issue])).toEqual([
+      ['comment', 8],
       ['close', 4],
       ['close', 12],
-      ['unchanged', undefined],
     ])
-    expect(actions[0].comment).toContain('superseded by #8')
-    expect(actions[1].comment).toContain('duplicate of #8')
-    expect(actions.every(action => action.issue !== 8)).toBe(true)
+    expect(actions[0].body).toContain(
+      'https://github.com/viscalyx/Kravhantering/issues/4',
+    )
+    expect(actions[1].comment).toContain(
+      'https://github.com/viscalyx/Kravhantering/issues/8',
+    )
+    expect(actions[2].comment).toContain('duplicate of #8')
+  })
+
+  it('resumes supersession without repeating completed cross-links', () => {
+    const current = drift()
+    const previousTarget = {
+      ...current,
+      available: {
+        imageId: digest('8'),
+        manifestDigest: digest('9'),
+        tag: '26.7.5',
+      },
+    }
+    const currentIssue = detectorIssue(current, 8)
+    const previousIssue = detectorIssue(previousTarget, 4)
+    const firstPlan = planIssueActions(
+      [current],
+      [previousIssue, currentIssue],
+      registry,
+      now,
+    )
+
+    expect(
+      planIssueActions(
+        [current],
+        [
+          { ...previousIssue, comments: [{ body: firstPlan[1].comment }] },
+          { ...currentIssue, comments: [{ body: firstPlan[0].body }] },
+        ],
+        registry,
+        now,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        comment: undefined,
+        issue: 4,
+        type: 'close',
+      }),
+    ])
   })
 
   it('lists labeled detector issues so the hidden marker remains authoritative', () => {
@@ -1053,7 +1095,7 @@ describe('issue contract', () => {
       '--limit',
       '1000',
       '--json',
-      'number,state,title,body,comments,createdAt,url',
+      'number,state,title,body,comments,url',
     ])
   })
 
