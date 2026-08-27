@@ -19,6 +19,7 @@
   "scripts": {
     "predev": "npm run dev:prepare",
     "dev": "next dev",
+    "prototype:container-vulnerability-issue": "python3 -m http.server 3031 --bind 127.0.0.1 --directory prototypes/container-vulnerability-issue",
     "dev:fresh": "npm run kill:port && npm run clean && npm run dev",
     "dev:prepare": "node ./scripts/prebuild.js --metadata-only && npm run openapi:hsa-person-lookup:generate:public",
     "idp:up": "docker compose -f docker-compose.idp.yml up --wait --wait-timeout 180 idp",
