@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import childProcess from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -79,7 +80,7 @@ export const IMAGE_CONFIGS = {
   },
   nginx: {
     image: 'docker.io/library/nginx',
-    listTags: () => fetchDockerHubTags('library', 'nginx'),
+    listTags: () => fetchRegistryTags('registry-1.docker.io', 'library/nginx'),
     lockPath: 'containers/nginx/image.lock.json',
     name: 'nginx',
     parseTag: parseNginxTag,
@@ -114,7 +115,8 @@ export const IMAGE_CONFIGS = {
   },
   kong: {
     image: 'docker.io/kong/kong-gateway',
-    listTags: () => fetchDockerHubTags('kong', 'kong-gateway'),
+    listTags: () =>
+      fetchRegistryTags('registry-1.docker.io', 'kong/kong-gateway'),
     lockPath: 'containers/kong/image.lock.json',
     name: 'kong',
     parseTag: parseKongTag,
@@ -330,30 +332,6 @@ async function fetchLatestLycheeRelease(repository) {
     `https://api.github.com/repos/${repository}/releases/latest`,
     { headers },
   )
-}
-
-function dockerHubHeaders() {
-  const token =
-    readNonEmpty(process.env.DOCKERHUB_TOKEN) ??
-    readNonEmpty(process.env.DOCKER_HUB_TOKEN)
-  return token
-    ? { Accept: 'application/json', Authorization: `Bearer ${token}` }
-    : { Accept: 'application/json' }
-}
-
-async function fetchDockerHubTags(namespace, repository) {
-  const tags = []
-  let url =
-    `https://hub.docker.com/v2/repositories/${namespace}/${repository}` +
-    '/tags?page_size=100'
-  while (url) {
-    const payload = await fetchJson(url, { headers: dockerHubHeaders() })
-    for (const item of payload.results ?? []) {
-      if (typeof item.name === 'string') tags.push(item.name)
-    }
-    url = readNonEmpty(payload.next)
-  }
-  return tags
 }
 
 function nextLink(header, host) {
@@ -805,12 +783,94 @@ export async function detectLycheeDrift(
   }
 }
 
-function issueMarker(unit) {
-  return `<!-- dependency-drift:${unit} -->`
+const ISSUE_METADATA_PREFIX = '<!-- dependency-drift-metadata:v1:'
+const SNAPSHOT_METADATA_PREFIX = '<!-- dependency-drift-snapshot:v1:'
+const SUPERSESSION_METADATA_PREFIX = '<!-- dependency-drift-supersession:v1:'
+const ISSUE_METADATA_PATTERN = new RegExp(
+  `${ISSUE_METADATA_PREFIX}(?<encoded>[A-Za-z0-9_-]+) -->`,
+  'u',
+)
+const SNAPSHOT_METADATA_PATTERN = new RegExp(
+  `${SNAPSHOT_METADATA_PREFIX}(?<encoded>[A-Za-z0-9_-]+) -->`,
+  'u',
+)
+const SUPERSESSION_RELATIONSHIP = Object.freeze({
+  SUPERSEDED_BY: 'superseded-by',
+  SUPERSEDES: 'supersedes',
+})
+
+function dependencyState(state) {
+  if (state.tool === 'lychee') {
+    return {
+      checksums: Object.fromEntries(
+        LYCHEE_ARCHITECTURES.map(({ architecture }) => [
+          architecture,
+          state.checksums[architecture],
+        ]),
+      ),
+      kind: 'lychee',
+      version: state.version,
+    }
+  }
+  if (state.version) return { kind: 'npm', version: state.version }
+  return {
+    imageId: state.imageId ?? null,
+    kind: 'image',
+    manifestDigest: state.manifestDigest,
+    tag: state.tag,
+  }
+}
+
+function encodeMetadata(metadata) {
+  return Buffer.from(JSON.stringify(metadata)).toString('base64url')
+}
+
+function lifecycleMetadata(detection) {
+  return {
+    current: dependencyState(detection.current),
+    target: dependencyState(detection.available),
+    unit: detection.unit,
+  }
+}
+
+function readEncodedMetadata(body, pattern) {
+  const marker = readNonEmpty(body)?.match(pattern)
+  if (!marker?.groups?.encoded) return null
+  try {
+    return JSON.parse(
+      Buffer.from(marker.groups.encoded, 'base64url').toString('utf8'),
+    )
+  } catch {
+    return null
+  }
+}
+
+function isLifecycleMetadata(metadata) {
+  return (
+    typeof metadata?.unit === 'string' &&
+    typeof metadata?.target?.kind === 'string' &&
+    typeof metadata?.current?.kind === 'string'
+  )
+}
+
+function readIssueMetadata(body) {
+  const metadata = readEncodedMetadata(body, ISSUE_METADATA_PATTERN)
+  return isLifecycleMetadata(metadata) ? metadata : null
+}
+
+function readSnapshotMetadata(body) {
+  const metadata = readEncodedMetadata(body, SNAPSHOT_METADATA_PATTERN)
+  return isLifecycleMetadata(metadata) ? metadata : null
+}
+
+function issueMarker(detection) {
+  return `${ISSUE_METADATA_PREFIX}${encodeMetadata(
+    lifecycleMetadata(detection),
+  )} -->`
 }
 
 export function formatState(state) {
-  if (state.tool === 'lychee') {
+  if (state.tool === 'lychee' || state.kind === 'lychee') {
     return [
       `Lychee ${state.version}`,
       ...LYCHEE_ARCHITECTURES.map(
@@ -827,7 +887,7 @@ export function formatState(state) {
 
 export function renderIssueBody(detection, detectedAt) {
   const lines = [
-    issueMarker(detection.unit),
+    issueMarker(detection),
     '',
     `- Maintenance unit: \`${detection.unit}\``,
     `- Current state: \`${formatState(detection.current)}\``,
@@ -861,8 +921,27 @@ export function renderIssueBody(detection, detectedAt) {
   return lines.join('\n')
 }
 
-function issueTitle(unit) {
-  return `Dependency drift: ${unit}`
+function compactTargetDigest(target) {
+  if (target.kind === 'image') {
+    return target.manifestDigest.slice(0, 'sha256:'.length + 12)
+  }
+  if (target.kind === 'lychee') {
+    return `sha256:${crypto
+      .createHash('sha256')
+      .update(JSON.stringify(target))
+      .digest('hex')
+      .slice(0, 12)}`
+  }
+  return null
+}
+
+function issueTitle(detection) {
+  const target = dependencyState(detection.available)
+  const version = target.version ?? target.tag
+  const compactDigest = compactTargetDigest(target)
+  return `Dependency drift: ${detection.unit} → ${version}${
+    compactDigest ? ` @ ${compactDigest}` : ''
+  }`
 }
 
 function run(command, args, options = {}) {
@@ -873,7 +952,7 @@ function run(command, args, options = {}) {
 }
 
 export function listDetectorIssues(runCommand = run) {
-  return JSON.parse(
+  const issues = JSON.parse(
     runCommand('gh', [
       'issue',
       'list',
@@ -884,9 +963,20 @@ export function listDetectorIssues(runCommand = run) {
       '--limit',
       ISSUE_LIST_LIMIT,
       '--json',
-      'number,state,title,body',
+      'number,state,title,body,url',
     ]),
   )
+  return issues.map(issue => {
+    const commentPages = JSON.parse(
+      runCommand('gh', [
+        'api',
+        '--paginate',
+        '--slurp',
+        `repos/{owner}/{repo}/issues/${issue.number}/comments?per_page=100`,
+      ]),
+    )
+    return { ...issue, comments: commentPages.flat() }
+  })
 }
 
 function detectionTarget(detection) {
@@ -904,38 +994,154 @@ function activeDeferral(registry, detection, now) {
 }
 
 function issuesForUnit(issues, unit) {
-  const marker = issueMarker(unit)
+  const legacyMarker = `<!-- dependency-drift:${unit} -->`
   return issues
-    .filter(issue => issue.body?.includes(marker))
+    .filter(
+      issue =>
+        readIssueMetadata(issue.body)?.unit === unit ||
+        issue.body?.includes(legacyMarker),
+    )
     .sort((left, right) => left.number - right.number)
+}
+
+function statesMatch(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function latestCurrentState(issue, issueMetadata) {
+  const comments = Array.isArray(issue.comments) ? issue.comments : []
+  for (const comment of comments.toReversed()) {
+    const snapshot = readSnapshotMetadata(comment.body)
+    if (
+      snapshot?.unit === issueMetadata.unit &&
+      statesMatch(snapshot.target, issueMetadata.target)
+    ) {
+      return snapshot.current
+    }
+  }
+  return issueMetadata.current
+}
+
+function renderCurrentChangeComment(detection, previous, now) {
+  return [
+    `${SNAPSHOT_METADATA_PREFIX}${encodeMetadata(
+      lifecycleMetadata(detection),
+    )} -->`,
+    '',
+    `Current-state change detected at \`${now.toISOString()}\`.`,
+    '',
+    `- Previous snapshot: \`${formatState(previous)}\``,
+    `- New snapshot: \`${formatState(detection.current)}\``,
+    '',
+  ].join('\n')
+}
+
+function renderResolutionComment(detection, now) {
+  return [
+    `Dependency drift resolved at \`${now.toISOString()}\`.`,
+    '',
+    `- Resolved snapshot: \`${formatState(detection.current)}\``,
+    '',
+  ].join('\n')
+}
+
+function renderDeferralComment(detection, deferral, now) {
+  return [
+    `A reviewed dependency-maintenance deferral applies as of \`${now.toISOString()}\`.`,
+    '',
+    `- Available target: \`${formatState(detection.available)}\``,
+    `- Expires on: \`${deferral.expiresOn}\``,
+    `- Rationale: ${deferral.rationale}`,
+    '',
+  ].join('\n')
+}
+
+function renderReconciliationComment(kind, retainedIssue, now) {
+  const relationship = kind === 'duplicate' ? 'duplicate of' : 'superseded by'
+  return [
+    `This active Dependency Drift issue is ${relationship} #${retainedIssue.number} as of \`${now.toISOString()}\`.`,
+    '',
+    `Retained issue: ${retainedIssue.url ?? `#${retainedIssue.number}`}`,
+    '',
+  ].join('\n')
+}
+
+function issueReference(issue) {
+  const issueNumber = issue.issue ?? issue.number
+  if (!Number.isInteger(issueNumber)) {
+    throw new Error('Dependency Drift issue reference has no issue number.')
+  }
+  return { issue: issueNumber, url: issue.url }
+}
+
+function supersessionMarker(relationship, relatedIssue) {
+  const reference = issueReference(relatedIssue)
+  return `${SUPERSESSION_METADATA_PREFIX}${encodeMetadata({
+    relationship,
+    relatedIssue: reference.issue,
+  })} -->`
+}
+
+function renderSupersessionComment(relationship, relatedIssue) {
+  const reference = issueReference(relatedIssue)
+  const relationshipText = {
+    [SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY]: `Superseded by ${
+      reference.url ?? `#${reference.issue}`
+    }.`,
+    [SUPERSESSION_RELATIONSHIP.SUPERSEDES]: `This issue supersedes ${
+      reference.url ?? `#${reference.issue}`
+    }.`,
+  }[relationship]
+  if (!relationshipText) {
+    throw new Error(`Unknown supersession relationship: ${relationship}`)
+  }
+  return [
+    supersessionMarker(relationship, reference),
+    '',
+    relationshipText,
+    '',
+  ].join('\n')
+}
+
+function hasSupersessionComment(issue, relationship, relatedIssue) {
+  const marker = supersessionMarker(relationship, relatedIssue)
+  return (issue.comments ?? []).some(comment => comment.body?.includes(marker))
+}
+
+function issueNumberFromUrl(url) {
+  const match = url.match(/\/issues\/(?<issue>\d+)\/?$/u)
+  if (!match?.groups?.issue) {
+    throw new Error(`GitHub returned an invalid issue URL: ${url}`)
+  }
+  return Number(match.groups.issue)
 }
 
 export function planIssueActions(detections, issues, registry, now) {
   const actions = []
   for (const detection of detections) {
+    const firstActionIndex = actions.length
     const matching = issuesForUnit(issues, detection.unit)
-    const primary =
-      matching.find(issue => issue.state === 'OPEN') ?? matching[0] ?? null
-    for (const duplicate of matching.filter(issue => issue !== primary)) {
-      if (duplicate.state === 'OPEN') {
-        actions.push({
-          issue: duplicate.number,
-          reason: 'not planned',
-          type: 'close',
-          unit: detection.unit,
-        })
-      }
-    }
+    const openIssues = matching.filter(issue => issue.state === 'OPEN')
+    const target = dependencyState(detection.available)
+    const matchingTargetIssues = openIssues.filter(issue =>
+      statesMatch(readIssueMetadata(issue.body)?.target, target),
+    )
+    const primary = matchingTargetIssues[0] ?? null
 
     const deferred = activeDeferral(registry, detection, now)
     if (!detection.drift || deferred) {
-      if (primary?.state === 'OPEN') {
-        actions.push({
-          issue: primary.number,
-          reason: deferred ? 'not planned' : 'completed',
-          type: 'close',
-          unit: detection.unit,
-        })
+      if (openIssues.length > 0) {
+        for (const activeIssue of openIssues) {
+          actions.push({
+            comment: deferred
+              ? renderDeferralComment(detection, deferred, now)
+              : renderResolutionComment(detection, now),
+            issue: activeIssue.number,
+            reason: deferred ? 'not planned' : 'completed',
+            type: 'close',
+            unit: detection.unit,
+          })
+        }
       } else {
         actions.push({ type: 'unchanged', unit: detection.unit })
       }
@@ -946,24 +1152,68 @@ export function planIssueActions(detections, issues, registry, now) {
     if (!primary) {
       actions.push({
         body,
-        title: issueTitle(detection.unit),
+        supersedes: openIssues.map(issue => ({
+          issue: issue.number,
+          url: issue.url,
+        })),
+        title: issueTitle(detection),
         type: 'create',
         unit: detection.unit,
       })
       continue
     }
-    if (primary.state !== 'OPEN') {
+    const metadata = readIssueMetadata(primary.body)
+    for (const duplicate of openIssues.filter(issue => issue !== primary)) {
+      const duplicateMetadata = readIssueMetadata(duplicate.body)
+      const sameTarget = statesMatch(duplicateMetadata?.target, target)
+      if (
+        !sameTarget &&
+        !hasSupersessionComment(
+          primary,
+          SUPERSESSION_RELATIONSHIP.SUPERSEDES,
+          duplicate,
+        )
+      ) {
+        actions.push({
+          body: renderSupersessionComment(
+            SUPERSESSION_RELATIONSHIP.SUPERSEDES,
+            duplicate,
+          ),
+          issue: primary.number,
+          type: 'comment',
+          unit: detection.unit,
+        })
+      }
       actions.push({
-        issue: primary.number,
-        type: 'reopen',
+        comment: sameTarget
+          ? renderReconciliationComment('duplicate', primary, now)
+          : hasSupersessionComment(
+                duplicate,
+                SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY,
+                primary,
+              )
+            ? undefined
+            : renderSupersessionComment(
+                SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY,
+                primary,
+              ),
+        issue: duplicate.number,
+        reason: 'not planned',
+        type: sameTarget ? 'close' : 'supersede',
         unit: detection.unit,
       })
     }
+    const previous = latestCurrentState(primary, metadata)
+    if (statesMatch(previous, dependencyState(detection.current))) {
+      if (actions.length === firstActionIndex) {
+        actions.push({ type: 'unchanged', unit: detection.unit })
+      }
+      continue
+    }
     actions.push({
-      body,
+      body: renderCurrentChangeComment(detection, previous, now),
       issue: primary.number,
-      title: issueTitle(detection.unit),
-      type: 'edit',
+      type: 'comment',
       unit: detection.unit,
     })
   }
@@ -1000,34 +1250,48 @@ function ensureAutomationLabel(runCommand) {
   )
 }
 
+function addIssueComment(issue, body, runCommand) {
+  withBodyFile(body, bodyPath => {
+    runCommand(
+      'gh',
+      ['issue', 'comment', String(issue), '--body-file', bodyPath],
+      { stdio: 'inherit' },
+    )
+  })
+}
+
 export function executeIssueActions(actions, runCommand = run) {
   const results = {
     closed: [],
+    commented: [],
     created: [],
-    reopened: [],
+    superseded: [],
     unchanged: [],
-    updated: [],
   }
   for (const action of actions) {
     if (action.type === 'unchanged') {
       results.unchanged.push(action.unit)
-    } else if (action.type === 'close') {
+    } else if (action.type === 'close' || action.type === 'supersede') {
+      if (action.comment) {
+        addIssueComment(action.issue, action.comment, runCommand)
+        results.commented.push(`${action.unit} (#${action.issue})`)
+      }
       runCommand(
         'gh',
         ['issue', 'close', String(action.issue), '--reason', action.reason],
         { stdio: 'inherit' },
       )
       results.closed.push(`${action.unit} (#${action.issue})`)
-    } else if (action.type === 'reopen') {
-      runCommand('gh', ['issue', 'reopen', String(action.issue)], {
-        stdio: 'inherit',
-      })
-      results.reopened.push(`${action.unit} (#${action.issue})`)
+      if (action.type === 'supersede') {
+        results.superseded.push(`${action.unit} (#${action.issue})`)
+      }
+    } else if (action.type === 'comment') {
+      addIssueComment(action.issue, action.body, runCommand)
+      results.commented.push(`${action.unit} (#${action.issue})`)
     } else if (action.type === 'create') {
-      withBodyFile(action.body, bodyPath => {
-        runCommand(
-          'gh',
-          [
+      const createdUrl = withBodyFile(action.body, bodyPath =>
+        readNonEmpty(
+          runCommand('gh', [
             'issue',
             'create',
             '--title',
@@ -1036,30 +1300,45 @@ export function executeIssueActions(actions, runCommand = run) {
             bodyPath,
             '--label',
             ISSUE_LABELS.join(','),
-          ],
-          { stdio: 'inherit' },
-        )
-      })
+          ]),
+        ),
+      )
       results.created.push(action.unit)
-    } else if (action.type === 'edit') {
-      withBodyFile(action.body, bodyPath => {
+      const supersededIssues = action.supersedes ?? []
+      if (supersededIssues.length > 0 && !createdUrl) {
+        throw new Error('GitHub did not return the replacement issue URL.')
+      }
+      for (const previous of supersededIssues) {
+        const replacement = {
+          issue: issueNumberFromUrl(createdUrl),
+          url: createdUrl,
+        }
+        addIssueComment(
+          createdUrl,
+          renderSupersessionComment(
+            SUPERSESSION_RELATIONSHIP.SUPERSEDES,
+            previous,
+          ),
+          runCommand,
+        )
+        results.commented.push(`${action.unit} (${createdUrl})`)
+        addIssueComment(
+          previous.issue,
+          renderSupersessionComment(
+            SUPERSESSION_RELATIONSHIP.SUPERSEDED_BY,
+            replacement,
+          ),
+          runCommand,
+        )
+        results.commented.push(`${action.unit} (#${previous.issue})`)
         runCommand(
           'gh',
-          [
-            'issue',
-            'edit',
-            String(action.issue),
-            '--title',
-            action.title,
-            '--body-file',
-            bodyPath,
-            '--add-label',
-            ISSUE_LABELS.join(','),
-          ],
+          ['issue', 'close', String(previous.issue), '--reason', 'not planned'],
           { stdio: 'inherit' },
         )
-      })
-      results.updated.push(`${action.unit} (#${action.issue})`)
+        results.superseded.push(`${action.unit} (#${previous.issue})`)
+        results.closed.push(`${action.unit} (#${previous.issue})`)
+      }
     }
   }
   return results
@@ -1114,8 +1393,8 @@ function appendSummary(results, env) {
   if (!summaryPath) return
   const sections = [
     ['Created issues', results.created],
-    ['Updated issues', results.updated],
-    ['Reopened issues', results.reopened],
+    ['Comments added', results.commented],
+    ['Superseded issues', results.superseded],
     ['Closed issues', results.closed],
     ['No action', results.unchanged],
   ]
@@ -1155,11 +1434,13 @@ export async function main(
   const runCommand = dependencies.run ?? run
 
   // All registry and remote detection work succeeds before any GitHub mutation.
-  ensureAutomationLabel(runCommand)
   const issues = (dependencies.listDetectorIssues ?? listDetectorIssues)(
     runCommand,
   )
   const actions = planIssueActions(detections, issues, registry, now)
+  if (actions.some(action => action.type === 'create')) {
+    ensureAutomationLabel(runCommand)
+  }
   const results = (dependencies.executeIssueActions ?? executeIssueActions)(
     actions,
     runCommand,
