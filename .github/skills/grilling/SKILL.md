@@ -7,7 +7,22 @@ Interview the user relentlessly until you reach a shared understanding. Map this
 
 Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled: the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.
 
-Each question should be formatted like so:
+Write every round in ASD-STE100 Simplified Technical English.
+
+Start every round with these fields in this order:
+
+```
+**Topic recap:** <In one or two complete sentences, restate the original plan,
+decision, or idea, its intended outcome, and any fixed scope or constraints. Keep
+this stable across rounds; put newly established understanding in the Grilling
+recap.>
+
+**Grilling recap:** <In one or two complete sentences, restate the plan, decision, or idea being grilled and summarize the understanding established so far.>
+
+**Round focus:** <In one sentence, state what the questions in this round will resolve.>
+```
+
+Then format each question as follows:
 
 ```
 ❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
