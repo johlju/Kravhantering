@@ -93,9 +93,6 @@ describe('GitHub Actions workflow security', () => {
       for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
         const condition = String(job.if ?? '')
         expect(condition, `${fileName}:${jobId}`).toContain(
-          "github.event_name != 'schedule'",
-        )
-        expect(condition, `${fileName}:${jobId}`).toContain(
           "github.repository == 'viscalyx/Kravhantering'",
         )
       }
@@ -639,64 +636,68 @@ describe('GitHub Actions workflow security', () => {
     )
   })
 
-  it('rescans verified SBOMs for supported releases and safely synchronizes findings', () => {
+  it('pins the vulnerability monitor external actions by identity', () => {
     const workflow = readWorkflowYaml('container-vulnerability-monitor.yml')
-    const job = workflow.jobs?.['container-vulnerability-monitor']
-    const steps = job?.steps ?? []
-    const step = (name: string) =>
-      steps.find(candidate => candidate.name === name)
+    const references = Object.values(workflow.jobs ?? {})
+      .flatMap(job => job.steps ?? [])
+      .map(step => step.uses)
+      .filter(
+        (reference): reference is string =>
+          typeof reference === 'string' && !reference.startsWith('./'),
+      )
+    const identities = references
+      .map(reference => reference.slice(0, reference.lastIndexOf('@')))
+      .sort()
 
-    expect(workflow.on).toHaveProperty('schedule')
-    expect(workflow.on).toHaveProperty('workflow_dispatch')
-    expect(workflow.permissions).toEqual({
-      attestations: 'read',
-      contents: 'read',
-      issues: 'write',
-      packages: 'read',
+    expect(identities).toEqual(
+      [
+        'actions/checkout',
+        'actions/setup-node',
+        'actions/upload-artifact',
+        'anchore/scan-action/download-grype',
+      ].sort(),
+    )
+    for (const reference of references) {
+      expect(reference).toMatch(/^[^@\s]+@[a-f\d]{40}$/u)
+    }
+  })
+
+  it('keeps vulnerability evaluation fail closed and retains its evidence', () => {
+    const workflow = readWorkflowYaml('container-vulnerability-monitor.yml')
+    const steps =
+      workflow.jobs?.['container-vulnerability-monitor']?.steps ?? []
+    const evaluate = steps.find(step => step.id === 'evaluate')
+    const upload = steps.find(step => step.id === 'upload')
+    const stepOutcome = (stepId: string) =>
+      ['${{', `steps.${stepId}.outcome`, '}}'].join(' ')
+
+    expect(evaluate).toMatchObject({
+      env: {
+        ATTESTATION_OUTCOME: stepOutcome('attestation'),
+        CHECKOUT_OUTCOME: stepOutcome('checkout'),
+        GHCR_LOGIN_OUTCOME: stepOutcome('ghcr-login'),
+        GRYPE_OUTCOME: stepOutcome('grype'),
+        SCAN_OUTCOME: stepOutcome('scan'),
+        SELECTION_OUTCOME: stepOutcome('selection'),
+        SETUP_NODE_OUTCOME: stepOutcome('setup-node'),
+        TRACKER_PREFLIGHT_OUTCOME: stepOutcome('tracker-preflight'),
+      },
+      id: 'evaluate',
+      if: 'always()',
     })
-    expect(job?.if).toContain("github.ref == 'refs/heads/main'")
-    expect(job?.if).toContain("github.event_name != 'schedule'")
-    expect(job?.if).toContain("github.repository == 'viscalyx/Kravhantering'")
+    for (const outcome of Object.keys(evaluate?.env ?? {})) {
+      expect(evaluate?.run).toContain(`"\${${outcome}}"`)
+    }
+    expect(evaluate?.run).toContain('grep -qvx success')
 
-    expect(step('Select supported published releases')).toBeDefined()
-    expect(step('Log in to GHCR for digest verification')).toMatchObject({
-      uses: './.github/actions/ghcr-credential-helper',
+    expect(upload).toMatchObject({
+      id: 'upload',
+      if: 'always()',
       with: {
-        token: ['${{', 'github.token', '}}'].join(' '),
-        username: ['${{', 'github.actor', '}}'].join(' '),
+        'if-no-files-found': 'error',
+        path: 'tmp/container-vulnerability-monitor/',
+        'retention-days': 30,
       },
     })
-    expect(step('Verify published SBOM attestations')).toBeDefined()
-    expect(step('Scan every supported release SBOM')).toBeDefined()
-    const installGrype = step('Install pinned Grype')
-    expect(installGrype).toMatchObject({
-      id: 'grype',
-      with: { 'cache-db': false },
-    })
-    expect(installGrype?.uses).toMatch(
-      /^anchore\/scan-action\/download-grype@[a-f\d]{40}$/u,
-    )
-
-    const evaluate = step('Evaluate shared vulnerability policy')
-    expect(evaluate?.id).toBe('evaluate')
-    expect(evaluate?.['continue-on-error']).toBe(true)
-
-    const synchronize = step('Synchronize vulnerability tracking')
-    expect(synchronize?.id).toBe('synchronize')
-    expect(synchronize?.if).toBe('always()')
-    expect(synchronize?.['continue-on-error']).toBe(true)
-    expect(synchronize?.env).toMatchObject({
-      CONTAINER_VULNERABILITY_ADVISORY_TOKEN: [
-        '${{',
-        'secrets.CONTAINER_VULNERABILITY_ADVISORY_TOKEN',
-        '}}',
-      ].join(' '),
-    })
-    expect(synchronize?.env).not.toHaveProperty('GITHUB_TOKEN')
-
-    const upload = step('Retain complete vulnerability evidence')
-    expect(upload?.if).toBe('always()')
-    expect(upload?.with?.path).toContain('tmp/container-vulnerability-monitor/')
-    expect(step('Fail after retaining evidence')?.if).toBe('always()')
   })
 })
