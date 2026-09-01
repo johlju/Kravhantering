@@ -20,24 +20,45 @@ kravunderlag.
 _Avoid_: Tillämpningsspårbarhet när enskild spårbarhet avses.
 
 **Statistikhändelse**:
-En beständig och tidsatt registrering av en verksamhetsövergång som gör det
-möjligt att beräkna historiskt bestånd, flöde, ledtid eller omtag.
-Statistikhändelsen anger både när övergången blev giltig och när den
-registrerades. Den är inte en post i Åtgärdsloggen eller Säkerhetsloggen.
+En beständig och tidsatt registrering av exakt en verksamhetsövergång som gör
+det möjligt att beräkna historiskt bestånd, flöde, ledtid eller omtag och anger
+både när övergången blev giltig och när den registrerades. Flera
+statistikhändelser kan höra till samma atomiskt sparade förändring; ingen av
+dem är en post i Åtgärdsloggen eller Säkerhetsloggen.
 
 - `en`: Statistics event
 
 _Avoid_: Åtgärdsloggspost, säkerhetshändelse, teknisk logghändelse.
 
+**Statistiksubjekt**:
+Det verksamhetsobjekt eller den giltiga relation som en eller flera
+statistikhändelser följer över tid. Statistiksubjektets identitet kan bevaras
+för sammanräkning utan att källobjektets identitet eller innehåll lämnas ut.
+
+- `en`: Statistics subject
+
+_Avoid_: Aktör, användare, fritt analysobjekt.
+
+**Statistikhändelserättelse**:
+En beständig markering som ogiltigförklarar eller ersätter en felaktigt
+registrerad statistikhändelse utan att skriva om den ursprungliga
+verksamhetshistoriken.
+
+- `en`: Statistics event correction
+
+_Avoid_: Redigering av statistikhändelse, radering av historik,
+personuppgiftsanonymisering.
+
 **Statistikbaslinje**:
-En daterad ögonblicksbild omedelbart före den första produktionsanvändningen
-som omfattar alla då befintliga objekt. Den anger startpunkten från vilken
-historiskt bestånd, flöde och genomströmning är tillförlitliga.
+En daterad ögonblicksbild, skild från statistikhändelserna, som omfattar alla
+då befintliga objekt inom en angiven omfattning. Den tas omedelbart före den
+första produktionsanvändningen av omfattningen och anger startpunkten från
+vilken historiskt bestånd, flöde och genomströmning är tillförlitliga.
 
 - `en`: Statistics baseline
 
-_Avoid_: Återskapad historik före baslinjen, driftsättningsdatum utan
-statistiksammanhang.
+_Avoid_: Syntetiska verksamhetsövergångar, återskapad historik före baslinjen,
+driftsättningsdatum utan statistiksammanhang.
 
 **Verksamhetstidszon**:
 Den tidszon som avgränsar användarsynliga kalenderdagar, ISO-veckor och
