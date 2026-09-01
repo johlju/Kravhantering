@@ -1578,6 +1578,17 @@ kravlivscykelns arkivering eller radering av personuppgifter.
 
 _Avoid_: Arkivering, radering av personuppgifter, vanlig radering.
 
+**Gallringsobjekt**:
+Ett verksamhetsmässigt avgränsat objekt som prövas och får ett enda utfall i
+en gallringspolicy. Gallringsobjektet identifieras inom policyn av källgrupp,
+objekttyp och objektidentitet och räknas en gång även när gallringen berör
+flera databasrader.
+
+- `en`: Retention subject
+
+_Avoid_: Databasrad, gallringskandidat när objektet ännu inte har prövats mot
+alla villkor, informationsmängd.
+
 **Arkivexport**:
 Ett bevarandeunderlag som tas fram innan information gallras när
 verksamhetshistoriken ska finnas kvar utanför den aktiva kravhanteringen.
