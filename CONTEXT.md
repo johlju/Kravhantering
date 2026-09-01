@@ -420,6 +420,15 @@ Normbibliotek avser ytan eller samlingen, inte den enskilda normreferensen.
 
 _Avoid_: Referensdata, normreferens när en enskild normkälla avses.
 
+**Normreferensens nästa granskningsdatum**:
+Det datum då normreferensens uppgifter och fortsatta relevans nästa gång ska
+granskas. Datumet anger ett granskningsbehov, inte normkällans giltighet,
+utgångstid eller efterlevnad.
+
+- `en`: Norm reference next review date
+
+_Avoid_: Giltig till, utgångsdatum, senaste redigering.
+
 **Referens**:
 Stödjande material eller hänvisning som kan hjälpa läsaren att förstå ett krav
 men som inte nödvändigtvis är normerande.

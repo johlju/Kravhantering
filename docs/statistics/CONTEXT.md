@@ -67,6 +67,53 @@ behörighetssammanhang och visar personens fullständiga visningsnamn och HSA-id
 
 _Avoid_: Personstatistik, topplista, statistik per namn utan stabil identitet.
 
+**Normreferensens kravräckvidd**:
+Antalet distinkta krav i en uttryckligen angiven krav- och
+kravversionspopulation som har en koppling till en viss normreferens. Måttet
+beskriver observerade kopplingar och anger inte normtäckning, tillämplighet,
+efterlevnad eller att en saknad koppling är en brist.
+
+- `en`: Norm reference requirement reach
+
+_Avoid_: Normtäckning, efterlevnadsgrad, antal krav utan angiven population.
+
+**Normreferensanvändning**:
+Att en normreferens är kopplad till den låsta kravversionen i en aktuell
+kravtillämpning eller direkt till ett aktuellt kravunderlagslokalt krav.
+Koppling till en kravversion i kravbiblioteket är kravräckvidd, inte i sig
+normreferensanvändning.
+
+- `en`: Norm reference usage
+
+_Avoid_: Visning av normreferensen, antal kopplingsåtgärder,
+normreferensens kravräckvidd.
+
+**Normreferensgranskning snart**:
+Ett granskningsläge där en aktiv normreferens nästa granskningsdatum är
+beräkningsdatumet eller någon av de följande 30 kalenderdagarna i
+verksamhetstidszonen. Läget anger planeringsbehov, inte normkällans giltighet.
+
+- `en`: Norm reference review due soon
+
+_Avoid_: Snart utgången normreferens, risk, senaste redigering.
+
+**Normreferens med passerat granskningsdatum**:
+Ett granskningsläge där en aktiv normreferens nästa granskningsdatum ligger
+före beräkningsdatumet i verksamhetstidszonen. Läget anger inte i sig att
+normkällan är inaktuell eller ogiltig.
+
+- `en`: Norm reference with overdue review date
+
+_Avoid_: Inaktuell normreferens, ogiltig normreferens, risk.
+
+**Normreferensgranskning inte planerad**:
+Ett granskningsläge där en aktiv normreferens saknar nästa granskningsdatum.
+Läget anger inte i sig att normreferensen är inaktuell.
+
+- `en`: Norm reference review not scheduled
+
+_Avoid_: Inaktuell normreferens, passerat granskningsdatum.
+
 ## Kö-, tids- och flödesmått
 
 **Statusålder**:
