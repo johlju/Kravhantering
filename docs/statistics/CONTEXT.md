@@ -49,6 +49,15 @@ verksamhetshistoriken.
 _Avoid_: Redigering av statistikhändelse, radering av historik,
 personuppgiftsanonymisering.
 
+**Statistikhändelsefamilj**:
+En sammanhållen grupp statistikhändelsetyper som delar omfattning,
+statistikbaslinje, aktivering och lagringstid. En händelsetyp hör till exakt en
+statistikhändelsefamilj.
+
+- `en`: Statistics event family
+
+_Avoid_: Funktionsområde, enskild statistikhändelsetyp, teknisk loggkanal.
+
 **Statistikbaslinje**:
 En daterad ögonblicksbild, skild från statistikhändelserna, som omfattar alla
 då befintliga objekt inom en angiven omfattning. Den tas omedelbart före den
@@ -59,6 +68,15 @@ vilken historiskt bestånd, flöde och genomströmning är tillförlitliga.
 
 _Avoid_: Syntetiska verksamhetsövergångar, återskapad historik före baslinjen,
 driftsättningsdatum utan statistiksammanhang.
+
+**Statistisk kontrollpunkt**:
+Ett härlett bestånd vid en bestämd tidpunkt som gör att senare historik kan
+beräknas efter att äldre statistikhändelser har gallrats. Kontrollpunkten kan
+återskapas och är inte en statistikhändelse eller fristående sanningskälla.
+
+- `en`: Statistics checkpoint
+
+_Avoid_: Statistikbaslinje, permanent aggregat, syntetisk statistikhändelse.
 
 **Verksamhetstidszon**:
 Den tidszon som avgränsar användarsynliga kalenderdagar, ISO-veckor och
