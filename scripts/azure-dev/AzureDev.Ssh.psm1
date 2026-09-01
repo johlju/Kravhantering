@@ -366,7 +366,8 @@ function Get-AzureDevVmSshHostKeyEvidence {
   foreach ($runCommandResult in $runCommandResults) {
     if (
       $null -eq $runCommandResult -or
-      $null -eq $runCommandResult.PSObject.Properties['code']
+      $null -eq $runCommandResult.PSObject.Properties['code'] -or
+      $null -eq $runCommandResult.PSObject.Properties['message']
     ) {
       throw (
         'Azure control-plane SSH host-key evidence was malformed. No SSH ' +

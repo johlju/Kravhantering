@@ -270,6 +270,35 @@ Describe 'Get-AzureDevVmSshHostKeyEvidence' -Tag 'Unit' {
     }
   }
 
+  Context 'When a Run Command result omits its message' {
+    BeforeAll {
+      Mock -CommandName Invoke-AzureDevHostKeyRunCommand -MockWith {
+        return New-Object `
+          -TypeName System.Management.Automation.PSObject `
+          -Property @{
+          value = @(
+            New-Object -TypeName System.Management.Automation.PSObject -Property @{
+              code = 'ProvisioningState/succeeded'
+            }
+          )
+        }
+      }
+    }
+
+    It 'Should report malformed evidence explicitly' {
+      {
+        InModuleScope `
+          -Parameters @{ Context = $script:context } `
+          -ScriptBlock {
+            Set-StrictMode -Version 1.0
+            Get-AzureDevVmSshHostKeyEvidence -Context $Context
+          }
+      } | Should-Throw -ExceptionMessage (
+        '*control-plane SSH host-key evidence was malformed*'
+      )
+    }
+  }
+
   Context 'When Run Command returns guest errors' {
     BeforeAll {
       Mock -CommandName Invoke-AzureDevHostKeyRunCommand -MockWith {
