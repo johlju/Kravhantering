@@ -19,6 +19,16 @@ kravunderlag.
 
 _Avoid_: Tillämpningsspårbarhet när enskild spårbarhet avses.
 
+**Statistikkontrakt**:
+En normativ definition av ett statistiskt mått som anger persona,
+användarfråga, analysenhet, population, täljare och nämnare, gruppering,
+filter, tidsbetydelse, datakälla, behörighetsregel, presentation, exakta
+tabellvärden, drill-down, datatillstånd och leveransetapp.
+
+- `en`: Statistics contract
+
+_Avoid_: Diagramkontrakt, tekniskt API-kontrakt, mått utan angiven population.
+
 **Statistikhändelse**:
 En beständig och tidsatt registrering av exakt en verksamhetsövergång som gör
 det möjligt att beräkna historiskt bestånd, flöde, ledtid eller omtag och anger
