@@ -627,7 +627,7 @@ describe('kravhantering Quadlet helper', () => {
     expect(fs.existsSync(fixture.outputDir)).toBe(false)
   })
 
-  it('renders single-node services, volumes and the public issuer host route', () => {
+  it('renders single-node services with the SQL Server image launcher and public issuer host route', () => {
     const fixture = createFixture(releaseEnv())
     const units = render('single-node', fixture)
     const allContent = units.map(unit => unit.content).join('\n')
