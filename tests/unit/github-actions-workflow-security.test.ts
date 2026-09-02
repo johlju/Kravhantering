@@ -601,6 +601,10 @@ describe('GitHub Actions workflow security', () => {
           step.run.includes('container:oci:verify'),
       ),
     ).toBe(false)
+    expect(stepNames).toContain(
+      'Install production archive with rootless Quadlet',
+    )
+    expect(stepNames).toContain('Verify production stack')
     expect(
       stepNames.indexOf('Install production archive with rootless Quadlet'),
     ).toBeLessThan(stepNames.indexOf('Verify production stack'))
