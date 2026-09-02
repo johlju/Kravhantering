@@ -672,9 +672,9 @@ describe('kravhantering Quadlet helper', () => {
     expect(sqlserver).toContain(
       'Volume=kravhantering-sqlserver-data.volume:/var/opt/mssql:U',
     )
-    expect(sqlserver).toContain('PodmanArgs=--entrypoint=/bin/bash')
-    expect(sqlserver).toContain('Exec=-c "exec /opt/mssql/bin/sqlservr"')
     expect(sqlserver).toContain('Environment=HOME=/var/opt/mssql')
+    expect(sqlserver).not.toContain('PodmanArgs=--entrypoint=')
+    expect(sqlserver).not.toContain('\nExec=')
     expect(sqlserver).toContain(
       'Volume=/etc/kravhantering/sqlserver-tls:/etc/kravhantering/sqlserver-tls:ro',
     )
