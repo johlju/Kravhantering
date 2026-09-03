@@ -304,6 +304,15 @@ Delen efter bindestrecket i ett HSA-id.
 
 _Avoid_: HSA-id-prefix, ändelse när den exakta HSA-id-termen behövs.
 
+**HSA-verifieringskvot**:
+En applikationsgemensam säkerhetsgräns för hur många HSA-personverifieringar
+en aktör, en kombination av aktör och mål eller ett mål får begära under ett
+tidsfönster. Kvoten gäller gemensamt över alla applikationsinstanser.
+
+- `en`: HSA verification quota
+
+_Avoid_: HSA-throttle, delat throttle-lager, processlokal hastighetsgräns.
+
 **Behörighetsöversyn**:
 En formell genomgång av uppdrag och roller där varje behörighetsrad bedöms och
 beslutas.
