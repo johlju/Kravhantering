@@ -62,10 +62,12 @@ access to the host's `0640` private key.
 
 SQL Server writes databases, transaction logs, backups, dumps, secrets, its
 `.system` directory, and its own logs below `/var/opt/mssql`; the existing
-named volume preserves those semantics. The Quadlet sets `HOME` to that
-directory and preserves the image's launcher, which performs the image's
-startup checks before starting the database engine. The 4 GiB cgroup default
-stays above Microsoft's 2 GiB startup minimum. The pinned
+named volume preserves those semantics. The Quadlet sets both `HOME` and the
+container working directory to that volume and preserves the image's launcher,
+which performs the image's startup checks before starting the database engine.
+The explicit working directory keeps the launcher's child database process
+from resolving `.system` and log paths below the read-only container root. The
+4 GiB cgroup default stays above Microsoft's 2 GiB startup minimum. The pinned
 `mcr.microsoft.com/mssql/server:2025-CU8-ubuntu-24.04` image has
 `cap_net_bind_service=ep` on `/opt/mssql/bin/sqlservr`. With all capabilities
 absent from the bounding set, `NoNewPrivileges` makes the kernel reject that
