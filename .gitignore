@@ -58,6 +58,9 @@ certificates
 .env.azure.development
 .azure/
 
+# Generated Azure development HSA mTLS runtime bundle
+/.hsa-mtls/
+
 # Optional local Azure VM shell profile override
 /scripts/azure-dev/templates/zshrc.template
 
@@ -287,4 +290,4 @@ devcontainer-lock.json
 
 .playwright-mcp
 prototypes
-research
+/research/
