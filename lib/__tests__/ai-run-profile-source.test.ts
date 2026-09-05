@@ -6,6 +6,7 @@ describe('SQL Server AI run profile source', () => {
   it('loads one exact stable profile configuration and its persisted model revision', async () => {
     const query = vi.fn().mockResolvedValue([
       {
+        reasoningJson: '{"mode":"explicit_control","effort":"high"}',
         adapterType: 'controlled_test',
         adapterVersion: '1',
         agentRuntimeKey: 'controlled_runtime',
@@ -51,6 +52,10 @@ describe('SQL Server AI run profile source', () => {
 
     await expect(source.findProfile('generation_with_images')).resolves.toEqual(
       {
+        reasoning: {
+          mode: 'explicit_control' as const,
+          effort: 'high' as const,
+        },
         adapterType: 'controlled_test',
         adapterVersion: '1',
         connectionAgentRuntimeVersion: 'runtime-v2',
@@ -114,6 +119,24 @@ describe('SQL Server AI run profile source', () => {
     )
     expect(query.mock.calls[0]?.[0]).toContain('[profile].[profile_key] = @0')
     expect(query.mock.calls[0]?.[0]).toContain('[model].[deleted_at] IS NULL')
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "[evidence].[outcome] = N'passed'",
+    )
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "[evidence].[test_suite_version] = N'ai-admin-functional-probe-v2'",
+    )
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "JSON_VALUE([evidence].[verified_capabilities_json], '$.reasoning') = N'true'",
+    )
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "JSON_VALUE([evidence].[details_json], '$.reasoning.mode') = JSON_VALUE([model_revision].[reasoning_json], '$.mode')",
+    )
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "JSON_VALUE([evidence].[details_json], '$.reasoning.effort') = JSON_VALUE([model_revision].[reasoning_json], '$.effort')",
+    )
+    expect(query.mock.calls[0]?.[0]).toMatch(
+      /OR\s*\(\s*JSON_VALUE\(\[evidence\]\.\[details_json\], '\$\.reasoning\.effort'\) IS NULL\s*AND JSON_VALUE\(\[model_revision\]\.\[reasoning_json\], '\$\.effort'\) IS NULL\s*\)/u,
+    )
   })
 
   it('returns null when the fixed slot is unconfigured', async () => {

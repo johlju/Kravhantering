@@ -33,6 +33,7 @@ import {
   type AiProviderSecretKeyring,
   AiProviderSecretKeyringError,
 } from './provider-secret-keyring.ts'
+import { requireAiReasoningConfiguration } from './reasoning'
 import { SAFE_AI_TECHNICAL_CODE } from './requirement-prompt'
 import {
   AI_RUN_CANCELLATION_REASONS,
@@ -49,8 +50,10 @@ import {
   guardAiRunEventStream,
 } from './run-contracts'
 
-export const AI_ADMIN_FUNCTIONAL_PROBE_VERSION =
-  'ai-admin-functional-probe-v1' as const
+export { AI_ADMIN_FUNCTIONAL_PROBE_VERSION } from './verification-contract'
+
+import { AI_ADMIN_FUNCTIONAL_PROBE_VERSION } from './verification-contract'
+
 const ADMIN_PROBE_TIMEOUT_MS = 30_000
 const ADMIN_CANCELLATION_GRACE_MS = 5_000
 const ADMIN_PROBE_PROFILE_ID =
@@ -216,12 +219,26 @@ function isNormalizedAdminProbeEvent(value: unknown): value is AiRunEvent {
     return (
       hasOnlyKeys(
         event,
-        new Set(['analysis', 'identity', 'rawOutput', 'type', 'usage']),
+        new Set([
+          'analysis',
+          'identity',
+          'rawOutput',
+          'type',
+          'usage',
+          'reasoningEvidence',
+        ]),
       ) &&
       (event.analysis === null || typeof event.analysis === 'string') &&
       isRunIdentity(event.identity) &&
       typeof event.rawOutput === 'string' &&
-      isRunUsage(event.usage)
+      isRunUsage(event.usage) &&
+      (event.reasoningEvidence === undefined ||
+        (hasOnlyKeys(
+          event.reasoningEvidence,
+          new Set(['activity', 'control']),
+        ) &&
+          typeof event.reasoningEvidence.activity === 'boolean' &&
+          typeof event.reasoningEvidence.control === 'boolean'))
     )
   if (event.type === 'cancelled')
     return (
@@ -293,6 +310,8 @@ function selectedCapabilities(
   capabilities: AiCapability,
 ): AiCapabilitySelection {
   return {
+    reasoning: capabilities.reasoning,
+    reasoningControl: capabilities.reasoningControl,
     aiAnalysis: capabilities.aiAnalysis,
     cost: capabilities.cost,
     imageInput: capabilities.imageInput,
@@ -305,15 +324,23 @@ function selectedCapabilities(
 
 function probeTask(capabilities: AiCapability): AiTaskEnvelope {
   const analysisProbe = capabilities.aiAnalysis
+  // A literal JSON echo can report zero reasoning tokens even at high effort.
+  const reasoningProbe =
+    capabilities.reasoning || capabilities.reasoningControl || analysisProbe
   const expectedProbe = capabilities.imageInput ? 'black-pixel' : 'ok'
   return {
     content: [
       {
-        text: analysisProbe
-          ? 'Determine whether 19 multiplied by 23 equals 437, then return the required probe object.'
-          : capabilities.imageInput
+        text: [
+          ...(reasoningProbe
+            ? [
+                'Calculate 137 multiplied by 283. Subtract 97 multiplied by 149 from that result, then divide by 6. Return the final integer in the answer field.',
+              ]
+            : []),
+          capabilities.imageInput
             ? 'Inspect the attached one-pixel image. Return the image result only if you observed the black pixel.'
             : 'Return the required probe object.',
+        ].join(' '),
         type: 'text',
       },
       ...(capabilities.imageInput
@@ -326,21 +353,40 @@ function probeTask(capabilities: AiCapability): AiTaskEnvelope {
           ] as const)
         : []),
     ],
-    instructions: analysisProbe
-      ? `This is a fixed administrative capability probe. Use the provider reasoning mode for the arithmetic check. Do not put reasoning in the JSON response or expose a private chain of thought. If supported, return a concise visible analysis summary only through the provider analysis field. Return exactly {"probe":"${expectedProbe}"}.`
-      : capabilities.jsonSchemaSteering
-        ? `This is a fixed administrative capability probe. Return exactly {"probe":"${expectedProbe}","schemaMustRemoveThis":true}.`
-        : `This is a fixed administrative capability probe. Return exactly {"probe":"${expectedProbe}"}.`,
+    instructions: [
+      'This is a fixed administrative capability probe.',
+      ...(reasoningProbe
+        ? [
+            'Use the provider reasoning mode for the arithmetic check. Do not put reasoning in the JSON response or expose a private chain of thought.',
+          ]
+        : []),
+      ...(analysisProbe
+        ? [
+            'If supported, return a concise visible analysis summary only through the provider analysis field.',
+          ]
+        : []),
+      reasoningProbe
+        ? `Return one JSON object with "probe":"${expectedProbe}" and "answer" set to the computed integer.${capabilities.jsonSchemaSteering ? ' Also include "schemaMustRemoveThis":true.' : ''}`
+        : capabilities.jsonSchemaSteering
+          ? `Return exactly {"probe":"${expectedProbe}","schemaMustRemoveThis":true}.`
+          : `Return exactly {"probe":"${expectedProbe}"}.`,
+    ].join(' '),
     responseSchema: {
       additionalProperties: false,
-      properties: { probe: { const: expectedProbe, type: 'string' } },
-      required: ['probe'],
+      properties: {
+        probe: { const: expectedProbe, type: 'string' },
+        ...(reasoningProbe ? { answer: { type: 'integer' } } : {}),
+      },
+      required: reasoningProbe ? ['probe', 'answer'] : ['probe'],
       type: 'object',
     },
     validationSchema: {
       additionalProperties: false,
-      properties: { probe: { const: expectedProbe, type: 'string' } },
-      required: ['probe'],
+      properties: {
+        probe: { const: expectedProbe, type: 'string' },
+        ...(reasoningProbe ? { answer: { const: 4053, type: 'integer' } } : {}),
+      },
+      required: reasoningProbe ? ['probe', 'answer'] : ['probe'],
       type: 'object',
     },
   }
@@ -352,11 +398,16 @@ function validProbeOutput(
 ): boolean {
   try {
     const parsed: unknown = JSON.parse(rawOutput)
+    const reasoningProbe =
+      capabilities.reasoning ||
+      capabilities.reasoningControl ||
+      capabilities.aiAnalysis
     return (
       typeof parsed === 'object' &&
       parsed !== null &&
       !Array.isArray(parsed) &&
-      Object.keys(parsed).length === 1 &&
+      Object.keys(parsed).length === (reasoningProbe ? 2 : 1) &&
+      (!reasoningProbe || (parsed as { answer?: unknown }).answer === 4053) &&
       (parsed as { probe?: unknown }).probe ===
         (capabilities.imageInput ? 'black-pixel' : 'ok')
     )
@@ -367,6 +418,8 @@ function validProbeOutput(
 
 function emptyCapabilities(): AiCapability {
   return {
+    reasoning: false,
+    reasoningControl: false,
     aiAnalysis: false,
     cost: false,
     imageInput: false,
@@ -438,7 +491,9 @@ async function runAdminFunctionalProbe(
 
   const schemaValid = validProbeOutput(terminal.rawOutput, capabilities)
   const verified: AiCapability = {
-    aiAnalysis: capabilities.aiAnalysis && terminal.analysis !== null,
+    reasoning: terminal.reasoningEvidence?.activity === true,
+    reasoningControl: terminal.reasoningEvidence?.control === true,
+    aiAnalysis: capabilities.aiAnalysis && Boolean(terminal.analysis?.trim()),
     cost: capabilities.cost && terminal.usage.cost.status !== 'unavailable',
     imageInput: capabilities.imageInput,
     jsonSchemaSteering: capabilities.jsonSchemaSteering && schemaValid,
@@ -618,13 +673,18 @@ const FIXED_PROFILE_CAPABILITIES: Readonly<
   generation_with_images: Object.freeze([
     'imageInput' as const,
     'streaming' as const,
+    'reasoning' as const,
     'validatableJson' as const,
   ]),
   generation_without_images: Object.freeze([
     'streaming' as const,
+    'reasoning' as const,
     'validatableJson' as const,
   ]),
-  invalid_json_repair: Object.freeze(['validatableJson' as const]),
+  invalid_json_repair: Object.freeze([
+    'reasoning' as const,
+    'validatableJson' as const,
+  ]),
 })
 
 function capabilityAssessment(
@@ -643,7 +703,24 @@ function capabilityAssessment(
     }
   }
   if (
-    (result.completed && result.schemaValid) ||
+    result.completed &&
+    result.schemaValid &&
+    (capability === 'reasoning' || capability === 'reasoningControl')
+  ) {
+    return {
+      diagnosticCode:
+        capability === 'reasoning'
+          ? 'reasoning_activity_not_observed'
+          : 'reasoning_control_not_observed',
+      failureCategory: 'capability_mismatch',
+      outcome: 'inconclusive',
+    }
+  }
+  if (
+    (result.completed &&
+      result.schemaValid &&
+      capability !== 'reasoning' &&
+      capability !== 'reasoningControl') ||
     result.failureCategory === 'capability_mismatch' ||
     result.failureCategory === 'request_rejected'
   ) {
@@ -1324,6 +1401,7 @@ export class AiProviderSecretAdminService {
     }>,
   ): Promise<Readonly<AiAdminCandidateVerificationResult>> {
     return this.#execute(connection, egress, async context => {
+      let reasoning = candidate.reasoning
       const deadline = Date.now() + ADMIN_VERIFICATION_TOTAL_BUDGET_MS
       const suiteSignal = AbortSignal.any([
         options.signal,
@@ -1358,6 +1436,7 @@ export class AiProviderSecretAdminService {
         connectionConfigurationVersion: connection.configurationVersion,
         declaredCapabilities: selected,
         discoveredCapabilities: null,
+        reasoning,
         externalModelId: candidate.externalModelId,
         externalModelVersion: candidate.externalModelVersion,
         id: randomUUID(),
@@ -1457,8 +1536,38 @@ export class AiProviderSecretAdminService {
             failureCategory: null,
             outcome: 'not_checked',
           },
+          reasoning,
           canonicalExternalModelVersion: candidate.externalModelVersion,
           capabilities: unknownCapabilities,
+          connection: connectionAssessment,
+          profileCompatibility: uncheckedProfiles,
+          saveable: false,
+          testSuiteVersion: AI_ADMIN_FUNCTIONAL_PROBE_VERSION,
+        }
+      }
+
+      try {
+        assertActive()
+        reasoning = requireAiReasoningConfiguration(
+          await adapter.resolveReasoningConfiguration(context, candidate, {
+            abortSignal: suiteSignal,
+            deadlineAt: new Date(deadline).toISOString(),
+          }),
+        )
+        assertActive()
+      } catch {
+        assertActive()
+        const assessment = verificationAssessment(
+          false,
+          'provider_unavailable',
+          'reasoning_configuration_unresolved',
+        )
+        await emit('summary', 'completed', assessment)
+        return {
+          reasoning,
+          baseline: assessment,
+          canonicalExternalModelVersion: candidate.externalModelVersion,
+          capabilities: { ...unknownCapabilities, reasoning: assessment },
           connection: connectionAssessment,
           profileCompatibility: uncheckedProfiles,
           saveable: false,
@@ -1505,8 +1614,16 @@ export class AiProviderSecretAdminService {
         await emit('summary', 'completed', baselineAssessment)
         return {
           baseline: baselineAssessment,
+          reasoning,
           canonicalExternalModelVersion: candidate.externalModelVersion,
-          capabilities: unknownCapabilities,
+          capabilities: {
+            ...unknownCapabilities,
+            reasoning: capabilityAssessment(baselineResult, 'reasoning'),
+            reasoningControl:
+              reasoning.mode === 'explicit_control'
+                ? capabilityAssessment(baselineResult, 'reasoningControl')
+                : unknownCapabilities.reasoningControl,
+          },
           connection: connectionAssessment,
           profileCompatibility: uncheckedProfiles,
           saveable: false,
@@ -1519,6 +1636,18 @@ export class AiProviderSecretAdminService {
         const check = `capability:${capability}` as const
         await emit(check, 'running')
         const selected = selectedCapabilitySet([capability])
+        if (
+          capability === 'reasoningControl' &&
+          reasoning.mode === 'model_default'
+        ) {
+          capabilities[capability] = {
+            outcome: 'not_verified',
+            failureCategory: null,
+            diagnosticCode: 'reasoning_control_not_applicable',
+          }
+          await emit(check, 'completed', capabilities[capability])
+          continue
+        }
         let result = await runProbe(selected)
         let assessment = capabilityAssessment(result, capability)
         if (
@@ -1543,7 +1672,12 @@ export class AiProviderSecretAdminService {
       for (const profileKey of AI_RUN_PROFILE_KEYS) {
         const check = `profile:${profileKey}` as const
         await emit(check, 'running')
-        const required = FIXED_PROFILE_CAPABILITIES[profileKey]
+        const required = [
+          ...FIXED_PROFILE_CAPABILITIES[profileKey],
+          ...(reasoning.mode === 'explicit_control'
+            ? ['reasoningControl' as const]
+            : []),
+        ]
         const missingCapabilities = required.filter(
           capability => capabilities[capability].outcome !== 'verified',
         )
@@ -1579,6 +1713,9 @@ export class AiProviderSecretAdminService {
       )
       const saveable =
         baselineAssessment.outcome === 'verified' &&
+        capabilities.reasoning.outcome === 'verified' &&
+        (reasoning.mode === 'model_default' ||
+          capabilities.reasoningControl.outcome === 'verified') &&
         Object.values(profileCompatibility).some(profile => profile.supported)
       const summaryDiagnosticCode = [
         baselineAssessment,
@@ -1603,6 +1740,7 @@ export class AiProviderSecretAdminService {
       await emit('summary', 'completed', summaryAssessment)
       return {
         baseline: baselineAssessment,
+        reasoning,
         canonicalExternalModelVersion: candidate.externalModelVersion,
         capabilities,
         connection: connectionAssessment,

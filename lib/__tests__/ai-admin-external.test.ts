@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { parseEnv } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type AiAdminAdapterContext,
@@ -15,7 +17,11 @@ import type {
   AiAdminModelRevisionRecord,
   AiAdminVerificationProgress,
 } from '@/lib/ai/admin-service'
-import type { AiDeploymentTrustPolicy } from '@/lib/ai/connection-trust'
+import {
+  type AiDeploymentTrustPolicy,
+  authorizeAiConnectionTarget,
+  enforceAiDataPolicy,
+} from '@/lib/ai/connection-trust'
 import { controlledTestAdminAdapterRegistration } from '@/lib/ai/controlled-test-admin-adapter'
 import { openRouterAdminAdapterRegistration } from '@/lib/ai/openrouter-admin-adapter'
 import type { AiPersistedRunProfile } from '@/lib/ai/profile-resolver'
@@ -29,6 +35,8 @@ import type {
 import type { SqlServerDatabase } from '@/lib/db'
 
 const CAPABILITIES = {
+  reasoning: true,
+  reasoningControl: true,
   aiAnalysis: true,
   cost: true,
   imageInput: false,
@@ -87,6 +95,10 @@ function connection(
         revisionToken: crypto.randomUUID(),
         revisions: [
           {
+            reasoning: {
+              mode: 'explicit_control' as const,
+              effort: 'high' as const,
+            },
             agentRuntimeVersion: null,
             connectionConfigurationVersion: 1,
             declaredCapabilities: CAPABILITIES,
@@ -191,6 +203,204 @@ describe('AI administration provider composition', () => {
     vi.unstubAllEnvs()
   })
 
+  it.each([
+    ['controlled/rejected', 'explicit_control', 'high', 'not_verified', false],
+    [
+      'controlled/unavailable',
+      'explicit_control',
+      'high',
+      'inconclusive',
+      false,
+    ],
+    ['controlled/default-no-analysis', 'model_default', null, 'verified', true],
+    ['controlled/no-analysis', 'explicit_control', 'low', 'verified', true],
+    ['controlled/no-analysis', 'explicit_control', 'medium', 'verified', true],
+    ['controlled/no-analysis', 'explicit_control', 'high', 'verified', true],
+    [
+      'controlled/default-no-analysis',
+      'explicit_control',
+      'high',
+      'verified',
+      true,
+    ],
+    [
+      'controlled/default-no-reasoning',
+      'model_default',
+      null,
+      'inconclusive',
+      false,
+    ],
+    [
+      'controlled/no-reasoning',
+      'explicit_control',
+      'high',
+      'inconclusive',
+      false,
+    ],
+  ] as const)(
+    'verifies the configured reasoning path for %s / %s / %s',
+    async (externalModelId, mode, effort, outcome, saveable) => {
+      const external = createProductionAiAdminExternalOperations(
+        emptyDb,
+        () => ring,
+        { deployment: deployment() },
+      )
+      const reasoning =
+        mode === 'model_default'
+          ? ({ mode, effort: null } as const)
+          : ({ mode, effort: effort ?? 'high' } as const)
+      const result = await external.verifyModelCandidate(
+        connection(),
+        { externalModelId, externalModelVersion: null, reasoning },
+        { signal: new AbortController().signal },
+      )
+      expect(result).toMatchObject({
+        reasoning: externalModelId.startsWith('controlled/default')
+          ? { mode: 'model_default', effort: null }
+          : reasoning,
+        saveable,
+        capabilities: { reasoning: { outcome } },
+      })
+      if (externalModelId.endsWith('no-reasoning')) {
+        expect(result.capabilities.reasoning).toMatchObject({
+          outcome: 'inconclusive',
+          failureCategory: 'capability_mismatch',
+          diagnosticCode: 'reasoning_activity_not_observed',
+        })
+        if (mode === 'explicit_control') {
+          expect(result.capabilities.reasoningControl).toMatchObject({
+            outcome: 'inconclusive',
+            failureCategory: 'capability_mismatch',
+            diagnosticCode: 'reasoning_control_not_observed',
+          })
+        }
+      }
+      if (saveable) {
+        expect(result.capabilities.aiAnalysis.outcome).toBe('not_verified')
+        expect(result.capabilities.reasoningControl.outcome).toBe(
+          externalModelId.startsWith('controlled/default')
+            ? 'not_verified'
+            : 'verified',
+        )
+        expect(
+          Object.values(result.profileCompatibility).every(
+            profile => profile.supported,
+          ),
+        ).toBe(true)
+      }
+    },
+  )
+
+  it.each([
+    ['explicit_control', true],
+    ['model_default', true],
+    ['explicit_control', false],
+    ['model_default', false],
+  ] as const)(
+    'requires a computed answer and observed activity in %s mode (correct answer=%s)',
+    async (mode, correctAnswer) => {
+      const base = controlledTestAdminAdapterRegistration.adapter
+      const registry = createAiAdminConnectionAdapterRegistry([
+        {
+          ...controlledTestAdminAdapterRegistration,
+          adapter: {
+            ...base,
+            async *runFunctionalProbe(context, revision, probe) {
+              const arithmetic = probe.task.content.some(
+                part =>
+                  part.type === 'text' &&
+                  /\d+ multiplied by \d+/.test(part.text),
+              )
+              if (arithmetic) {
+                // The provider must calculate the answer; only local validation knows it.
+                expect(
+                  JSON.stringify({
+                    instructions: probe.task.instructions,
+                    content: probe.task.content.filter(
+                      part => part.type === 'text',
+                    ),
+                    schema: probe.task.responseSchema,
+                  }),
+                ).not.toContain('4053')
+              }
+              for await (const event of base.runFunctionalProbe(
+                context,
+                revision,
+                probe,
+              )) {
+                yield event.type === 'completed'
+                  ? {
+                      ...event,
+                      rawOutput:
+                        arithmetic && !correctAnswer
+                          ? JSON.stringify({
+                              ...JSON.parse(event.rawOutput),
+                              answer: 0,
+                            })
+                          : event.rawOutput,
+                      reasoningEvidence: {
+                        activity: arithmetic,
+                        control:
+                          arithmetic &&
+                          revision.reasoning?.mode === 'explicit_control',
+                      },
+                    }
+                  : event
+              }
+            },
+          },
+        },
+      ])
+      const external = createProductionAiAdminExternalOperations(
+        emptyDb,
+        () => ring,
+        {
+          deployment: deployment(),
+          registry,
+        },
+      )
+      const result = await external.verifyModelCandidate(
+        connection(),
+        {
+          externalModelId:
+            mode === 'model_default'
+              ? 'controlled/default-no-analysis'
+              : 'controlled/no-analysis',
+          externalModelVersion: null,
+          reasoning:
+            mode === 'model_default'
+              ? { mode, effort: null }
+              : { mode, effort: 'high' },
+        },
+        { signal: new AbortController().signal },
+      )
+      if (!correctAnswer) {
+        expect(result.capabilities.reasoning).toMatchObject({
+          outcome: 'inconclusive',
+          failureCategory: 'invalid_response',
+        })
+        expect(
+          Object.values(result.profileCompatibility).every(
+            profile => !profile.supported,
+          ),
+        ).toBe(true)
+        expect(result.saveable).toBe(false)
+        return
+      }
+      expect(result.capabilities.reasoning.outcome).toBe('verified')
+      expect(result.capabilities.aiAnalysis.outcome).toBe('not_verified')
+      expect(result.capabilities.reasoningControl.outcome).toBe(
+        mode === 'explicit_control' ? 'verified' : 'not_verified',
+      )
+      expect(
+        Object.values(result.profileCompatibility).every(
+          profile => profile.supported,
+        ),
+      ).toBe(true)
+      expect(result.saveable).toBe(true)
+    },
+  )
+
   it('reports exact adapter registration availability and rejects duplicates or unknowns', () => {
     const registry = createAiAdminConnectionAdapterRegistry([
       controlledTestAdminAdapterRegistration,
@@ -246,6 +456,10 @@ describe('AI administration provider composition', () => {
       external.verifyModelCandidate(
         current,
         {
+          reasoning: {
+            mode: 'explicit_control' as const,
+            effort: 'high' as const,
+          },
           externalModelId: revision.externalModelId,
           externalModelVersion: revision.externalModelVersion,
         },
@@ -265,7 +479,7 @@ describe('AI administration provider composition', () => {
       externalLiveCallMade: false,
       failureCategory: 'controlled_adapter_forbidden',
       outcome: 'failed',
-      testSuiteVersion: 'ai-admin-functional-probe-v1',
+      testSuiteVersion: 'ai-admin-functional-probe-v2',
     })
     await expect(
       external.verifySecretCandidate(
@@ -333,6 +547,10 @@ describe('AI administration provider composition', () => {
       external.verifyModelCandidate(
         current,
         {
+          reasoning: {
+            mode: 'explicit_control' as const,
+            effort: 'high' as const,
+          },
           externalModelId: revision.externalModelId,
           externalModelVersion: revision.externalModelVersion,
         },
@@ -403,6 +621,10 @@ describe('AI administration provider composition', () => {
     const result = await external.verifyModelCandidate(
       current,
       {
+        reasoning: {
+          mode: 'explicit_control' as const,
+          effort: 'high' as const,
+        },
         externalModelId: revision.externalModelId,
         externalModelVersion: revision.externalModelVersion,
       },
@@ -481,6 +703,10 @@ describe('AI administration provider composition', () => {
     const result = await external.verifyModelCandidate(
       current,
       {
+        reasoning: {
+          mode: 'explicit_control' as const,
+          effort: 'high' as const,
+        },
         externalModelId: revision.externalModelId,
         externalModelVersion: revision.externalModelVersion,
       },
@@ -512,6 +738,8 @@ describe('AI administration provider composition', () => {
                     ...probe,
                     selectedCapabilities: {
                       ...probe.selectedCapabilities,
+                      reasoning: true,
+                      reasoningControl: true,
                       aiAnalysis: false,
                     },
                   }
@@ -534,6 +762,10 @@ describe('AI administration provider composition', () => {
       external.verifyModelCandidate(
         current,
         {
+          reasoning: {
+            mode: 'explicit_control' as const,
+            effort: 'high' as const,
+          },
           externalModelId: revision.externalModelId,
           externalModelVersion: revision.externalModelVersion,
         },
@@ -594,6 +826,10 @@ describe('AI administration provider composition', () => {
     const result = await external.verifyModelCandidate(
       current,
       {
+        reasoning: {
+          mode: 'explicit_control' as const,
+          effort: 'high' as const,
+        },
         externalModelId: revision.externalModelId,
         externalModelVersion: revision.externalModelVersion,
       },
@@ -622,39 +858,50 @@ describe('AI administration provider composition', () => {
     })
   })
 
-  it('binds a passing live proof to the exact selected runtime path', async () => {
-    const current = connection({ adapterKey: 'openrouter' })
-    const revision = current.models[0]?.revisions[0]
-    if (!revision) throw new Error('Revision missing')
-    const selection = liveSelection(current, revision)
-    const exactLivePathRunner = {
-      run: vi.fn(async () => ({
-        failureCategory: null,
-        outcome: 'passed' as const,
-      })),
-    }
-    const registry = createAiAdminConnectionAdapterRegistry([
-      {
-        ...controlledTestAdminAdapterRegistration,
-        adapterType: 'openrouter',
-        executionKind: 'external_live',
-      },
-    ])
-    const external = createProductionAiAdminExternalOperations(
-      emptyDb,
-      () => ring,
-      { deployment: deployment(), exactLivePathRunner, registry },
-    )
+  it.each([
+    { mode: 'explicit_control', effort: 'high' },
+    { effort: 'high', mode: 'explicit_control' },
+    { effort: null, mode: 'model_default' },
+  ] as const)(
+    'binds a passing live proof with %j to the exact selected runtime path',
+    async reasoning => {
+      const current = connection({ adapterKey: 'openrouter' })
+      const revision = current.models[0]?.revisions[0]
+      if (!revision) throw new Error('Revision missing')
+      revision.reasoning = reasoning
+      if (reasoning.mode === 'model_default') {
+        revision.externalModelId = 'controlled/default-no-analysis'
+      }
+      const selection = liveSelection(current, revision)
+      const exactLivePathRunner = {
+        run: vi.fn(async () => ({
+          failureCategory: null,
+          outcome: 'passed' as const,
+        })),
+      }
+      const registry = createAiAdminConnectionAdapterRegistry([
+        {
+          ...controlledTestAdminAdapterRegistration,
+          adapterType: 'openrouter',
+          executionKind: 'external_live',
+        },
+      ])
+      const external = createProductionAiAdminExternalOperations(
+        emptyDb,
+        () => ring,
+        { deployment: deployment(), exactLivePathRunner, registry },
+      )
 
-    await expect(
-      external.verifyLivePath(current, revision, selection),
-    ).resolves.toMatchObject({
-      adapterType: 'openrouter',
-      failureCategory: null,
-      outcome: 'passed',
-    })
-    expect(exactLivePathRunner.run).toHaveBeenCalledWith(selection)
-  })
+      await expect(
+        external.verifyLivePath(current, revision, selection),
+      ).resolves.toMatchObject({
+        adapterType: 'openrouter',
+        failureCategory: null,
+        outcome: 'passed',
+      })
+      expect(exactLivePathRunner.run).toHaveBeenCalledWith(selection)
+    },
+  )
 
   it('executes the exact selected profile through the integration runtime', async () => {
     const current = connection({ adapterKey: 'openrouter' })
@@ -695,6 +942,7 @@ describe('AI administration provider composition', () => {
       },
     } satisfies Extract<AiRunEvent, { type: 'completed' }>
     const persisted = {
+      reasoning: { mode: 'explicit_control' as const, effort: 'high' as const },
       adapterType: selection.adapterType,
       adapterVersion: selection.adapterVersion,
       connectionAgentRuntimeVersion: null,
@@ -994,6 +1242,8 @@ describe('AI administration provider composition', () => {
     await expect(adapter.fetchCatalog(context)).resolves.toMatchObject([
       {
         capabilities: {
+          reasoning: false,
+          reasoningControl: false,
           aiAnalysis: false,
           imageInput: true,
           jsonSchemaSteering: true,
@@ -1079,6 +1329,8 @@ describe('AI administration provider composition', () => {
         abortSignal: new AbortController().signal,
         deadlineAt: new Date(Date.now() + 1_000).toISOString(),
         selectedCapabilities: {
+          reasoning: true,
+          reasoningControl: true,
           aiAnalysis: true,
           cost: false,
           imageInput: false,
@@ -1245,6 +1497,73 @@ describe('AI administration provider composition', () => {
     expect(signals).toHaveLength(3)
     expect(signals.every(signal => signal.aborted)).toBe(true)
   })
+
+  it.each([
+    'generate_without_images',
+    'generate_with_images',
+    'repair_invalid_import_json',
+  ] as const)(
+    'admits synthetic OpenRouter demo data for %s using committed development policies',
+    async runType => {
+      const values = parseEnv(readFileSync('.env.development', 'utf8'))
+      for (const key of [
+        'AI_CONNECTION_DATA_POLICIES_JSON',
+        'AI_CONNECTION_EGRESS_POLICIES_JSON',
+        'AI_CONNECTION_TLS_POLICIES_JSON',
+      ]) {
+        vi.stubEnv(key, values[key])
+      }
+      const policy = loadAiDeploymentTrustPolicy()
+      policy.resolveHostname = vi.fn(async () => ['93.184.216.34'])
+      const demo = {
+        authenticationType: 'static_secret' as const,
+        dataPolicy: {
+          isPersonalDataProcessed: false,
+          isTrainingAllowed: false,
+          maximumInformationClass: 'internal',
+          maximumRetentionDays: 0,
+          processingRegions: ['EU/EES (demouppgift)'],
+          subprocessors: ['OpenRouter, Inc.'],
+        },
+        egressPolicyKey: 'openrouter_api',
+        endpointUrl: 'https://openrouter.ai/api/v1',
+        tlsPolicyKey: 'public_web_pki',
+      }
+      await expect(
+        authorizeAiConnectionTarget(demo, policy),
+      ).resolves.toMatchObject({
+        hostname: 'openrouter.ai',
+        isPrivateSidecar: false,
+      })
+      expect(() => enforceAiDataPolicy(demo, runType, policy)).not.toThrow()
+      for (const deniedData of [
+        { isPersonalDataProcessed: true },
+        { isTrainingAllowed: true },
+        { maximumRetentionDays: 1 },
+        { processingRegions: ['unapproved'] },
+      ]) {
+        expect(() =>
+          enforceAiDataPolicy(
+            {
+              ...demo,
+              dataPolicy: { ...demo.dataPolicy, ...deniedData },
+            },
+            runType,
+            policy,
+          ),
+        ).toThrow('trust policy blocked')
+      }
+      await expect(
+        authorizeAiConnectionTarget(
+          {
+            ...demo,
+            endpointUrl: 'https://other.example/api/v1',
+          },
+          policy,
+        ),
+      ).rejects.toMatchObject({ code: 'endpoint_not_allowed' })
+    },
+  )
 
   it('loads deployment-owned policy maps from environment', () => {
     vi.stubEnv(
@@ -1468,6 +1787,8 @@ describe('AI administration provider composition', () => {
         abortSignal: new AbortController().signal,
         deadlineAt: new Date(Date.now() + 1_000).toISOString(),
         selectedCapabilities: {
+          reasoning: true,
+          reasoningControl: true,
           aiAnalysis: false,
           cost: false,
           imageInput: false,
@@ -1601,7 +1922,7 @@ describe('AI administration provider composition', () => {
       executionId: expect.any(String),
       externalLiveCallMade: true,
       outcome: 'failed',
-      testSuiteVersion: 'ai-admin-functional-probe-v1',
+      testSuiteVersion: 'ai-admin-functional-probe-v2',
     })
     await expect(
       external.probeHealth(current, revision),

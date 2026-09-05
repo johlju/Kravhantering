@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createAiConnectionAdapterRegistry } from '@/lib/ai/adapter-registry'
+import type { AiReasoningEvidence } from '@/lib/ai/reasoning'
 import type {
   AiConnectionAdapterRegistration,
   AiConnectionAdapterRunRequest,
@@ -21,6 +22,7 @@ export const ADAPTER_CONTRACT_USAGE: AiRunUsage = {
 export interface AiConnectionAdapterContractHarness {
   adapterType: string
   completedRequest(): AiConnectionAdapterRunRequest
+  expectedReasoningEvidence?: AiReasoningEvidence
   missingCapabilityRequest(): AiConnectionAdapterRunRequest
   registration: AiConnectionAdapterRegistration
   waitForAbortRequest(signal: AbortSignal): AiConnectionAdapterRunRequest
@@ -66,6 +68,9 @@ export function describeAiConnectionAdapterContract(
             aiRunProfileId: 'profile-31',
           },
           rawOutput: '{"requirements":[]}',
+          ...(harness.expectedReasoningEvidence
+            ? { reasoningEvidence: harness.expectedReasoningEvidence }
+            : {}),
           type: 'completed',
           usage: ADAPTER_CONTRACT_USAGE,
         },

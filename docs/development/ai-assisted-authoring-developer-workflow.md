@@ -84,17 +84,30 @@ normalization into the shared event contract.
 Use the following probe sequence:
 
 1. Verify connection and authentication without assuming model capabilities.
-2. Run baseline model access with no optional provider control fields. The
-   fixed response is parsed and validated locally. A failed baseline stops the
+2. Run baseline model access with the intended revision reasoning configuration.
+   The fixed response is parsed and validated locally. A failed baseline stops the
    suite; later capabilities and profiles remain not tested.
 3. Probe every capability independently. Include only fields and content that
    are necessary for the selected capability. In particular, ordinary
-   validatable JSON must not require JSON Schema steering, reasoning controls
-   belong only to the AI-analysis probe, image content belongs only to image
+   validatable JSON must not require JSON Schema steering. Every probe uses the
+   saved reasoning path and applicable effort; image content belongs only to image
    input, and streaming is enabled only for the streaming probe.
 4. Run each stable profile's combined required-capability probe only after the
    independent probes. Combined support must not turn an independently failed
    capability into verified evidence.
+
+Reasoning activity and control probes include a fixed arithmetic task, as do
+combined profiles that require reasoning. A request to echo a literal JSON
+object can produce valid output with zero reasoning tokens even when explicit
+effort is enabled. The model must return the calculated integer in an `answer`
+field. Only local validation contains the expected answer; the prompt and
+provider-facing schema do not supply it. Correct arithmetic alone does not
+establish reasoning activity: separate provider evidence remains mandatory.
+Visible analysis remains optional: only its own probe asks
+for a summary. Image profiles retain their image-observation task, and strict
+schema probes retain the deliberately conflicting extra property.
+Valid JSON without observed reasoning is inconclusive capability evidence;
+it does not indicate malformed output and must not produce a usable revision.
 
 Catalog metadata and advertised parameters guide what can be attempted; they
 are never proof of support. A provider rejection caused by an isolated optional
@@ -103,6 +116,13 @@ Connection, authentication, trust-policy, and baseline failures remain
 connection- or model-wide failures.
 Safe adapter diagnostics, including a normalized upstream HTTP status, travel
 with failed verification results. Raw provider error bodies remain excluded.
+
+OpenRouter verification and runtime requests use `max_completion_tokens` for
+the output token limit, as specified by its
+[Chat Completions API](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion).
+The deprecated `max_tokens` parameter can exclude otherwise eligible endpoints
+when strict parameter support is required. Keep reasoning controls, the token
+limit, and the privacy minimum together in the shared request builder.
 
 An adapter may need several request dialects for different provider or server
 versions. Keep those variants as internal adapter implementations behind the
@@ -145,8 +165,14 @@ same connection, secret, verification, and profile workflow as production.
    node scripts/provision-ai-provider-secret-keyring.mjs
    ```
 
-2. Configure the deployment-owned egress, data, and TLS policy maps described in
-   [AI Connections Operations](../operations/ai-connections.md).
+2. Use the committed `.env.development` egress, data, and TLS policy maps for
+   the seeded OpenRouter connection with synthetic demo data. They cover all
+   three run types, match the draft demo attestation's `internal` class and
+   demo region label, and prohibit personal data, training, and retention.
+   The region label is demo metadata, not verified provider geography.
+   Use `.env.development.local` for overrides and restart the development
+   server after policy changes. Other connections need their own policies as
+   described in [AI Connections Operations](../operations/ai-connections.md).
 3. In Admin Center under `AI`, register a connection, write its provider secret,
    attest it, run the unified model verification, save the verified model
    revision, and activate the connection.
@@ -173,6 +199,11 @@ scripts/dev-curl.sh -s /api/ai/authoring-profiles | jq .
 ```
 
 Do not commit provider credentials or the generated root keyring.
+
+If secret verification reports
+`The AI connection trust policy blocked the request.`, first check for missing
+egress or TLS policies and local overrides of the committed defaults. Follow
+the [secret verification troubleshooting steps](../operations/ai-connection-deployment-policies.md#tillitspolicyn-blockerar-verifiering-av-leverantörshemligheten).
 
 ## Adapter Test Policy
 
@@ -288,7 +319,18 @@ for authoring, quarantine, repair, cancellation, and profile availability.
 The opt-in staging-live procedure is an operator verification, not a normal
 developer or CI test. It uses only the fixed synthetic payload and prints
 content-free evidence from the non-mutating `verify_live_path` operation. The
-operation rejects `controlled_test` and binds the just-completed fixed-v1 run
+operation rejects `controlled_test` and binds the just-completed fixed-v2 run
 to its exact active connection/model revision and stable profile configuration;
 see
 [AI Connections Operations](../operations/ai-connections.md#staging-live-synthetic-probe).
+
+Reasoning activity is mandatory for all three profiles. The `reasoning` revision
+configuration is
+`{ mode: 'explicit_control', effort: 'low' | 'medium' | 'high' }`
+or `{ mode: 'model_default', effort: null }`. The adapter translates it for the
+provider and observes activity independently of `aiAnalysis` and token display.
+The controlled adapter includes `controlled/default-no-analysis` (rejects
+explicit control), `controlled/no-analysis`, and `controlled/no-reasoning`
+(valid output without activity evidence). Use these synthetic models to exercise
+mandatory reasoning without live provider calls. No profile or run may override
+the revision, disable reasoning, or silently switch paths after a failure.

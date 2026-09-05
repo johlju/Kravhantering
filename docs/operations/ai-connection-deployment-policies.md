@@ -233,7 +233,8 @@ med `jq -c .` och skriv varje variabel på en enda rad i miljöfilen. Se
 [Redigera och kontrollera JSON](#redigera-och-kontrollera-json) för exakta
 kommandon.
 
-För lokal utveckling är filen normalt `.env.development.local`. För den
+För lokal utveckling finns OpenRouter-policyer för syntetiska demodata i
+`.env.development`. Lokala ändringar läggs i `.env.development.local`. För den
 dokumenterade RHEL-driftsättningen är filen
 `/etc/kravhantering/app.env`.
 
@@ -400,9 +401,14 @@ anropstypen.` Okända extra nycklar används inte.
 
 ## Var konfigurationen ska ligga
 
-För lokal utveckling ligger värdena normalt i den ignorerade filen
-`.env.development.local` i projektets rotkatalog. Starta om utvecklingsservern
-efter varje ändring.
+För lokal utveckling innehåller `.env.development` kompletta policyer för den
+förifyllda OpenRouter-anslutningen och syntetiska demodata. Alla tre anropstyper
+använder demoattestens informationsklass `internal` och regionvärde
+`EU/EES (demouppgift)`, utan personuppgifter, träning eller lagring. Regionvärdet
+är demodata och intygar inte leverantörens faktiska behandlingsregion.
+Attest, leverantörshemlighet och modellverifiering hanteras fortfarande i
+Admin Center. Egna policyvärden läggs i den ignorerade filen
+`.env.development.local`. Starta om utvecklingsservern efter varje ändring.
 
 För den dokumenterade RHEL-driftsättningen ligger värdena i
 `/etc/kravhantering/app.env`. Alla appnoder ska få samma granskade värden och
@@ -810,6 +816,81 @@ provet ersätter inte heller avtals-, dataskydds-, nätverks- eller
 PKI-granskningen.
 
 ## Vanliga fel och vad de betyder
+
+### Tillitspolicyn blockerar verifiering av leverantörshemligheten
+
+Vid `Verifiera och aktivera ny hemlighet` kan följande fel visas:
+
+```text
+The AI connection trust policy blocked the request.
+```
+
+En möjlig orsak är att `AI_CONNECTION_EGRESS_POLICIES_JSON` eller
+`AI_CONNECTION_TLS_POLICIES_JSON` saknas, är tom eller innehåller `{}`.
+Då saknas de policyer som anslutningen hänvisar till i Admin Center.
+Kontrollen kan stoppa anropet innan leverantören får pröva hemligheten;
+meddelandet betyder därför inte att API-nyckeln är felaktig.
+
+Kontrollera följande i ordning:
+
+1. Kontrollera att appens miljö innehåller båda policyobjekten och att de har
+   samma nycklar som anslutningen. OpenRouter-demoanslutningen använder
+   `openrouter_api` för egress och `public_web_pki` för TLS.
+2. Vid lokal utveckling finns dessa värden i `.env.development`. Kontrollera
+   att `.env.development.local`, `.env.local` eller processens miljövariabler
+   inte ersätter dem med tomma värden, `{}` eller andra policynycklar.
+3. Starta om appen efter ändringen och försök verifiera hemligheten igen.
+   I en miljö med flera appnoder måste alla noder läsa samma konfiguration.
+4. Om policyerna finns, kontrollera anslutningens adress, autentisering och
+   DNS-svar enligt [External Trust Boundary](./ai-connections.md#external-trust-boundary).
+   Samma meddelande används även för en otillåten adress eller autentisering,
+   en saknad TLS-policy och DNS-svar som inte tillåts av egress-policyn.
+
+`AI_CONNECTION_DATA_POLICIES_JSON` behövs också för att aktivera körprofiler.
+Den kontrolleras inte när just leverantörshemligheten verifieras. En saknad
+datapolicy förklarar därför inte detta fel i det steget.
+
+### HTTP 404 vid modellverifiering i OpenRouter
+
+Om anslutning och autentisering är verifierade men grundläggande modellåtkomst
+ger `upstream_unavailable_http_404`, har modellanropet fått HTTP 404.
+Gränssnittets text om nätverksfel är en generell felkategori och fastställer
+inte orsaken. OpenRouter kan ge 404 när ingen tillåten leverantör kan hantera
+den valda modellen med anropets krav. Se
+[OpenRouters felbeskrivning](https://openrouter.ai/docs/guides/features/router-metadata#error-responses).
+
+Kontrollera exakt modell-id och att anslutningsadressen är
+`https://openrouter.ai/api/v1`. Kontrollera sedan att modellen har tillgängliga
+leverantörer som uppfyller nollagring och stöder de begärda parametrarna, samt
+att kontots inställningar tillåter dessa leverantörer. En katalogpost bevisar
+inte att den kombinationen är tillgänglig.
+
+Adaptern använder `max_completion_tokens` för tokengränsen i både verifiering
+och ordinarie körning. Det äldre `max_tokens` kan utesluta leverantörer som
+bara annonserar den aktuella parametern när strikt parameterstöd krävs.
+Uppdatera appen och verifiera igen om den använder den äldre parametern.
+Kraven på resonemang, nollagring och förbjuden datainsamling gäller även vid
+verifiering. Senare förmågor och körprofiler förblir oprövade tills den
+grundläggande modellåtkomsten fungerar.
+
+### Övriga fel
+
+Om AI-analys verifieras men resonemangsaktivitet inte kan avgöras kommer
+resultaten från olika prov. Ett enkelt prov som bara begär ett färdigt
+JSON-objekt kan ge noll resonemangstoken även med hög resonemangsnivå.
+Resonemangsproven och körprofilernas kombinerade prov innehåller därför en
+fast räkneuppgift. Uppdatera appen om den använder de enklare proven och kör
+verifieringen igen med samma modell.
+
+Modellen måste lämna sitt beräknade resultat i JSON-fältet `answer`. Appen
+kontrollerar resultatet lokalt utan att skicka facit till leverantören.
+Ett korrekt resultat ersätter inte kravet på observerade resonemangsbevis.
+
+Koderna `reasoning_activity_not_observed` och
+`reasoning_control_not_observed` betyder att provet gav giltig JSON men saknade
+de resonemangsbevis som behövs. Utfallet är oavgjort och blockerar användbara
+modellrevisioner. Det betyder inte att JSON-svaret var ogiltigt, och synlig
+AI-analys från ett annat prov ersätter inte de saknade bevisen.
 
 <!-- markdownlint-disable MD013 -->
 | Meddelande eller symptom | Trolig orsak | Kontrollera |
