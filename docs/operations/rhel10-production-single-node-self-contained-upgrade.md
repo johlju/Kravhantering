@@ -49,6 +49,11 @@ JSON during upgrade. The first-install template-copy steps are intentionally
 not part of this checklist unless the release notes require a specific
 configuration change.
 
+The HSA verification quota uses the bundled SQL Server. Stop the complete
+single-node target, apply the migration and runtime-permission reconciliation,
+and then start an app release that implements the shared quota. No new service,
+secret or operator setting is required.
+
 >[!IMPORTANT]
 >Before the downtime window, create the mandatory site-specific
 >[readiness probe boundary](./readiness-probe-boundary.md) and add its path to
@@ -759,14 +764,21 @@ Repeat the AI deployment evidence gate before releasing the guard.
 
 Choose the rollback boundary that matches the failed step:
 
+The selected rollback release must already support the shared SQL-backed HSA
+verification quota. A release with per-process HSA verification counters is
+not eligible for production rollback, regardless of whether its matching
+pre-upgrade database state is available. If no eligible rollback release and
+database restore point exist, keep access closed and forward-fix the target
+release.
+
 - Before the current Quadlet target is stopped, no runtime migration has
   occurred. Leave the current release active and end the change window.
 - After the previous deployment is stopped but before database migration,
-  remove the new Quadlet units and start the previous release without a
+  remove the new Quadlet units and start the eligible previous release without a
   database restore.
 - After any target-release database migration starts, restore the tested SQL
   Server backup, volume snapshot, or restore point before starting the
-  previous release. Do not run individual migration down paths. Restore
+  eligible previous release. Do not run individual migration down paths. Restore
   schema, data, permissions, and role memberships as one database state.
 
 For either rollback that follows a failed Quadlet start:
@@ -776,15 +788,20 @@ For either rollback that follows a failed Quadlet start:
 2. If migration started, stop SQL Server and restore the recorded pre-upgrade
    database or named-volume snapshot. Use the migration evidence to confirm
    the boundary.
-3. Point `/opt/kravhantering/current` back to the previous release directory
-   and restore its `/etc/kravhantering/release.env` image refs.
-4. Install the previous release's `single-node` topology, run
+3. Point `/opt/kravhantering/current` back to the eligible previous release
+   directory and restore its `/etc/kravhantering/release.env` image refs.
+4. Install the eligible previous release's `single-node` topology, run
    `systemctl --user daemon-reload`, and enable
    `kravhantering-single-node.target`.
 5. Verify `/api/health`, `/api/ready` and sign-in before enabling traffic.
 
 Do not rely on app-only image rollback after schema migration unless the
 specific release notes explicitly say it is supported.
+
+Never start a release with per-process HSA verification counters as a
+production rollback. After an eligible rollback, verify the existing SQL and
+migration readiness signal, the `hsa_verification_quota_buckets` cleanup
+target, and HSA verification capacity events before reopening access.
 
 The release also adds the scheduled transient-state cleanup units. Before
 restoring traffic, complete the activation and first-run verification in

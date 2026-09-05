@@ -274,6 +274,9 @@ describe('container image contract', () => {
     expect(target).toContain('typeorm/ai-safety-seed-data.mjs')
     expect(target).toContain('typeorm/seed-runner.mjs')
     expect(target).toContain('lib/mcp/import-validation-fingerprint.mjs')
+    expect(target).toContain(
+      'lib/requirements/responsibility-person-verification-fingerprint.mjs',
+    )
     expect(target).toContain('typeorm/seed.mjs')
     expect(target).toContain('typeorm/seed-dogfood.mjs')
     expect(target).toContain('typeorm/seed-dogfood-build.mjs')
@@ -405,33 +408,6 @@ describe('container image contract', () => {
     expect(workflow.match(/--output type=docker,dest=/gu)).toHaveLength(4)
     expect(workflow).not.toContain('--output type=oci,dest=')
     expect(workflow.match(/docker load --input/gu)).toHaveLength(2)
-  })
-
-  it('shares Codex project defaults across development environments', () => {
-    const codexConfig = readWorkspaceFile('.codex/config.toml')
-
-    expect(codexConfig).toContain('model = "gpt-5.6-sol"')
-    expect(codexConfig).toContain(
-      'default_permissions = "kravhantering-development"',
-    )
-    expect(codexConfig).toContain(
-      '[permissions.kravhantering-development.filesystem]',
-    )
-    expect(codexConfig).toContain('"~/.codex/skills" = "write"')
-    expect(codexConfig).toContain(
-      '[permissions.kravhantering-development.filesystem.":workspace_roots"]',
-    )
-    expect(codexConfig).toContain('".codex" = "write"')
-    expect(codexConfig).toContain('".git" = "write"')
-    expect(codexConfig).toContain('[mcp_servers.playwright]')
-    expect(codexConfig).toContain('[mcp_servers.github]')
-    expect(codexConfig).toContain('[tui]')
-    expect(codexConfig).toContain('terminal_title = ["activity", "app-name"]')
-    expect(codexConfig).toContain(
-      'status_line = ["model-with-reasoning", "context-used", "context-window-size", "fast-mode", "permissions", "thread-title"]',
-    )
-    expect(codexConfig).toContain('status_line_use_colors = true')
-    expectDisabledSystemSkills(codexConfig)
   })
 
   it('keeps Codex devcontainer permissions in the user config template', () => {

@@ -222,6 +222,12 @@ const SOURCE_TEXT: Record<LocaleKey, Record<string, SourceInfo>> = {
       section: 'actionLog',
       title: 'Application action',
     },
+    'hsa_verification_quota_buckets.subject': {
+      description:
+        'The application temporarily stores aggregate HSA verification quota metadata for this person.',
+      section: 'other',
+      title: 'HSA verification quota',
+    },
     'requirement_import_validation_rate_buckets.principal': {
       description:
         'The application temporarily stores an aggregate MCP validation-session creation count for this person.',
@@ -372,6 +378,12 @@ const SOURCE_TEXT: Record<LocaleKey, Record<string, SourceInfo>> = {
       section: 'actionLog',
       title: 'Åtgärd i applikationen',
     },
+    'hsa_verification_quota_buckets.subject': {
+      description:
+        'Applikationen lagrar tillfälligt aggregerad metadata om HSA-verifieringskvot för personen.',
+      section: 'other',
+      title: 'HSA-verifieringskvot',
+    },
     'requirement_import_validation_rate_buckets.principal': {
       description:
         'Applikationen lagrar tillfälligt ett aggregerat antal skapade MCP-valideringssessioner för personen.',
@@ -491,6 +503,7 @@ const FIELD_LABELS: Record<LocaleKey, Record<string, string>> = {
     action: 'Action',
     actor_display_name: 'Name',
     actor_hsa_id: 'HSA-id',
+    bucket_kind: 'Quota type',
     completed_by_display_name: 'Name',
     completed_by_hsa_id: 'HSA-id',
     created_at: 'Created',
@@ -528,6 +541,7 @@ const FIELD_LABELS: Record<LocaleKey, Record<string, string>> = {
     permission_type: 'Permission',
     principal_display_name: 'Name',
     principal_hsa_id: 'HSA-id',
+    request_count: 'Request count',
     resolved_by: 'Name',
     resolved_by_hsa_id: 'HSA-id',
     responsible_display_name: 'Name',
@@ -550,6 +564,7 @@ const FIELD_LABELS: Record<LocaleKey, Record<string, string>> = {
     action: 'Åtgärd',
     actor_display_name: 'Namn',
     actor_hsa_id: 'HSA-id',
+    bucket_kind: 'Kvottyp',
     completed_by_display_name: 'Namn',
     completed_by_hsa_id: 'HSA-id',
     created_at: 'Skapad',
@@ -587,6 +602,7 @@ const FIELD_LABELS: Record<LocaleKey, Record<string, string>> = {
     permission_type: 'Behörighet',
     principal_display_name: 'Namn',
     principal_hsa_id: 'HSA-id',
+    request_count: 'Antal anrop',
     resolved_by: 'Namn',
     resolved_by_hsa_id: 'HSA-id',
     responsible_display_name: 'Namn',
