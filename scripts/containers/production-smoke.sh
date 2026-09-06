@@ -1622,6 +1622,97 @@ assert_service_property() {
     fail "$service $property expected $expected (observed: $observed)"
 }
 
+cleanup_fixture_sql() {
+  local database="$1" fixture="$2"
+  [[ "$database" =~ ^cleanup_compat_[a-z0-9_]+$ ]] || fail 'invalid compatibility database'
+  sqlserver_query kravhantering-sqlserver "USE [$database]; $(cat "scripts/containers/fixtures/cleanup-$fixture.sql")" >/dev/null
+}
+
+stage_cleanup_rollback_source() {
+  local archive source_bundle staged
+  archive="$(jq -er '.archive' "$EVIDENCE_DIR/cleanup-source-selection.json")" || return
+  source_bundle="$(jq -er '.bundle' "$EVIDENCE_DIR/cleanup-source-selection.json")" || return
+  staged="$(as_service mktemp -d "$SERVICE_HOME/cleanup-source-verification/release.XXXXXXXX")" || return
+  # The service account cannot rely on traversing the runner's workspace.
+  # Keep the authenticated bytes intact for the retained manager's digest checks.
+  sudo cp -R -- "$source_bundle" "$staged/bundle" || return
+  sudo cp -- "$archive" "$staged/source.tar.gz" || return
+  sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$staged" || return
+  printf '%s\n' "$staged"
+}
+
+verify_cleanup_rollback_schedule() {
+  local manager="$SERVICE_HOME/.local/share/kravhantering/cleanup/current/manager.sh"
+  local source_file="$EVIDENCE_DIR/cleanup-source.json"
+  local release archive source_bundle source_app_ref source_app_id staged_source
+  local original_app="$SERVICE_HOME/cleanup-source-verification/original-app.env"
+  local original_cleanup="$SERVICE_HOME/cleanup-source-verification/original-cleanup.env"
+  sudo cp "$CONFIG_ROOT/app.env" "$original_app"
+  sudo cp "$CONFIG_ROOT/cleanup.env" "$original_cleanup"
+  release="$(jq -er '.release' "$source_file")"
+  [[ "$release" =~ ^[a-zA-Z0-9][a-zA-Z0-9.+-]+$ ]] || fail 'invalid source release'
+  staged_source="$(stage_cleanup_rollback_source)"
+  archive="$staged_source/source.tar.gz"
+  source_bundle="$staged_source/bundle"
+  as_service "$manager" verify-transition --source-bundle "$source_bundle" --source-archive "$archive"
+  as_service "$manager" pause
+  service_systemctl stop kravhantering-nginx.service kravhantering-app-runtime.service
+  # Activate the authenticated source units and its exact application image.
+  # The disposable source database represents the restored schema.
+  source_app_ref="$(as_service jq -er '.images.appRuntime' "$source_bundle/DEPLOYMENT-MANIFEST.json")"
+  as_service podman pull "$source_app_ref" >/dev/null
+  source_app_id="$(as_service podman image inspect "$source_app_ref" --format '{{.Id}}')"
+  [[ "sha256:${source_app_id#sha256:}" == "$(as_service jq -er '.imageIds.appRuntime' "$source_bundle/DEPLOYMENT-MANIFEST.json")" ]] || fail 'rollback application image identity mismatch'
+  local source_release_env="$SERVICE_HOME/cleanup-source-verification/release.env"
+  sudo awk -v image="$source_app_ref" '{ if ($0 ~ /^APP_RUNTIME_IMAGE_REF=/) print "APP_RUNTIME_IMAGE_REF=" image; else print }' \
+    "$CONFIG_ROOT/release.env" | as_service tee "$source_release_env" >/dev/null
+  sudo awk -v database="cleanup_compat_source" '{ if ($0 ~ /^DB_NAME=/) print "DB_NAME=" database; else print }' \
+    "$original_app" | sudo tee "$CONFIG_ROOT/app.env" >/dev/null
+  sudo cp "$SERVICE_HOME/cleanup-source-verification/runtime.env" "$CONFIG_ROOT/cleanup.env"
+  sudo chown root:"$SERVICE_USER" "$CONFIG_ROOT/cleanup.env"
+  sudo chmod 0640 "$CONFIG_ROOT/cleanup.env"
+  as_service env KRAVHANTERING_RELEASE_ENV_FILE="$source_release_env" \
+    "$source_bundle/bin/kravhantering-quadlet.sh" install --topology single-node
+  render_ci_overlay
+  service_systemctl daemon-reload
+  service_systemctl start kravhantering-app-runtime.service
+  # Older source units may include a legacy timer. Only the retained host timer
+  # may perform the assertion below.
+  as_service "$manager" pause
+  # Stopping app services can stop the topology and its SQL dependency too.
+  database_job wait
+  as_service "$manager" resume
+  if service_systemctl is-active --quiet kravhantering-transient-cleanup.timer; then
+    fail 'legacy cleanup timer active after rollback'
+  fi
+  # Expire after resume so its mandatory manual verification cannot satisfy the test.
+  sqlserver_query kravhantering-sqlserver "USE [cleanup_compat_source];
+    UPDATE requirement_import_validation_sessions
+      SET created_at = DATEADD(hour, -2, SYSUTCDATETIME()),
+          expires_at = DATEADD(hour, -1, SYSUTCDATETIME());
+    IF @@ROWCOUNT <> 1 THROW 51000, 'scheduled fixture missing', 1;" >/dev/null
+  local deadline=$((SECONDS + 420))
+  until sqlserver_query kravhantering-sqlserver "USE [cleanup_compat_source];
+    IF EXISTS (SELECT 1 FROM requirement_import_validation_sessions) THROW 51000, 'scheduled cleanup pending', 1;" >/dev/null 2>&1; do
+    (( SECONDS < deadline )) || fail 'retained timer did not clean the rollback database'
+    sleep 5
+  done
+  assert_service_property kravhantering-host-cleanup.service Result success
+  printf 'source=%s timer-deletion-without-requests=passed\n' "$release" >> "$EVIDENCE_DIR/cleanup-rollback-schedule.txt"
+  as_service "$manager" pause
+  service_systemctl stop kravhantering-app-runtime.service
+  sudo cp "$original_app" "$CONFIG_ROOT/app.env"
+  sudo cp "$original_cleanup" "$CONFIG_ROOT/cleanup.env"
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" install --topology single-node
+  render_ci_overlay
+  service_systemctl daemon-reload
+  service_systemctl start kravhantering-app-runtime.service
+  database_job wait
+  as_service "$manager" resume
+  service_systemctl start kravhantering-single-node.target
+  sudo rm -f "$original_app" "$original_cleanup"
+}
+
 up() {
   local archive="$1"
   required_env DEMO_SEED_IMAGE_REF HSA_DIRECTORY_MOCK_IMAGE_REF \
@@ -1631,6 +1722,11 @@ up() {
     HSA_PERSON_LOOKUP_ADAPTER_IMAGE_ID
   prepare_service_user
   install_archive "$archive"
+  local target_release
+  target_release="$(jq -er '.version' "$INSTALL_ROOT/current/DEPLOYMENT-MANIFEST.json")"
+  local source_args=("${GITHUB_REPOSITORY:-viscalyx/Kravhantering}" "v$target_release" "$EVIDENCE_DIR")
+  [[ -z "${CLEANUP_SOURCE_RELEASE:-}" ]] || source_args+=("$CLEANUP_SOURCE_RELEASE")
+  node scripts/release/prepare-cleanup-source.mjs "${source_args[@]}"
   render_runtime_configuration
   prepare_images
   as_service "$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh" \
@@ -1661,14 +1757,86 @@ up() {
   service_systemctl enable kravhantering-single-node.target
   service_systemctl start kravhantering-single-node.target || \
     report_target_failure 'single-node target failed to start'
-  service_systemctl is-active --quiet kravhantering-transient-cleanup.timer || \
-    fail 'transient cleanup timer was not active after topology startup'
-  service_systemctl start kravhantering-transient-cleanup.service || \
-    fail 'transient cleanup manual release-smoke invocation failed'
+  # Rollback stops the topology; allow first-boot database initialization to finish.
   wait_for_url https://kravhantering.test/api/health \
     'initial application process health'
   wait_for_url https://kravhantering.test/api/ready \
     'initial full-stack readiness'
+  local cleanup_database
+  cleanup_database="$(sudo sed -n 's/^DB_NAME=//p' "$CONFIG_ROOT/app.env")"
+  [[ "$cleanup_database" =~ ^[a-zA-Z0-9_]+$ ]] || fail 'invalid cleanup database name'
+  sqlserver_query kravhantering-sqlserver "USE [$cleanup_database]; GRANT VIEW DEFINITION TO [kravhantering_runtime];" >/dev/null
+  # Validate the exact cleanup image before installing its independent host service.
+  sudo awk '/^(DB_[A-Z_]+|DATABASE_URL|TRANSIENT_CLEANUP_[A-Z_]+)=/' "$CONFIG_ROOT/app.env" |
+    sudo tee "$CONFIG_ROOT/cleanup.env" >/dev/null
+  printf 'TRANSIENT_CLEANUP_IMAGE_REF=%s\n' "$DB_JOB_IMAGE_REF" | sudo tee "$CONFIG_ROOT/cleanup-release.env" >/dev/null
+  sudo chown root:"$SERVICE_USER" "$CONFIG_ROOT/cleanup.env" "$CONFIG_ROOT/cleanup-release.env"
+  sudo chmod 0640 "$CONFIG_ROOT/cleanup.env" "$CONFIG_ROOT/cleanup-release.env"
+  local cleanup_evidence="$SERVICE_HOME/cleanup-schema-evidence.json"
+  local cleanup_image_id target_command target_env="$SERVICE_HOME/cleanup-target.env"
+  cleanup_image_id="$(jq -er '.services[] | select(.name == "db-job") | .imageId' "$INSTALL_ROOT/current/container-stack.lock.json")"
+  for target_command in bootstrap migrate; do
+    as_service podman run --rm --pull=never --network "$database_network" \
+      --env-file "$CONFIG_ROOT/db-job.env" --env DB_NAME=cleanup_compat_target \
+      --volume "$CONFIG_ROOT/tls/ca.crt:/run/kravhantering/sqlserver-ca.crt:ro" \
+      "$cleanup_image_id" "$target_command" >/dev/null
+  done
+  sudo awk '{ if ($0 ~ /^DB_NAME=/) print "DB_NAME=cleanup_compat_target"; else print }' \
+      "$CONFIG_ROOT/cleanup.env" | as_service tee "$target_env" >/dev/null
+  as_service chmod 0600 "$target_env"
+  cleanup_fixture_sql cleanup_compat_target seed
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-cleanup-evidence.sh" \
+      "$INSTALL_ROOT/current" "$CONFIG_ROOT/cleanup-release.env" \
+      "$target_env" single-node "$cleanup_evidence"
+  cleanup_fixture_sql cleanup_compat_target verify
+  sudo cat "$cleanup_evidence" | jq -s '.' > "$EVIDENCE_DIR/cleanup-schema-evidence.json"
+  mkdir -p "$EVIDENCE_DIR/cleanup-release"
+  cp "$INSTALL_ROOT/current/DEPLOYMENT-MANIFEST.json" "$INSTALL_ROOT/current/container-stack.lock.json" "$EVIDENCE_DIR/cleanup-release/"
+  local source_database source_env source_evidence source_bundle source_job_ref source_job_id source_command
+  local source_work="$SERVICE_HOME/cleanup-source-verification"
+  as_service mkdir -p "$source_work"
+  as_service chmod 0700 "$source_work"
+  source_database="cleanup_compat_source"
+  source_bundle="$(jq -er '.bundle' "$EVIDENCE_DIR/cleanup-source-selection.json")"
+  source_job_ref="$(jq -er '.images.dbJob' "$source_bundle/DEPLOYMENT-MANIFEST.json")"
+  source_job_id="$(jq -er '.imageIds.dbJob' "$source_bundle/DEPLOYMENT-MANIFEST.json")"
+  as_service podman pull "$source_job_ref" >/dev/null
+  local observed_source_id
+  observed_source_id="$(as_service podman image inspect "$source_job_ref" --format '{{.Id}}')"
+  [[ "sha256:${observed_source_id#sha256:}" == "$source_job_id" ]] || fail 'source database-job image identity mismatch'
+  for source_command in bootstrap migrate; do
+    as_service podman run --rm --pull=never --network "$database_network" \
+      --env-file "$CONFIG_ROOT/db-job.env" --env DB_NAME="$source_database" \
+      --volume "$CONFIG_ROOT/tls/ca.crt:/run/kravhantering/sqlserver-ca.crt:ro" \
+      "$source_job_id" "$source_command" >/dev/null
+  done
+  source_env="$source_work/runtime.env"
+  source_evidence="$source_work/evidence.json"
+  sudo awk -v database="$source_database" '{ if ($0 ~ /^DB_NAME=/) print "DB_NAME=" database; else print }' \
+    "$CONFIG_ROOT/cleanup.env" | as_service tee "$source_env" >/dev/null
+  as_service chmod 0600 "$source_env"
+  cleanup_fixture_sql "$source_database" seed
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-cleanup-evidence.sh" \
+    "$INSTALL_ROOT/current" "$CONFIG_ROOT/cleanup-release.env" \
+    "$source_env" single-node "$source_evidence"
+  cleanup_fixture_sql "$source_database" verify
+  sudo cat "$source_evidence" > "$EVIDENCE_DIR/cleanup-source-evidence.json"
+  jq -s '.' "$EVIDENCE_DIR/cleanup-source.json" > "$EVIDENCE_DIR/cleanup-source-release-locks.json"
+  jq -s '.[0] + .[1:] | group_by(.schemaVersion) | map(if (unique | length) != 1 then error("conflicting cleanup evidence") else .[0] end)' "$EVIDENCE_DIR/cleanup-schema-evidence.json" \
+    "$EVIDENCE_DIR/cleanup-source-evidence.json" > "$EVIDENCE_DIR/cleanup-matrix-evidence.json"
+  node scripts/release/cleanup-compatibility.mjs seal \
+    "$EVIDENCE_DIR/cleanup-release" "$EVIDENCE_DIR/cleanup-matrix-evidence.json" \
+    "$EVIDENCE_DIR/cleanup-source-release-locks.json"
+  cp "$EVIDENCE_DIR/cleanup-release/cleanup-compatibility.json" "$EVIDENCE_DIR/cleanup-compatibility.json"
+  sudo install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0644 \
+    "$EVIDENCE_DIR/cleanup-compatibility.json" "$INSTALL_ROOT/current/cleanup-compatibility.json"
+  as_service "$INSTALL_ROOT/current/bin/kravhantering-cleanup.sh" install --topology single-node
+  as_service "$SERVICE_HOME/.local/share/kravhantering/cleanup/current/manager.sh" resume
+  verify_cleanup_rollback_schedule
+  wait_for_url https://kravhantering.test/api/health \
+    'application process health after cleanup rollback'
+  wait_for_url https://kravhantering.test/api/ready \
+    'full-stack readiness after cleanup rollback'
   bash .devcontainer/trust-container-ca.sh
   verify_hsa_runtime_isolation
   verify_hsa_mtls_rotation_and_rollback
@@ -1686,6 +1854,7 @@ up() {
     'Keycloak discovery after full-stack restart'
   wait_for_url https://kravhantering.test/api/ready \
     'application readiness after full-stack restart'
+  as_service "$SERVICE_HOME/.local/share/kravhantering/cleanup/current/manager.sh" pause
   verify_sqlserver_identity_upgrade
   service_systemctl stop kravhantering-single-node.target
   if service_systemctl is-active --quiet kravhantering-single-node.target; then
@@ -1697,6 +1866,8 @@ up() {
   database_job migrate >"$EVIDENCE_DIR/migration-after-reinstall.json"
   database_job migration-status \
     >"$EVIDENCE_DIR/migration-status-after-reinstall.json"
+  sqlserver_query kravhantering-sqlserver "USE [$cleanup_database]; GRANT VIEW DEFINITION TO [kravhantering_runtime];" >/dev/null
+  as_service "$SERVICE_HOME/.local/share/kravhantering/cleanup/current/manager.sh" resume
   rotate_sqlserver_certificate
   wait_for_url https://kravhantering.test/api/ready \
     'application readiness after SQL Server certificate rotation'
@@ -1738,7 +1909,7 @@ evidence() {
   done
   service_systemctl status kravhantering-single-node.target --no-pager \
     >"$EVIDENCE_DIR/systemd-status.txt" 2>&1 || true
-  service_systemctl status kravhantering-transient-cleanup.timer --no-pager \
+  service_systemctl status kravhantering-host-cleanup.timer --no-pager \
     >>"$EVIDENCE_DIR/systemd-status.txt" 2>&1 || true
   service_systemctl list-units 'kravhantering-*' --all --no-pager \
     >"$EVIDENCE_DIR/systemd-units.txt" 2>&1 || true
@@ -1914,6 +2085,10 @@ verify() {
 down() {
   local helper="$INSTALL_ROOT/current/bin/kravhantering-quadlet.sh"
   local network purpose uid user_search_path volume volume_status
+  if sudo test -L "$SERVICE_HOME/.local/share/kravhantering/cleanup/current"; then
+    as_service "$SERVICE_HOME/.local/share/kravhantering/cleanup/current/manager.sh" uninstall
+  fi
+
   cleanup_hsa_app_pki
   id "$SERVICE_USER" >/dev/null 2>&1 || return 0
   mkdir -p "$EVIDENCE_DIR"

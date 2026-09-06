@@ -31,6 +31,7 @@ const OCI_ARCHIVES = {
   'db-job': 'db-job.oci.tar',
   'demo-seed': 'demo-seed.oci.tar',
   'hsa-directory-mock': 'hsa-directory-mock.oci.tar',
+  'hsa-mtls-provisioner': 'hsa-mtls-provisioner.oci.tar',
   'hsa-person-lookup-adapter': 'hsa-person-lookup-adapter.oci.tar',
 }
 
@@ -324,6 +325,11 @@ function createDebugHost(runId) {
     '--symbolic',
     '/usr/local/lib/node_modules/npm/bin/npm-cli.js',
     '/usr/local/bin/npm',
+  ])
+  run('docker', [
+    'cp',
+    capture('sh', ['-c', 'command -v "$1"', 'sh', 'gh']),
+    `${DEBUG_CONTAINER_NAME}:/usr/local/bin/gh`,
   ])
   dockerExec(['node', '--version'])
   dockerExec(['npm', '--version'])

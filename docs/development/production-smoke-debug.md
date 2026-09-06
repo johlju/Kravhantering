@@ -49,6 +49,18 @@ It then:
 The debug host remains running after both success and failure so its state is
 available for inspection.
 
+Cleanup rollback verification copies the authenticated source archive and
+extracted bundle into a private directory under the service account's
+`cleanup-source-verification` directory. The retained cleanup manager verifies
+the copied archive and stack-lock digests before rollback, so verification
+does not depend on service-account access to the runner's workspace.
+
+The initial stack must pass full readiness before cleanup rollback verification
+can stop its services. This lets Keycloak finish its first database migration.
+Full readiness is checked again after restoring the candidate release.
+Reads of the staged manifest and execution of its installer also run as the
+service account because the staged directory is private to that account.
+
 ## Inspect a failure
 
 Open a shell in the retained host:

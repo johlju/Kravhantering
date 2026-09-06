@@ -12,6 +12,7 @@ import {
   DEFAULT_DEV_REALM_PATH,
 } from '../keycloak-demo-users.mjs'
 import { generateHsaPersonLookupSwaggerUi } from '../openapi/generate-hsa-person-lookup-swagger-ui.mjs'
+import { verifyCleanupCompatibilityContract } from './cleanup-compatibility-contract.mjs'
 import { stripOperatorUpgradeSourceMarkers } from './operator-upgrade-notes.mjs'
 
 export const APP_RUNTIME_PACKAGE = 'kravhantering-app-runtime'
@@ -42,7 +43,7 @@ const USAGE = `Usage:
   node scripts/release/container-release.mjs plan --gitversion-json <path> --output <path> [--github-env <path>] [--changed-files <path>]
   node scripts/release/container-release.mjs identities --plan <path> --app-metadata <path> --app-artifact <path> --db-job-metadata <path> --db-job-artifact <path> [--hsa-directory-mock-metadata <path> --hsa-directory-mock-artifact <path>] [--hsa-person-lookup-adapter-metadata <path> --hsa-person-lookup-adapter-artifact <path>] [--hsa-mtls-provisioner-metadata <path> --hsa-mtls-provisioner-artifact <path>] [--demo-seed-metadata <path> --demo-seed-artifact <path>] --output <path> [--github-env <path>]
   node scripts/release/container-release.mjs notes --plan <path> --metadata <path> --hashes <path> --output <path> [--operator-notes <path>]
-  node scripts/release/container-release.mjs bundle --plan <path> --metadata <path> --stack-lock <path> --output-dir <path> [--hsa-integration-support-lock <path>] [--test-support-lock <path>] [--build-json <path>] [--hashes <path>] [--sbom-dir <path>]
+  node scripts/release/container-release.mjs bundle --plan <path> --metadata <path> --stack-lock <path> --output-dir <path> [--hsa-integration-support-lock <path>] [--test-support-lock <path>] [--build-json <path>] [--hashes <path>] [--sbom-dir <path>] [--cleanup-contract <path> --cleanup-source <path>]
   node scripts/release/container-release.mjs ensure-tag --plan <path>`
 
 const { readExpectedDatabaseSchemaVersion } = buildMetadataTools
@@ -1151,6 +1152,9 @@ export function stageProductionDeploymentBundle(options = {}) {
   if (!plan || !metadata || !stackLock) {
     throw new Error('plan, metadata and stackLock are required.')
   }
+  if (options.cleanupContractPath && !readNonEmpty(options.cleanupSourcePath)) {
+    throw new Error('--cleanup-source is required with --cleanup-contract.')
+  }
 
   const bundleName = deploymentBundleBaseName(plan.version)
   const bundleRoot = path.resolve(cwd, outputDir, bundleName)
@@ -1230,6 +1234,31 @@ export function stageProductionDeploymentBundle(options = {}) {
     stackLock,
     testSupportLock,
   })
+  if (options.cleanupContractPath) {
+    const contract = verifyCleanupCompatibilityContract(
+      readJsonFile(path.resolve(cwd, options.cleanupContractPath), fsImpl),
+      manifest,
+      stackLock,
+      [readJsonFile(path.resolve(cwd, options.cleanupSourcePath), fsImpl)],
+    )
+    writeJsonFile(
+      path.join(bundleRoot, 'cleanup-compatibility.json'),
+      contract,
+      fsImpl,
+    )
+    writeJsonFile(
+      path.join(bundleRoot, 'cleanup-source.json'),
+      contract.sources[0],
+      fsImpl,
+    )
+    manifest.files.push('cleanup-compatibility.json', 'cleanup-source.json')
+    manifest.files.sort()
+    manifest.cleanup = {
+      imageId: contract.imageId,
+      manifestDigest: contract.manifestDigest,
+      contract: 'cleanup-compatibility.json',
+    }
+  }
   writeJsonFile(
     path.join(bundleRoot, 'DEPLOYMENT-MANIFEST.json'),
     manifest,
@@ -1966,6 +1995,8 @@ export async function main(args, dependencies = {}) {
         ? readJsonFile(options['test-support-lock'], fsImpl)
         : undefined
       const result = stageProductionDeploymentBundle({
+        cleanupContractPath: options['cleanup-contract'],
+        cleanupSourcePath: options['cleanup-source'],
         buildJsonPath: options['build-json'],
         cwd: dependencies.cwd,
         fsImpl,

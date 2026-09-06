@@ -265,8 +265,6 @@ describe('kravhantering Quadlet helper', () => {
       'kravhantering-app-node.target',
       'kravhantering-app-runtime.container',
       'kravhantering-nginx.container',
-      'kravhantering-transient-cleanup.container',
-      'kravhantering-transient-cleanup.timer',
     ])
     expect(
       units.find(unit => unit.file === 'kravhantering-app-node-edge.network')
@@ -305,25 +303,6 @@ describe('kravhantering Quadlet helper', () => {
     expect(appRuntime).toContain('MemoryMax=4096M')
     expect(appRuntime).toContain('CPUQuota=300%')
     expect(appRuntime).toContain('TasksMax=544')
-    const cleanup = units.find(
-      unit => unit.file === 'kravhantering-transient-cleanup.container',
-    )?.content
-    expect(cleanup).toContain('Image=registry.example/db-job:1.2.3')
-    expect(cleanup).toContain('EnvironmentFile=/etc/kravhantering/app.env')
-    expect(cleanup).toContain('PodmanArgs=--entrypoint=/usr/local/bin/node')
-    expect(cleanup).toContain(
-      'Exec=/workspace/transient-cleanup/lib/transient-cleanup/cli.js',
-    )
-    expect(cleanup).toContain('Network=kravhantering-app-node-egress.network')
-    expect(cleanup).toContain('DropCapability=all')
-    expect(cleanup).toContain('NoNewPrivileges=true')
-    expect(cleanup).toContain('ReadOnly=true')
-    const timer = units.find(
-      unit => unit.file === 'kravhantering-transient-cleanup.timer',
-    )?.content
-    expect(timer).toContain('OnCalendar=*:0/5')
-    expect(timer).toContain('Persistent=true')
-    expect(timer).toContain('Unit=kravhantering-transient-cleanup.service')
     const nginx = units.find(
       unit => unit.file === 'kravhantering-nginx.container',
     )?.content
@@ -375,12 +354,6 @@ describe('kravhantering Quadlet helper', () => {
     )
     expect(nginx).not.toContain('fullchain.pem')
     expect(nginx).not.toContain('keep-groups')
-    expect(units.map(unit => unit.file)).toEqual(
-      expect.arrayContaining([
-        'kravhantering-transient-cleanup.container',
-        'kravhantering-transient-cleanup.timer',
-      ]),
-    )
   })
 
   it('requires explicit trusted proxy CIDRs for load-balanced ingress', () => {
@@ -644,24 +617,10 @@ describe('kravhantering Quadlet helper', () => {
       'kravhantering-single-node.target',
       'kravhantering-sqlserver-data.volume',
       'kravhantering-sqlserver.container',
-      'kravhantering-transient-cleanup.container',
-      'kravhantering-transient-cleanup.timer',
     ])
     expect(allContent).toContain('NetworkName=kravhantering-single-node_edge')
     expect(allContent).toContain('VolumeName=kravhantering-sqlserver-data')
     expect(allContent).toContain('VolumeName=kravhantering-keycloak-data')
-    const cleanup = units.find(
-      unit => unit.file === 'kravhantering-transient-cleanup.container',
-    )?.content
-    expect(cleanup).toContain(
-      'Network=kravhantering-single-node-database.network',
-    )
-    expect(cleanup).toContain(
-      'Network=kravhantering-single-node-egress.network',
-    )
-    expect(cleanup).toContain(
-      'Environment=NODE_EXTRA_CA_CERTS=/run/kravhantering/tls/ca.crt',
-    )
     expect(
       units.find(unit => unit.file === 'kravhantering-nginx.container')
         ?.content,
@@ -1686,12 +1645,10 @@ rotate_sqlserver_certificate
       'kravhantering-app-node-egress.network',
       'kravhantering-app-runtime.container',
       'kravhantering-nginx.container',
-      'kravhantering-transient-cleanup.container',
       'operator-owned.container',
     ])
     expect(fs.readdirSync(systemdDir).sort()).toEqual([
       'kravhantering-app-node.target',
-      'kravhantering-transient-cleanup.timer',
       'operator-owned.target',
     ])
     expect(
@@ -2029,87 +1986,114 @@ rotate_sqlserver_certificate
     ])
   })
 
-  it('stops and disables a topology before removal, then reloads systemd', () => {
-    const fixture = createFixture(releaseEnv())
-    const quadletDir = path.join(fixture.outputDir, 'containers')
-    const systemdDir = path.join(fixture.outputDir, 'systemd')
-    const mockBin = path.join(fixture.root, 'bin')
-    const systemctlLog = path.join(fixture.root, 'systemctl.log')
-    fs.mkdirSync(quadletDir, { recursive: true })
-    fs.mkdirSync(systemdDir, { recursive: true })
-    fs.mkdirSync(mockBin)
-    fs.writeFileSync(
-      path.join(quadletDir, 'kravhantering-nginx.container'),
-      'managed\n',
-    )
-    fs.writeFileSync(
-      path.join(systemdDir, 'kravhantering-single-node.target'),
-      'managed\n',
-    )
-    fs.writeFileSync(
-      path.join(mockBin, 'systemctl'),
-      [
-        '#!/usr/bin/env bash',
-        'printf \'%s\\n\' "$*" >>"$SYSTEMCTL_LOG"',
-        'if [[ "$*" == "--user daemon-reload" ]]; then',
-        '  [[ ! -e "$KRAVHANTERING_QUADLET_DIR/kravhantering-nginx.container" ]]',
-        '  [[ ! -e "$KRAVHANTERING_SYSTEMD_USER_DIR/kravhantering-single-node.target" ]]',
-        'fi',
-        '',
-      ].join('\n'),
-      { mode: 0o755 },
-    )
+  it.each(['loaded', 'not-found'])(
+    'removes a topology with legacy cleanup %s, then reloads systemd',
+    legacyState => {
+      const fixture = createFixture(releaseEnv())
+      const quadletDir = path.join(fixture.outputDir, 'containers')
+      const systemdDir = path.join(fixture.outputDir, 'systemd')
+      const mockBin = path.join(fixture.root, 'bin')
+      const systemctlLog = path.join(fixture.root, 'systemctl.log')
+      fs.mkdirSync(quadletDir, { recursive: true })
+      fs.mkdirSync(systemdDir, { recursive: true })
+      fs.mkdirSync(mockBin)
+      fs.writeFileSync(
+        path.join(quadletDir, 'kravhantering-nginx.container'),
+        'managed\n',
+      )
+      fs.writeFileSync(
+        path.join(systemdDir, 'kravhantering-single-node.target'),
+        'managed\n',
+      )
+      fs.writeFileSync(
+        path.join(mockBin, 'systemctl'),
+        [
+          '#!/usr/bin/env bash',
+          'printf \'%s\\n\' "$*" >>"$SYSTEMCTL_LOG"',
+          'if [[ "$*" == "--user show kravhantering-transient-cleanup.timer --property=LoadState --value" ]]; then',
+          '  printf "%s\\n" "$LEGACY_LOAD_STATE"',
+          'fi',
+          'if [[ "$*" == "--user disable --now kravhantering-transient-cleanup.timer" ]]; then',
+          '  [[ "$LEGACY_LOAD_STATE" == loaded ]] || exit 1',
+          'fi',
+          'if [[ "$*" == "--user daemon-reload" ]]; then',
+          '  [[ ! -e "$KRAVHANTERING_QUADLET_DIR/kravhantering-nginx.container" ]]',
+          '  [[ ! -e "$KRAVHANTERING_SYSTEMD_USER_DIR/kravhantering-single-node.target" ]]',
+          'fi',
+          '',
+        ].join('\n'),
+        { mode: 0o755 },
+      )
 
-    const result = runHelper(['remove', '--topology', 'single-node'], fixture, {
-      KRAVHANTERING_QUADLET_DIR: quadletDir,
-      KRAVHANTERING_SYSTEMD_USER_DIR: systemdDir,
-      PATH: `${mockBin}:${process.env.PATH}`,
-      SYSTEMCTL_LOG: systemctlLog,
-    })
+      const result = runHelper(
+        ['remove', '--topology', 'single-node'],
+        fixture,
+        {
+          KRAVHANTERING_QUADLET_DIR: quadletDir,
+          KRAVHANTERING_SYSTEMD_USER_DIR: systemdDir,
+          PATH: `${mockBin}:${process.env.PATH}`,
+          SYSTEMCTL_LOG: systemctlLog,
+          LEGACY_LOAD_STATE: legacyState,
+        },
+      )
 
-    expect(result.status).toBe(0)
-    expect(fs.readFileSync(systemctlLog, 'utf8')).toBe(
-      [
-        '--user disable --now kravhantering-transient-cleanup.timer',
-        '--user stop kravhantering-single-node.target',
-        '--user disable kravhantering-single-node.target',
-        '--user daemon-reload',
-        '',
-      ].join('\n'),
-    )
-    expect(result.stdout).toContain(
-      `Removed managed unit files from ${quadletDir} and ${systemdDir}; named volumes remain.`,
-    )
-    expect(result.stdout).toContain('Reloaded the user systemd manager.')
-  })
+      expect(result.status).toBe(0)
+      expect(fs.readFileSync(systemctlLog, 'utf8')).toBe(
+        [
+          '--user show kravhantering-transient-cleanup.timer --property=LoadState --value',
+          ...(legacyState === 'loaded'
+            ? ['--user disable --now kravhantering-transient-cleanup.timer']
+            : []),
+          '--user stop kravhantering-single-node.target',
+          '--user disable kravhantering-single-node.target',
+          '--user daemon-reload',
+          '',
+        ].join('\n'),
+      )
+      expect(result.stdout).toContain(
+        `Removed managed unit files from ${quadletDir} and ${systemdDir}; named volumes remain.`,
+      )
+      expect(result.stdout).toContain('Reloaded the user systemd manager.')
+    },
+  )
 
-  it('reports both the topology and scheduled cleanup status', () => {
-    const fixture = createFixture(releaseEnv())
-    const mockBin = path.join(fixture.root, 'bin')
-    const systemctlLog = path.join(fixture.root, 'systemctl.log')
-    fs.mkdirSync(mockBin)
-    fs.writeFileSync(
-      path.join(mockBin, 'systemctl'),
-      [
-        '#!/usr/bin/env bash',
-        'printf \'%s\\n\' "$*" >>"$SYSTEMCTL_LOG"',
-        '',
-      ].join('\n'),
-      { mode: 0o755 },
-    )
+  it.each([
+    ['app-node-tls', 'kravhantering-app-node.target', 0],
+    ['app-node-http', 'kravhantering-app-node.target', 3],
+    ['single-node', 'kravhantering-single-node.target', 0],
+  ])(
+    'reports %s target status independently of cleanup',
+    (topology, target, status) => {
+      const fixture = createFixture(releaseEnv())
+      const mockBin = path.join(fixture.root, 'bin')
+      const systemctlLog = path.join(fixture.root, 'systemctl.log')
+      fs.mkdirSync(mockBin)
+      fs.writeFileSync(
+        path.join(mockBin, 'systemctl'),
+        [
+          '#!/usr/bin/env bash',
+          'printf \'%s\\n\' "$*" >>"$SYSTEMCTL_LOG"',
+          'shift 2',
+          'for unit do',
+          '  [[ "$unit" == "$APPLICATION_TARGET" ]] || exit 4',
+          'done',
+          'exit "$APPLICATION_STATUS"',
+          '',
+        ].join('\n'),
+        { mode: 0o755 },
+      )
 
-    const result = runHelper(
-      ['status', '--topology', 'app-node-tls'],
-      fixture,
-      {
+      const result = runHelper(['status', '--topology', topology], fixture, {
         PATH: `${mockBin}:${process.env.PATH}`,
         SYSTEMCTL_LOG: systemctlLog,
-      },
-    )
+        APPLICATION_TARGET: target,
+        APPLICATION_STATUS: String(status),
+      })
 
-    expect(result.status).toBe(0)
-    expect(fs.readFileSync(systemctlLog, 'utf8')).toBe(
-      '--user status kravhantering-app-node.target kravhantering-transient-cleanup.timer\n',
-    )
-  })
+      expect(result.status).toBe(status)
+      expect(fs.readFileSync(systemctlLog, 'utf8')).toBe(
+        `--user status ${target}\n`,
+      )
+    },
+  )
 })
