@@ -627,6 +627,40 @@ alla inkomna synpunkter på kravet.
 
 ## Administrationscenter
 
+### Admin — Modellverifiering
+
+Öppna **Inställningar > AI** och välj **Lägg till modell** på en AI-anslutning.
+Panelen **Modellverifiering** visar grundkontroller, förmågor och kompatibilitet
+med alla tre körprofiler redan från start. På bred skärm ligger panelen till
+höger om fälten; på smal skärm ligger den under dem.
+
+Ange modelluppgifterna och välj **Verifiera** med Play-ikon i panelens
+rubrikrad. Raderna uppdateras på plats med **Väntar**, **Verifierar** och
+kontrollens utfall. Körprofiler börjar med **Okänd kompatibilitet** och visar
+**Kompatibel**, **Inte kompatibel** eller **Kunde inte avgöras** först när ett
+resultat finns. En ej kontrollerad profil förblir okänd. Felorsaker, tekniska
+koder och saknade förmågor visas vid respektive rad. Kompatibiliteten gäller
+modellens användning med profilen och är separat från profilens huvudstatus.
+
+**Avbryt verifiering** med Square-ikon stoppar körningen. Vid avbrott eller
+anslutningsfel bevaras slutförda kontroller, men modellrevisionen kan inte
+sparas. Välj **Verifiera igen** för ett nytt försök. Slutsammanfattningen anger
+om resultatet är sparbart. Välj sedan **Spara modellrevision** bredvid
+**Avbryt** under formuläret; verifieringen sparar inte automatiskt.
+
+Ett färdigt, sparbart resultat finns under **Väntande verifieringar** på
+anslutningen även när du stänger formuläret. En annan behörig administratör kan
+öppna det och spara modellrevisionen. Panelen visar resultat och återstående
+giltighetstid direkt; öppning förlänger inte tiden. När tiden går ut spärras
+sparandet och slutsammanfattningen visar att ny verifiering krävs.
+**Kassera verifiering** kräver bekräftelse och tar bort försöket för alla
+administratörer. Tekniska redigeringar i formuläret bevarar det delade
+originalförsöket.
+
+Namn och beskrivning kan ändras utan ny verifiering. Ändrat tekniskt modell-id,
+extern modellversion eller resonemangsnivå återställer startstatusarna och
+kräver ny verifiering. Panelen finns kvar hela tiden.
+
 ### Admin — Kolumnhantering
 
 Fliken **Kolumner** konfigurerar vilka kolumner som visas som standard i

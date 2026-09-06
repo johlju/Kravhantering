@@ -1458,6 +1458,7 @@ export default function AiConnectionsPanel() {
       <FormModal
         closeDisabled={busy}
         developerModeValue="AI model form"
+        maxWidthClassName="max-w-7xl"
         onClose={closeDialog}
         open={dialog?.kind === 'model'}
         title={
