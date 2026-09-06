@@ -13,6 +13,22 @@ Alla steg beskriver vad en testare ska göra i webbläsaren. När ett testfall
 explicit anger API-kontroll ska den göras med `scripts/dev-curl.sh`, eftersom
 vanlig `curl` inte använder samma lokala autentiseringsstöd.
 
+## Automatiserad täckning i CI
+
+[CI integration ownership](../development/ci-integration-ownership.md) anger
+ägande kontroll för varje flyttad scenariofamilj. Vanliga arbetsflöden körs en
+gång på skrivbord. Separata mobila kontroller avser navigation, geometri och
+tillgänglighet. AUTH-01, NAV-01 och REQ-01 har också en sammanhängande mobil
+rökprovning: logga in, öppna menyn och gå till kravbiblioteket.
+
+REQ-16C:s budgetgränser, AUTHZ-11:s API-kombinationer, AUTHZ-01:s anonyma och
+rollösa API-fall, AUTHZ-03:s RFI-listavgränsning, SPEC-10b/10c:s rapportprofiler,
+SPEC-10e:s kompletta datamängd och SPEC-16b:s negativa områdesbehörighet ägs av
+fokuserade tester. Detsamma gäller avstegsstatus före godkännande. Manuella
+användarsteg och synliga behörighetsgränser finns kvar i respektive fall.
+Rapporternas verkliga PDF- och CSV-beroenden provas i `Pruned Runtime Contract`.
+MCP-korpusen ägs enbart av Security MCP.
+
 ## Innehåll
 
 - [Konfigurerade användare](#konfigurerade-användare)
@@ -1726,7 +1742,8 @@ samtidiga förfrågningar innan den hållna förfrågan släpps. Upprepa med fok
 vänster lista för båda typerna samt i höger lista för ett bibliotekskrav. Prova
 sedan direktklick utan att hålla förfrågan. Lägg till bibliotekskravet från
 höger lista, öppna detaljen i vänster lista, ta bort det och öppna detaljen igen
-i höger lista.
+i höger lista. Upprepa med detaljen fortsatt expanderad i höger lista när
+kravet återkommer efter borttagningen.
 
 **Förväntat resultat:** Vänster och höger lista följer samma avsiktspolicy.
 Klick efter hovring eller fokus återanvänder det pågående anropet från
@@ -1734,6 +1751,8 @@ förhämtningen. Direktklick startar en vanlig detaljförfrågan om inget svar r
 finns och orsakar inte ett fördröjt duplicerat anrop. Ett krav som läggs till
 eller tas bort byter lista och läses om efter ändringen; det återanvänder inte
 detaljdata med ett inaktuellt antal kravunderlag.
+Det gäller även när detaljen öppnas automatiskt genom den bevarade
+expanderingen; ingen extra stängning och öppning ska behövas.
 
 ## Avsteg
 
@@ -2129,7 +2148,7 @@ bara syntetiska värden. Fixturen `PW ADMIN-20 kontrollerad anslutning` ska
    säger att revisionen och verifieringsbeviset raderas, att åtgärden inte kan
    ångras och att modellbehållaren också tas bort när detta är sista revisionen.
    Bekräfta och kontrollera att modellen försvinner.
-10. Upprepa huvudflödet vid både 1280 × 760 och 375 × 812. Kontrollera att
+10. Upprepa huvudflödet vid både 1440 × 1200 och 375 × 812. Kontrollera att
     formulär, verifieringsförlopp, bekräftelser och profilkort kan användas med
     tangentbord och ryms i aktuell viewport.
 

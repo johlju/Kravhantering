@@ -9,11 +9,9 @@ import {
   test,
 } from '@playwright/test'
 import { delay } from '@/tests/helpers/common'
+import { DESKTOP_VIEWPORT } from '../../helpers/desktop-viewport'
 import { expectApiResponseOk } from '../api-response-assertions'
-import {
-  expectStatus,
-  newRoleContext,
-} from '../authorization/authorization-test-helpers'
+import { newRoleContext } from '../authorization/authorization-test-helpers'
 import { deferRoute } from '../deferred-route'
 import { countDetailRequests } from '../detail-request-counter'
 
@@ -283,10 +281,7 @@ function requirementSelectionQuestions(answerIds: number[]) {
   ]
 }
 
-const viewports = [
-  { name: 'mobile', width: 375, height: 812 },
-  { name: 'desktop', width: 1280, height: 720 },
-]
+const viewports = [{ ...DESKTOP_VIEWPORT, name: 'desktop' }]
 
 function rfiListResponse(options?: {
   isLocked?: boolean
@@ -1273,11 +1268,12 @@ for (const viewport of viewports) {
 
 test.describe('Requirements specification deterministic manual cases', () => {
   test.setTimeout(180_000)
-  test.use({ viewport: { height: 720, width: 1280 } })
+  test.use({ viewport: DESKTOP_VIEWPORT })
 
   test('SPEC-21: intent prefetch reuses one main request in both requirement lists', async ({
     page,
   }) => {
+    await page.clock.install()
     const libraryDetailRequests = await countDetailRequests(
       page,
       /\/api\/requirements\/\d+$/u,
@@ -1289,8 +1285,6 @@ test.describe('Requirements specification deterministic manual cases', () => {
         'u',
       ),
     )
-    await gotoSpecificationDetail(page)
-
     const leftPanel = page.locator(
       '[data-specification-detail-list-panel="items"]',
     )
@@ -1314,8 +1308,25 @@ test.describe('Requirements specification deterministic manual cases', () => {
       .getByRole('button')
       .first()
     const libraryRow = libraryButton.locator('xpath=ancestor::tr[1]')
-    const reloadAndWaitForSpecificationItems = async () => {
-      await page.reload()
+    const navigateAndWaitForSpecificationItems = async (
+      navigate: () => Promise<unknown>,
+    ) => {
+      // SSR rows appear before hydration; wait for the client list requests
+      // before testing an immediate click without a preceding intent event.
+      const initializedLists = ['items', 'available-requirements'].map(list =>
+        page.waitForResponse(response => {
+          const url = new URL(response.url())
+          return (
+            response.request().method() === 'GET' &&
+            url.pathname ===
+              `/api/requirements-specifications/${specificationId}/${list}`
+          )
+        }),
+      )
+      await navigate()
+      for (const response of await Promise.all(initializedLists)) {
+        expect(response.ok()).toBe(true)
+      }
       await expect(localMarker).toBeVisible()
       await expect(leftLibraryButton).toBeVisible()
       await expect(libraryButton).toBeVisible()
@@ -1324,15 +1335,23 @@ test.describe('Requirements specification deterministic manual cases', () => {
       )
     }
 
+    await navigateAndWaitForSpecificationItems(() =>
+      gotoSpecificationDetail(page),
+    )
+
     await test.step('pointer hover cancels short intent and reuses held prefetches', async () => {
       await expect(localMarker).toBeVisible()
+      // Control the intent timer so runner latency cannot turn a short hover
+      // into a held hover while Playwright completes its mouse actions.
+      await page.clock.pauseAt(Date.now() + 1_000)
       await localRow.hover()
       await page.mouse.move(0, 0)
-      await delay(200)
+      await page.clock.runFor(200)
       expect(localDetailRequests.count).toBe(0)
 
       const heldLocalRequest = localDetailRequests.holdNext()
       await localRow.hover()
+      await page.clock.runFor(200)
       await heldLocalRequest.started
       await localButton.click()
       expect(localDetailRequests.count).toBe(1)
@@ -1344,11 +1363,12 @@ test.describe('Requirements specification deterministic manual cases', () => {
 
       await leftLibraryRow.hover()
       await page.mouse.move(0, 0)
-      await delay(200)
+      await page.clock.runFor(200)
       expect(libraryDetailRequests.count).toBe(0)
 
       const heldLeftLibraryRequest = libraryDetailRequests.holdNext()
       await leftLibraryRow.hover()
+      await page.clock.runFor(200)
       await heldLeftLibraryRequest.started
       await leftLibraryButton.click()
       expect(libraryDetailRequests.count).toBe(1)
@@ -1360,11 +1380,12 @@ test.describe('Requirements specification deterministic manual cases', () => {
 
       await libraryRow.hover()
       await page.mouse.move(0, 0)
-      await delay(200)
+      await page.clock.runFor(200)
       expect(libraryDetailRequests.count).toBe(1)
 
       const heldRightLibraryRequest = libraryDetailRequests.holdNext()
       await libraryRow.hover()
+      await page.clock.runFor(200)
       await heldRightLibraryRequest.started
       await libraryButton.click()
       expect(libraryDetailRequests.count).toBe(2)
@@ -1373,12 +1394,13 @@ test.describe('Requirements specification deterministic manual cases', () => {
         libraryRow.locator('xpath=following-sibling::tr[1]'),
       ).toContainText('Kravtext')
       expect(libraryDetailRequests.count).toBe(2)
+      await page.clock.resume()
     })
 
     await test.step('keyboard focus prefetches each supported detail resource', async () => {
       libraryDetailRequests.reset()
       localDetailRequests.reset()
-      await reloadAndWaitForSpecificationItems()
+      await navigateAndWaitForSpecificationItems(() => page.reload())
 
       const heldLocalRequest = localDetailRequests.holdNext()
       await localButton.focus()
@@ -1417,7 +1439,7 @@ test.describe('Requirements specification deterministic manual cases', () => {
     await test.step('immediate clicks load each detail once without delayed duplicates', async () => {
       libraryDetailRequests.reset()
       localDetailRequests.reset()
-      await reloadAndWaitForSpecificationItems()
+      await navigateAndWaitForSpecificationItems(() => page.reload())
 
       await localButton.click()
       await expect(
@@ -1498,26 +1520,36 @@ test.describe('Requirements specification deterministic manual cases', () => {
             `/api/requirements-specifications/${specificationId}/available-requirements`
         )
       })
-      await page
-        .getByRole('alertdialog', { name: 'Ta bort valda (1)' })
-        .getByRole('button', { name: 'Ta bort' })
-        .click()
-      await Promise.all([refreshedItems, refreshedAvailableRequirements])
+      // Available rows can return before the auxiliary package refresh finishes.
+      // Their preserved expansion must already read freshly invalidated detail.
+      const packageRefresh = await deferRoute(
+        page,
+        `**/api/requirements-specifications/${specificationId}/requirement-packages?**`,
+        route => route.continue(),
+      )
+      try {
+        await page
+          .getByRole('alertdialog', { name: 'Ta bort valda (1)' })
+          .getByRole('button', { name: 'Ta bort' })
+          .click()
+        await Promise.all([refreshedItems, refreshedAvailableRequirements])
 
-      const movedRightRow = rightPanel
-        .locator('tbody tr')
-        .filter({ hasText: libraryRequirementUniqueId })
-        .first()
-      await expect(movedLeftRow).toHaveCount(0)
-      await expect(movedRightRow).toBeVisible()
-      const movedRightButton = movedRightRow.getByRole('button').first()
-      if ((await movedRightButton.getAttribute('aria-expanded')) !== 'true') {
-        await movedRightButton.click()
+        const movedRightRow = rightPanel
+          .locator('tbody tr')
+          .filter({ hasText: libraryRequirementUniqueId })
+          .first()
+        await expect(movedLeftRow).toHaveCount(0)
+        await expect(movedRightRow).toBeVisible()
+        const movedRightButton = movedRightRow.getByRole('button').first()
+        await expect(movedRightButton).toHaveAttribute('aria-expanded', 'true')
+        await expect
+          .poll(() => libraryDetailRequests.count)
+          .toBe(requestsBeforeAdd + 2)
+        expect(await readSpecificationCount(movedRightRow)).toBe(baselineCount)
+      } finally {
+        packageRefresh.fulfill()
+        await packageRefresh.cleanup()
       }
-      await expect
-        .poll(() => libraryDetailRequests.count)
-        .toBe(requestsBeforeAdd + 2)
-      expect(await readSpecificationCount(movedRightRow)).toBe(baselineCount)
     })
   })
 
@@ -3264,231 +3296,6 @@ test.describe('Requirements specification deterministic manual cases', () => {
     })
   })
 
-  test('SPEC-10b: generates progress reports for Införande and Utveckling specifications', async ({
-    page,
-    request,
-  }) => {
-    const downloadRequests = await mockReportDownloads(page)
-
-    for (const reportSpecificationId of [920002, 920003]) {
-      await gotoSpecificationDetail(page, reportSpecificationId)
-      await clickMenuItem(page, 'Rapporter', 'Genomföranderapport')
-      await expect
-        .poll(() =>
-          downloadRequests.some(url =>
-            url.includes(
-              `/sv/specifications/${reportSpecificationId}/reports/pdf/progress`,
-            ),
-          ),
-        )
-        .toBe(true)
-      const progressReport = await getStructuredReport(
-        request,
-        reportSpecificationId,
-        'progress',
-      )
-      expect(progressReport.orientation).toBe('landscape')
-      expect(
-        progressReport.sections?.find(section => section.type === 'header'),
-      ).toMatchObject({ title: 'Genomföranderapport' })
-      const progressTable = reportTable(progressReport)
-      expect(progressTable.columns.map(column => column.key)).toEqual([
-        'uniqueId',
-        'version',
-        'description',
-        'area',
-        'category',
-        'type',
-        'qualityCharacteristic',
-        'priorityLevel',
-        'requirementVersionStatus',
-        'verifiable',
-        'needsReference',
-        'usageStatus',
-        'normReferences',
-      ])
-      expect(progressTable.rows[0]).toMatchObject({
-        priorityLevel: {
-          code: 'P2',
-          color: '#22c55e',
-          iconName: 'ArrowDownLeft',
-          nameEn: 'Low',
-          nameSv: 'Låg',
-        },
-      })
-      expect(progressTable.rows[0]?.cells.priorityLevel).toBeUndefined()
-
-      const exportMenu = await openActionMenu(page, 'Exportera')
-      await expect(
-        exportMenu.getByRole('menuitem', {
-          exact: true,
-          name: 'Anbuds-CSV',
-        }),
-      ).toHaveCount(0)
-      await exportMenu
-        .getByRole('menuitem', {
-          exact: true,
-          name: 'Full CSV-export',
-        })
-        .click()
-      await expect
-        .poll(() =>
-          downloadRequests.some(
-            url =>
-              url.includes(
-                `/api/requirements-specifications/${reportSpecificationId}/exports`,
-              ) && url.includes('profile=full'),
-          ),
-        )
-        .toBe(true)
-      const fullCsv = await getCsvExport(request, reportSpecificationId, 'full')
-      expect(fullCsv).toContain('Krav-ID;Kravtext;Kravområde')
-      expect(fullCsv).toContain('Användningsstatus')
-    }
-  })
-
-  test('SPEC-10c: generates a management report for Förvaltning specifications', async ({
-    page,
-    request,
-  }) => {
-    const downloadRequests = await mockReportDownloads(page)
-
-    await gotoSpecificationDetail(page, 920004)
-    await clickMenuItem(page, 'Rapporter', 'Förvaltningsrapport')
-
-    await expect
-      .poll(() =>
-        downloadRequests.some(url =>
-          url.includes('/sv/specifications/920004/reports/pdf/management'),
-        ),
-      )
-      .toBe(true)
-    const managementReport = await getStructuredReport(
-      request,
-      920004,
-      'management',
-    )
-    expect(managementReport.orientation).toBe('landscape')
-    const managementTable = reportTable(managementReport)
-    expect(managementTable.columns.map(column => column.key)).toContain(
-      'deviationSignal',
-    )
-    expect(managementTable.columns.map(column => column.key)).toContain(
-      'residualFromImplementation',
-    )
-    expect(managementTable.rows.length).toBeGreaterThan(0)
-    expect(managementTable.rows[0]).toMatchObject({
-      priorityLevel: {
-        code: 'P2',
-        nameEn: 'Low',
-        nameSv: 'Låg',
-      },
-    })
-  })
-
-  test('SPEC-10e: generates complete server-filtered traceability beyond 100 items', async ({
-    page,
-    request,
-  }) => {
-    const downloadRequests = await mockReportDownloads(page)
-
-    await gotoSpecificationDetail(page, 920005)
-    await clickMenuItem(page, 'Rapporter', 'Tillämpningsspårbarhet')
-    await expect
-      .poll(() =>
-        downloadRequests.some(
-          url =>
-            url.includes(
-              '/sv/specifications/920005/reports/pdf/traceability?',
-            ) && url.includes('sortBy=uniqueId'),
-        ),
-      )
-      .toBe(true)
-    const traceabilityResponse = await requestWithRetry(
-      'traceability items for filtered query',
-      () =>
-        request.get(
-          '/api/requirements-specifications/920005/traceability-items?uniqueIdSearch=PWT-TRACE-00&sortBy=uniqueId&sortDirection=desc&locale=sv',
-          { timeout: 30_000 },
-        ),
-    )
-    await expectApiResponseOk(
-      traceabilityResponse,
-      'traceability items for filtered query',
-    )
-    const traceabilityData = (await traceabilityResponse.json()) as {
-      items?: Array<{
-        itemRef: string
-        needsReference: string | null
-        priorityLevelCode: string | null
-        priorityLevelColor: string | null
-        priorityLevelIconName: string | null
-        priorityLevelNameSv: string | null
-        uniqueId: string
-        verificationMethod: string | null
-      }>
-      specification?: { specificationCode?: string }
-    }
-    expect(traceabilityData.specification?.specificationCode).toBe(
-      'PWT-SPEC-TRACE-200',
-    )
-    expect(traceabilityData.items).toHaveLength(9)
-    expect(traceabilityData.items?.map(item => item.uniqueId)).toEqual(
-      Array.from(
-        { length: 9 },
-        (_, index) => `PWT-TRACE-${String(9 - index).padStart(3, '0')}`,
-      ),
-    )
-    expect(traceabilityData.items?.[0]).toMatchObject({
-      uniqueId: expect.stringMatching(/^PWT-TRACE-/u),
-    })
-    expect(traceabilityData.items?.[0]).toHaveProperty('needsReference')
-    expect(traceabilityData.items?.[0]).toHaveProperty('verificationMethod')
-    expect(traceabilityData.items?.[0]).toMatchObject({
-      priorityLevelCode: 'P2',
-      priorityLevelColor: '#22c55e',
-      priorityLevelIconName: 'ArrowDownLeft',
-      priorityLevelNameSv: 'Låg',
-    })
-
-    await gotoSpecificationDetail(page, 920006)
-    const reportsMenu = await openActionMenu(page, 'Rapporter')
-    await reportsMenu
-      .getByRole('menuitem', {
-        exact: true,
-        name: 'Tillämpningsspårbarhet',
-      })
-      .click()
-    await expect
-      .poll(() =>
-        downloadRequests.some(url =>
-          url.includes('/sv/specifications/920006/reports/pdf/traceability'),
-        ),
-      )
-      .toBe(true)
-    const completeResponse = await requestWithRetry(
-      'complete traceability items beyond 100',
-      () =>
-        request.get(
-          '/api/requirements-specifications/920006/traceability-items?sortBy=uniqueId&sortDirection=asc&locale=sv',
-          { timeout: 30_000 },
-        ),
-    )
-    await expectApiResponseOk(
-      completeResponse,
-      'complete traceability items beyond 100',
-    )
-    const completeData = (await completeResponse.json()) as {
-      items?: Array<{ itemRef: string; uniqueId: string }>
-    }
-    expect(completeData.items).toHaveLength(201)
-    expect(new Set(completeData.items?.map(item => item.itemRef)).size).toBe(
-      201,
-    )
-    expect(completeData.items?.[0]?.uniqueId).toBe('PWT-TRACE-001')
-    expect(completeData.items?.at(-1)?.uniqueId).toBe('PWT-TRACE-201')
-  })
-
   test('SPEC-17: imports reviewed JSON as specification-local requirements', async ({
     page,
   }) => {
@@ -4139,33 +3946,5 @@ test.describe('Requirements specification deterministic manual cases', () => {
         name: 'Ta bort RFI-frågeförslag',
       }),
     ).toHaveCount(0)
-  })
-
-  test('SPEC-16b: rejects an RFI suggestion when the specification author lacks target area authorship', async ({
-    page: _page,
-  }, testInfo) => {
-    const roleRequest = await newRoleContext(testInfo, 'specificationCoauthor')
-    try {
-      const response = await requestWithRetry(
-        'create RFI suggestion without area authorship',
-        () =>
-          roleRequest.post('/api/rfi-question-suggestions', {
-            data: {
-              areaId: rfiAreaId,
-              content: 'PWT SPEC-16b ska nekas',
-              rfiQuestionId: rfiPrimaryQuestionId,
-              specificationId: rfiSpecificationId,
-            },
-            timeout: 30_000,
-          }),
-      )
-      await expectStatus(
-        response,
-        403,
-        'create RFI suggestion without area authorship',
-      )
-    } finally {
-      await roleRequest.dispose()
-    }
   })
 })

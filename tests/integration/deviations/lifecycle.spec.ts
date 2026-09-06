@@ -8,6 +8,7 @@ import {
   test,
 } from '@playwright/test'
 import { delay, escapeRegExp } from '@/tests/helpers/common'
+import { DESKTOP_VIEWPORT } from '../../helpers/desktop-viewport'
 import { expectApiResponseStatus } from '../api-response-assertions'
 import { expectApiResponseOkWithRetry } from '../api-retry-helpers'
 import {
@@ -31,10 +32,7 @@ const SPECIFICATION_HEADING = 'Playwright lifecycle fixtures'
 const MANUAL_SPECIFICATION_ID = 920001
 const MANUAL_SPECIFICATION_HEADING = 'PWT-MANUAL redigerbart kravunderlag'
 
-const viewports = [
-  { height: 812, name: 'mobile', width: 375 },
-  { height: 720, name: 'desktop', width: 1280 },
-] as const
+const viewports = [{ ...DESKTOP_VIEWPORT, name: 'desktop' }] as const
 
 const deviationCases = [
   {
@@ -366,23 +364,6 @@ for (const viewport of viewports) {
               reviewerRequest,
               fixture.itemRef,
             )
-            const shouldVerifyPreApprovalGuard =
-              deviationCase.itemKind === 'specification-local'
-                ? viewport.name === 'mobile'
-                : viewport.name === 'desktop'
-            if (shouldVerifyPreApprovalGuard) {
-              const deviatedBeforeApproval = await request.patch(
-                `/api/requirements-specifications/${fixture.itemRef.startsWith('local:') ? MANUAL_SPECIFICATION_ID : SPECIFICATION_ID}/items/${encodeURIComponent(fixture.itemRef)}`,
-                {
-                  data: { specificationItemStatusId: 5 },
-                },
-              )
-              await expectApiResponseStatus(
-                deviatedBeforeApproval,
-                400,
-                `assign Deviated before approval for ${fixture.itemRef}`,
-              )
-            }
             detailPane = await openSpecificationFixtureRow(
               page,
               fixture.uniqueId,

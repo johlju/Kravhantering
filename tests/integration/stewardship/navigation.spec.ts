@@ -1,4 +1,5 @@
 import { expect, type Page, type Route, test } from '@playwright/test'
+import { DESKTOP_VIEWPORT } from '../../helpers/desktop-viewport'
 
 const pwtRfiArea = {
   id: 920001,
@@ -106,12 +107,16 @@ async function assertWorkspaceNavigation({
 }
 
 test.describe('Stewardship navigation memory', () => {
-  test.use({ viewport: { height: 720, width: 1280 } })
+  test.use({ viewport: DESKTOP_VIEWPORT })
 
   test('REQ-14b: remembers and navigates stewardship workspaces', async ({
     page,
   }) => {
     await test.step('browse to the question stewardship tab', async () => {
+      // Compile the cold development route before the timed browser navigation.
+      await expect(
+        await page.request.get('/sv/requirements', { timeout: 45_000 }),
+      ).toBeOK()
       await page.goto('/sv/requirements')
       await page.evaluate(() =>
         localStorage.removeItem('requirements.stewardship.tab'),

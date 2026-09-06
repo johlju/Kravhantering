@@ -1,12 +1,10 @@
 import { expect, type Locator, test } from '@playwright/test'
 import { escapeRegExp } from '@/tests/helpers/common'
+import { DESKTOP_VIEWPORT } from '../../helpers/desktop-viewport'
 import { expectApiResponseOk } from '../api-response-assertions'
 import { seedAuthorizationResponsibilityPeople } from '../authorization/authorization-test-helpers'
 
-const viewports = [
-  { name: 'mobile', width: 375, height: 812 },
-  { name: 'desktop', width: 1280, height: 720 },
-]
+const viewports = [{ ...DESKTOP_VIEWPORT, name: 'desktop' }]
 
 function splitHsaId(hsaId: string): { prefix: string; suffix: string } {
   const separatorIndex = hsaId.indexOf('-')
@@ -114,7 +112,13 @@ for (const viewport of viewports) {
         const deleteActionBox = await deleteAction.boundingBox()
         const requirementAreasHeaderBox =
           await requirementAreasHeader.boundingBox()
-        const tableBox = await tableSurface.boundingBox()
+        let tableBox = await tableSurface.boundingBox()
+        await expect
+          .poll(async () => {
+            tableBox = await tableSurface.boundingBox()
+            return tableBox
+          })
+          .not.toBeNull()
         const viewportSize = page.viewportSize()
 
         expect(buttonBox).not.toBeNull()
@@ -418,7 +422,7 @@ for (const viewport of viewports) {
 }
 
 test.describe('Requirements specifications destructive manual cases', () => {
-  test.use({ viewport: { height: 720, width: 1280 } })
+  test.use({ viewport: DESKTOP_VIEWPORT })
 
   test('SPEC-04: cancels and confirms deleting a disposable specification from the list', async ({
     page,

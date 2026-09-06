@@ -7,6 +7,7 @@ import {
   getSqlServerDatabaseUrl,
   type SqlServerRuntimeEnv,
 } from '../../../lib/typeorm/sqlserver-config'
+import { DESKTOP_VIEWPORT } from '../../helpers/desktop-viewport'
 
 // cspell:ignore kalle linneab retentionorphan pwtprivacy
 
@@ -544,7 +545,7 @@ test('PRIV-08: privacy erasure anonymizes a disposable row and records the actio
 
   const privacyContext = await browser.newContext({
     storageState: PRIVACY_OFFICER_STORAGE_STATE,
-    viewport: { height: 720, width: 1280 },
+    viewport: DESKTOP_VIEWPORT,
   })
   const privacyPage = await privacyContext.newPage()
   try {
@@ -873,10 +874,11 @@ test('PRIV-01: self-service privacy page exports the signed-in user without targ
 test('PRIV-11: bounded self-service export rejects overflow without a partial download', async ({
   page,
 }) => {
-  let exportRequests = 0
+  const dialog = page.getByRole('alertdialog', {
+    name: 'Nedladdningen misslyckades',
+  })
   await test.step('set up the bounded export failure', async () => {
     await page.route('**/api/privacy/data-subject-export', async route => {
-      exportRequests += 1
       await route.fulfill({
         contentType: 'application/json',
         headers: { 'Cache-Control': 'no-store' },
@@ -894,16 +896,14 @@ test('PRIV-11: bounded self-service export rejects overflow without a partial do
     await page.goto('/sv/privacy')
     await expect(async () => {
       await page.getByRole('button', { name: 'Exportera JSON' }).click()
-      await expect
-        .poll(() => exportRequests, { timeout: 1_000 })
-        .toBeGreaterThan(0)
+      await expect(dialog).toContainText(
+        'Personuppgiftsexporten innehåller fler än den tillåtna gränsen på 1000 poster.',
+        { timeout: 1_000 },
+      )
     }).toPass({ timeout: 15_000 })
   })
 
   await test.step('verify the safe localized failure dialog', async () => {
-    const dialog = page.getByRole('alertdialog', {
-      name: 'Nedladdningen misslyckades',
-    })
     await expect(dialog).toContainText(
       'Personuppgiftsexporten innehåller fler än den tillåtna gränsen på 1000 poster.',
     )
@@ -917,10 +917,14 @@ test('PRIV-12: saturated structured-export capacity can be retried', async ({
   page,
 }) => {
   let exportRequests = 0
+  let capacityBusy = true
+  const dialog = page.getByRole('alertdialog', {
+    name: 'Nedladdningen misslyckades',
+  })
   await test.step('set up a saturated structured-export response', async () => {
     await page.route('**/api/privacy/data-subject-export', async route => {
       exportRequests += 1
-      if (exportRequests === 1) {
+      if (capacityBusy) {
         await route.fulfill({
           contentType: 'application/json',
           headers: {
@@ -947,16 +951,14 @@ test('PRIV-12: saturated structured-export capacity can be retried', async ({
     await page.goto('/sv/privacy')
     await expect(async () => {
       await page.getByRole('button', { name: 'Exportera JSON' }).click()
-      await expect
-        .poll(() => exportRequests, { timeout: 1_000 })
-        .toBeGreaterThan(0)
+      await expect(dialog).toContainText(
+        'Så många strukturerade exporter som tillåts samtidigt pågår redan.',
+        { timeout: 1_000 },
+      )
     }).toPass({ timeout: 15_000 })
   })
 
   await test.step('retry safely after the capacity delay', async () => {
-    const dialog = page.getByRole('alertdialog', {
-      name: 'Nedladdningen misslyckades',
-    })
     await expect(dialog).toContainText(
       'Så många strukturerade exporter som tillåts samtidigt pågår redan.',
     )
@@ -968,8 +970,10 @@ test('PRIV-12: saturated structured-export capacity can be retried', async ({
       name: 'Försök igen',
     })
     await expect(retry).toBeEnabled()
+    const requestsBeforeRetry = exportRequests
+    capacityBusy = false
     await retry.click()
-    await expect.poll(() => exportRequests).toBe(2)
+    await expect.poll(() => exportRequests).toBe(requestsBeforeRetry + 1)
     await expect(dialog).toHaveCount(0)
   })
 })
