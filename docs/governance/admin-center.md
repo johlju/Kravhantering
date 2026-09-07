@@ -801,3 +801,38 @@ reasoning. Missing activity or technical failure is inconclusive; explicit
 rejection is not verified. Either blocks saving a usable revision even when
 ordinary JSON generation succeeds. Encrypted or redacted metadata can prove
 activity, but never visible analysis.
+
+## Leverantörens ekonomiska AI-status
+
+AI-anslutningar under Inställningar visar ”Org. total/kvar” och
+”Nyckel total/kvar” före Administrativ livscykel och Operativ hälsa, både i
+hopfällt och utfällt läge. Organisationens värden visar köpta kontokrediter och
+återstående saldo, eller leverantörens organisationsgräns och återstående
+utrymme. Nyckelns värden visar dess utgiftsgräns och återstående utrymme för
+samma period. Varje rubrik har en egen tooltip som förklarar just dess värden.
+Beloppen visas med två decimaler;
+obegränsade och saknade värden anges uttryckligen. Förbrukning visas i detaljerna.
+Uppgifterna hämtas när sidan öppnas. Uppdateringsikonen efter översikten hämtar
+nya värden utan att öppna anslutningen. Klicka på raden för att fälla ut eller
+ihop anslutningen; pilen finns före namnet. Öppna anslutningen och klicka på
+”Organisationens och anslutningens krediter och användning” för att visa
+belopp, utgiftsgränser och
+management-nyckeln. Detaljerna är först hopfällda. Uppdatera hämtar nya värden
+för varje omfattning; att fälla ut eller ihop vyerna gör ingen ny hämtning.
+Kontovärden kan omfatta flera nycklar och anslutningar. Summera inte rapporter
+från flera anslutningar. Uppgifterna är leverantörsrapporterade, inte intern
+bokföring eller ensam grund för kostnadskontroll.
+
+Adaptern kan ha fullt, delvis eller inget stöd för ekonomiska värden inom sina
+angivna omfattningar. Vid delvis stöd anges värden utan stöd uttryckligen.
+Utan stöd behövs ingen management-nyckel. Saknade eller felaktiga nycklar och
+hämtningsfel påverkar inte modellkörning. Környckelns information och
+kontoinformation visas oberoende av varandra. Inaktuella värden behåller
+ursprunglig uppdateringstid; vid ny nyckel används inte gamla värden.
+
+När adaptern stöder det kan en administratör registrera en separat
+management-nyckel, verifiera och aktivera kandidaten, ersätta nyckeln eller ta
+bort den lokalt. Misslyckad verifiering behåller den aktiva nyckeln. Borttagning
+raderar lagrat hemligt material och stoppar lokal användning; den återkallar
+inte nyckeln hos leverantören. Återkalla nyckeln direkt hos leverantören vid
+behov. Környckeln hanteras separat.
