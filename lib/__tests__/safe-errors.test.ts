@@ -11,6 +11,70 @@ import {
 } from '@/lib/http/safe-errors'
 
 describe('safe error helpers', () => {
+  it.each([
+    ['sk-or-mgmt-syntheticCredential_-', '[OPENROUTER_KEY_REDACTED]'],
+    ['"sk-or-v1-syntheticCredential"', '"[OPENROUTER_KEY_REDACTED]"'],
+    ['"eyJhbGciOi.header.signature_-"', '"[JWT_REDACTED]"'],
+    ['Bearer syntheticCredential+/=', 'Bearer [REDACTED]'],
+    [
+      'Authorization: Bearer syntheticCredential+/=',
+      'Authorization: Bearer [REDACTED]',
+    ],
+  ])(
+    'masks bare and quoted credentials through the error interface: %s',
+    (text, expected) => {
+      expect(redactSensitiveText(text)).toBe(expected)
+    },
+  )
+
+  it('masks a JWT with leading header whitespace in ordinary errors', () => {
+    const header = Buffer.from(' \r\n\t{"alg":"HS256"}').toString('base64url')
+    const token = `${header}.syntheticPayload.syntheticSignature`
+    expect(redactSensitiveText(`Failed with "${token}"`)).toBe(
+      'Failed with "[JWT_REDACTED]"',
+    )
+  })
+
+  it.each([' {broken', ' []', ' null', ' true', ' "text"'])(
+    'preserves broader dotted candidates without a JSON object header: %s',
+    decodedHeader => {
+      const header = Buffer.from(decodedHeader).toString('base64url')
+      const candidate = `${header}.syntheticPayload.syntheticSignature`
+      expect(redactSensitiveText(candidate)).toBe(candidate)
+    },
+  )
+
+  it.each(['api.example.test', 'a.b.c'])(
+    'preserves ordinary dotted text without a valid encoded header: %s',
+    candidate => {
+      expect(redactSensitiveText(candidate)).toBe(candidate)
+    },
+  )
+
+  it('preserves a broader candidate whose decoded header has invalid UTF-8', () => {
+    const header = Buffer.concat([
+      Buffer.from(' {"alg":"'),
+      Buffer.from([0xff]),
+      Buffer.from('"}'),
+    ]).toString('base64url')
+    const candidate = `${header}.syntheticPayload.syntheticSignature`
+    expect(redactSensitiveText(candidate)).toBe(candidate)
+  })
+
+  it.each([
+    'password="synthetic secret with spaces"',
+    "'client secret': 'synthetic secret with spaces'",
+    '"api key": "synthetic secret with spaces"',
+    'code_verifier="synthetic secret with spaces"',
+    'password="synthetic \\"quoted\\" secret with spaces"',
+    'password="synthetic secret with spaces',
+    'password=synthetic;credential',
+  ])('masks complete quoted assignments: %s', text => {
+    const redacted = redactSensitiveText(text)
+    expect(redacted).toContain('[REDACTED]')
+    expect(redacted).not.toMatch(/synthetic|with spaces|credential/)
+  })
+
   it('accepts only explicit, bounded safe messages from Error instances', () => {
     const safeError = Object.assign(new Error('internal detail'), {
       safeMessage: '  Safe explanation  ',
