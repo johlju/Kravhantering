@@ -1,3 +1,9 @@
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('../helpers/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GeneratedOutputError } from '@/lib/generated-output/errors'
 import { createGenerationDeadline } from '@/lib/generated-output/operation'

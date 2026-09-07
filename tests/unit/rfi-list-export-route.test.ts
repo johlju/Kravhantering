@@ -1,3 +1,11 @@
+import { DEFAULT_APPLICATION_SETTINGS } from '@/lib/application-settings'
+
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('../helpers/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { parse as parseContentDisposition } from 'content-disposition'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -61,6 +69,7 @@ describe('RFI list export route', () => {
     })
     routeState.getSpecificationRfiList.mockResolvedValue({ items: [] })
     routeState.getApplicationSettings.mockResolvedValue({
+      ...DEFAULT_APPLICATION_SETTINGS,
       pdfReportConcurrencyPerNode: 3,
       pdfReportMaxRequirements: 1000,
       pdfReportTimeoutSeconds: 180,

@@ -25,6 +25,18 @@ import { toHttpErrorPayload } from '@/lib/requirements/http-errors'
 
 const applicationSettingsPatchSchema = z
   .object({
+    exportActorStartsPerMinute: z
+      .number()
+      .int()
+      .min(APPLICATION_SETTING_CONSTRAINTS.exportActorStartsPerMinute.min)
+      .max(APPLICATION_SETTING_CONSTRAINTS.exportActorStartsPerMinute.max)
+      .optional(),
+    exportActorConcurrency: z
+      .number()
+      .int()
+      .min(APPLICATION_SETTING_CONSTRAINTS.exportActorConcurrency.min)
+      .max(APPLICATION_SETTING_CONSTRAINTS.exportActorConcurrency.max)
+      .optional(),
     csvExportConcurrencyPerNode: z
       .number()
       .int()

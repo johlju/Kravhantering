@@ -1,6 +1,8 @@
 export const MIB = 1024 * 1024
 
 export const APPLICATION_SETTING_CONSTRAINTS = Object.freeze({
+  exportActorStartsPerMinute: { min: 1, max: 100 },
+  exportActorConcurrency: { min: 1, max: 10 },
   csvExportConcurrencyPerNode: { min: 1, max: 20 },
   csvExportMaxFileBytes: { min: MIB, max: 1024 * MIB, step: MIB },
   csvExportMaxItems: { min: 1, max: 5000 },
@@ -22,6 +24,8 @@ export interface ApplicationSettings {
   csvExportMaxFileBytes: number
   csvExportMaxItems: number
   csvExportTimeoutSeconds: number
+  exportActorConcurrency: number
+  exportActorStartsPerMinute: number
   pdfReportConcurrencyPerNode: number
   pdfReportMaxFileBytes: number
   pdfReportMaxRequirements: number
@@ -42,6 +46,8 @@ export interface AdminApplicationSettings extends ApplicationSettings {
 }
 
 export const DEFAULT_APPLICATION_SETTINGS: ApplicationSettings = Object.freeze({
+  exportActorStartsPerMinute: 10,
+  exportActorConcurrency: 1,
   csvExportConcurrencyPerNode: 5,
   csvExportMaxFileBytes: 100 * MIB,
   csvExportMaxItems: 1000,

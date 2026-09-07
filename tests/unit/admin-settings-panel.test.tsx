@@ -189,6 +189,19 @@ describe('SettingsPanel', () => {
       expect(unitSuffix).toHaveAttribute('data-developer-mode-value', unit)
     }
 
+    for (const [field, value] of [
+      ['exportActorStartsPerMinute', 10],
+      ['exportActorConcurrency', 1],
+    ] as const) {
+      const input = screen.getByLabelText(
+        `admin.applicationSettings.fields.${field}.label`,
+      )
+      expect(input).toHaveValue(value)
+      expect(
+        input.closest('[data-developer-mode-name="application setting"]'),
+      ).toHaveAttribute('data-developer-mode-value', field)
+    }
+
     expect(
       screen.getByLabelText(
         'admin.applicationSettings.fields.pdfWorkerMemoryMib.label',

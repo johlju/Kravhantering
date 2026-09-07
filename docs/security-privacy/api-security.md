@@ -427,3 +427,13 @@ their auth/CSRF behavior is understood.
   generated examples never log or expose raw target HSA-id values in audit
   details. Data-subject export examples should keep covering both self-export
   and `PrivacyOfficer` cross-user export.
+
+## Export and report admission contract
+
+See [export and report admission](../operations/export-report-admission.md) for
+covered routes, shared actor limits, distinct 429/503 reasons, English and
+Swedish messages, privacy handling and coordinated operational tuning.
+
+Export/report and admin setting operations retain their focused contract
+coverage outside Schemathesis. General API edge denials also apply to routes
+covered by the static JSON contract.

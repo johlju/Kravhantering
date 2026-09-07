@@ -393,3 +393,9 @@ sequenceDiagram
   SIEM, a message queue, or a dedicated audit pipeline.
 - Because the audit records are separate JSON lines with a stable channel tag,
   they can be split and forwarded independently from normal application logs.
+
+## Network request limits
+
+See [export and report admission](../operations/export-report-admission.md) for
+covered routes, shared actor limits, distinct 429/503 reasons, English and
+Swedish messages, privacy handling and coordinated operational tuning.

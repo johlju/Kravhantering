@@ -291,4 +291,35 @@ describe('admin application settings route', () => {
       }
     },
   )
+  it.each(['exportActorStartsPerMinute', 'exportActorConcurrency'] as const)(
+    'validates and audits %s',
+    async field => {
+      const response = await PATCH(
+        new NextRequest('https://example.test/api/admin/application-settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ [field]: 2 }),
+        }),
+      )
+      expect(await response.json()).toMatchObject({ field, value: 2 })
+      expect(
+        routeState.recordAdminPrivilegedActionSucceeded,
+      ).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          changedFields: [field],
+          details: { newValue: 2, oldValue: 5 },
+        }),
+        expect.anything(),
+      )
+      routeState.updateApplicationSetting.mockClear()
+      const denied = await PATCH(
+        new NextRequest('https://example.test/api/admin/application-settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ [field]: 0 }),
+        }),
+      )
+      expect(denied.status).toBe(400)
+      expect(routeState.updateApplicationSetting).not.toHaveBeenCalled()
+    },
+  )
 })

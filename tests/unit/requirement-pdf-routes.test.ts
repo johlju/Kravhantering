@@ -1,3 +1,11 @@
+import { DEFAULT_APPLICATION_SETTINGS } from '@/lib/application-settings'
+
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('../helpers/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -258,6 +266,7 @@ describe('requirement PDF routes', () => {
       db: { db: true },
     })
     routeState.getApplicationSettings.mockResolvedValue({
+      ...DEFAULT_APPLICATION_SETTINGS,
       csvExportConcurrencyPerNode: 5,
       csvExportMaxFileBytes: 100 * 1024 * 1024,
       csvExportMaxItems: 1000,

@@ -1069,6 +1069,14 @@
         "workerFailed": "PDF-innehållet kunde inte skapas på grund av ett tillfälligt renderingsfel. Försök igen. Kontakta en administratör om felet kvarstår.",
         "unknown": "PDF-innehållet kunde inte laddas ned. Försök igen."
       }
+    },
+    "limits": {
+      "actorRate": "Du har nått din gräns för exporter och rapporter. Försök igen om {seconds} sekunder.",
+      "actorActive": "Du har redan en export eller rapport igång. Vänta tills den är klar.",
+      "actorActiveMany": "Du har redan {limit} exporter eller rapporter igång. Vänta tills ett arbete är klart.",
+      "capacity": "Tjänstens kapacitet för exporter och rapporter är upptagen just nu. Försök igen om en stund.",
+      "unavailable": "Vi kunde inte kontrollera om en ny export eller rapport kan starta eftersom tjänsten är tillfälligt otillgänglig. Försök igen om en stund.",
+      "edge": "För många anrop har nått tjänsten från ditt nätverk. Försök igen senare."
     }
   },
   "reports": {
@@ -1744,7 +1752,8 @@
         "aiForensicEvidenceEvents": "Poster i AI-forensiskt evidenslager",
         "hsaVerificationQuotaBuckets": "HSA-verifieringskvoter",
         "requirementImportValidationRateBuckets": "Anropsgränser för MCP-valideringssessioner",
-        "requirementImportValidationSessions": "Valideringssessioner för MCP-import"
+        "requirementImportValidationSessions": "Valideringssessioner för MCP-import",
+        "exportActorQuotaEntries": "Aktörskvoter för exporter och rapporter"
       },
       "fields": {
         "identity": "Identitet",
@@ -1783,7 +1792,8 @@
         "rateBucketDeletion": "När den tillfälliga anropsgränsposten tas bort nollställs principalens aktuella antal skapanden under 10-minutersfönstret.",
         "hsaVerificationQuotaDeletion": "När tillfälliga rader för HSA-verifieringskvot tas bort nollställs personens aktuella kvotantal för aktör, aktör–mål eller mål.",
         "tokenInvalidation": "När dessa tillfälliga sessioner tas bort blir deras valideringstoken omedelbart ogiltiga.",
-        "forensicEvidencePurge": "Radering stoppar matchande insamlingsfönster och tar permanent bort deras isolerade evidens."
+        "forensicEvidencePurge": "Radering stoppar matchande insamlingsfönster och tar permanent bort deras isolerade evidens.",
+        "exportActorQuotaDeletion": "Raderar personens tillfälliga export- och rapportförbrukning. Vänta först tills pågående arbeten är klara."
       },
       "blockers": {
         "ownerAreaReplacementRequired": "Ägaren är kopplad till kravområden. Uppdatera de kravområdena först eller ange ersättande HSA-id och namn.",
@@ -2617,6 +2627,14 @@
         "pdfWorkerMemoryMib": {
           "label": "Worker-minne per PDF-rendering",
           "help": "Begränsar JavaScript-minnet för varje isolerad PDF-worker. Containerns minnesgräns är fortfarande det yttersta skyddet. Använd minus eller plus för att ändra med 128 MiB, eller ange ett heltal i MiB. Tillåtet: 128–4 096 MiB."
+        },
+        "exportActorStartsPerMinute": {
+          "label": "Export- och rapportstarter per minut",
+          "help": "Högsta antal starter per person under varje rullande period om 60 sekunder, över alla format och appnoder. Misslyckade och avbrutna starter räknas också."
+        },
+        "exportActorConcurrency": {
+          "label": "Pågående exporter och rapporter per person",
+          "help": "Gemensamt över format, sessioner och appnoder, även för administratörer. Ändringar avbryter inte pågående arbete."
         }
       }
     },

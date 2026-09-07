@@ -1,3 +1,11 @@
+import { DEFAULT_APPLICATION_SETTINGS } from '@/lib/application-settings'
+
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('../helpers/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -99,6 +107,7 @@ describe('specification output routes', () => {
       sections: [{ type: 'notice', message: 'ok', severity: 'info' }],
     })
     routeState.getApplicationSettings.mockResolvedValue({
+      ...DEFAULT_APPLICATION_SETTINGS,
       csvExportConcurrencyPerNode: 5,
       csvExportMaxFileBytes: 100 * 1024 * 1024,
       csvExportMaxItems: 1000,
@@ -143,7 +152,15 @@ describe('specification output routes', () => {
     )
     expect(
       routeState.collectCompleteSpecificationOutputData,
-    ).toHaveBeenCalledWith({ db: true }, 42)
+    ).toHaveBeenCalledWith(
+      { db: true },
+      42,
+      expect.objectContaining({
+        maxItems: 1000,
+        signal: expect.any(AbortSignal),
+        createItemLimitError: expect.any(Function),
+      }),
+    )
     expect(routeState.buildSpecificationProfileReport).toHaveBeenCalledWith(
       outputData(),
       'procurement',

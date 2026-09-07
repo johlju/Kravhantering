@@ -2,6 +2,7 @@ import type { ApplicationSettings } from '@/lib/application-settings'
 import { getApplicationSettings } from '@/lib/dal/application-settings'
 import type { SqlServerDatabase } from '@/lib/db'
 import { escapeCsvField } from '@/lib/export-csv'
+import { runWithExportActorQuota } from '@/lib/generated-output/actor-quota'
 import {
   GeneratedOutputError,
   generatedOutputErrorResponse,
@@ -49,7 +50,7 @@ export interface RunBoundedCsvOutputOptions {
   responseHeaders: HeadersInit
 }
 
-export async function runBoundedCsvOutput(
+async function generateBoundedCsvOutput(
   options: RunBoundedCsvOutputOptions,
 ): Promise<Response> {
   const terminal = createGeneratedOutputTerminalRecorder(
@@ -191,5 +192,23 @@ async function ignoreCleanupFailure(
     await operation
   } catch {
     // The primary generated-output response or error remains authoritative.
+  }
+}
+
+export async function runBoundedCsvOutput(
+  options: RunBoundedCsvOutputOptions,
+): Promise<Response> {
+  try {
+    return await runWithExportActorQuota(
+      options.db,
+      options.context,
+      'csv',
+      options.requestSignal,
+      signal => generateBoundedCsvOutput({ ...options, requestSignal: signal }),
+    )
+  } catch (error) {
+    if (isGeneratedOutputError(error))
+      return generatedOutputErrorResponse(error)
+    throw error
   }
 }

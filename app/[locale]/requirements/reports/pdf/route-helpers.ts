@@ -94,8 +94,11 @@ export async function resolveReportSpecification(
   return specification
 }
 
-export function reportErrorResponse(error: unknown): Response {
-  const generatedResponse = synchronousPdfErrorResponse(error)
+export function reportErrorResponse(
+  error: unknown,
+  request?: Request,
+): Response {
+  const generatedResponse = synchronousPdfErrorResponse(error, request)
   if (generatedResponse) return generatedResponse
 
   if (!(error instanceof ReportDataError)) {

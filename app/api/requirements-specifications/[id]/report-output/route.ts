@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSpecificationById } from '@/lib/dal/requirements-specifications'
+import { runBoundedStructuredOutput } from '@/lib/generated-output/structured-runner'
 import { withRestResponsePolicy } from '@/lib/http/response-policy'
 import {
   idParamSchema,
@@ -9,6 +10,7 @@ import {
   parseSearchParams,
 } from '@/lib/http/validation'
 import { applyResponseCorrelationHeaders } from '@/lib/observability/request-ids'
+import { synchronousGeneratedOutputErrorResponse } from '@/lib/pdf/synchronous-generation'
 import { ReportDataError } from '@/lib/reports/data/server'
 import { collectCompleteSpecificationOutputData } from '@/lib/reports/data/specification-output'
 import { getSpecificationReportProfileForLifecycleStatus } from '@/lib/reports/specification-profiles'
@@ -84,18 +86,33 @@ async function getHandler(
       )
     }
 
-    const data = await collectCompleteSpecificationOutputData(
-      runtime.db,
-      specification.id,
-    )
-    const response = NextResponse.json(
-      buildSpecificationProfileReport(data, profile, parsedQuery.data.locale),
-      {},
-    )
+    const response = await runBoundedStructuredOutput({
+      db: runtime.db,
+      context: runtime.context,
+      output: 'json',
+      requestSignal: request.signal,
+      collect: async ({ maxItems, signal, itemLimitError }) => {
+        const data = await collectCompleteSpecificationOutputData(
+          runtime.db,
+          specification.id,
+          {
+            maxItems,
+            signal,
+            createItemLimitError: itemLimitError,
+          },
+        )
+        return buildSpecificationProfileReport(
+          data,
+          profile,
+          parsedQuery.data.locale,
+        )
+      },
+    })
     return applyResponseCorrelationHeaders(response, runtime.context)
   } catch (error) {
     return applyResponseCorrelationHeaders(
-      errorResponse(error),
+      synchronousGeneratedOutputErrorResponse('json', error) ??
+        errorResponse(error),
       runtime.context,
     )
   }

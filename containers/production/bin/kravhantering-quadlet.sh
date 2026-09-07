@@ -126,6 +126,7 @@ template_values() {
     NGINX_HTTPS_PUBLISH \
     NGINX_MEMORY_LIMIT_MIB \
     NGINX_KEYCLOAK_MANAGEMENT_PUBLISH \
+    NGINX_API_RATE NGINX_API_BURST NGINX_LOGIN_RATE NGINX_LOGIN_BURST \
     NGINX_PIDS_LIMIT \
     NGINX_SINGLE_NODE_TEMPLATE \
     NGINX_TASKS_MAX \
@@ -478,6 +479,10 @@ configure_containment() {
   default_release_value APP_RUNTIME_EXPORT_TMPFS_MIB 1024
   default_release_value NGINX_MEMORY_LIMIT_MIB 512
   default_release_value NGINX_CPU_QUOTA_PERCENT 100
+  default_release_value NGINX_API_RATE 50
+  default_release_value NGINX_API_BURST 200
+  default_release_value NGINX_LOGIN_RATE 5
+  default_release_value NGINX_LOGIN_BURST 50
   default_release_value NGINX_PIDS_LIMIT 128
   default_release_value NGINX_CACHE_TMPFS_MIB 64
   default_release_value SQLSERVER_MEMORY_LIMIT_MIB 4096
@@ -496,6 +501,10 @@ configure_containment() {
   validate_integer_range APP_RUNTIME_EXPORT_TMPFS_MIB 1024 4096
   validate_integer_range NGINX_MEMORY_LIMIT_MIB 256 1024
   validate_integer_range NGINX_CPU_QUOTA_PERCENT 25 "$(( $(nproc) * 100 ))"
+  validate_integer_range NGINX_API_RATE 1 10000
+  validate_integer_range NGINX_API_BURST 1 10000
+  validate_integer_range NGINX_LOGIN_RATE 1 1000
+  validate_integer_range NGINX_LOGIN_BURST 1 10000
   validate_integer_range NGINX_PIDS_LIMIT 32 512
   validate_integer_range NGINX_CACHE_TMPFS_MIB 16 256
   if [[ "$TOPOLOGY" == single-node ]]; then

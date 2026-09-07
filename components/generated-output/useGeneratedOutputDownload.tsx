@@ -39,6 +39,7 @@ interface UseGeneratedOutputDownloadResult {
 }
 
 interface OutputErrorDetails {
+  activeLimit?: number
   limit?: number
   limitKind?: 'bytes' | 'items'
   output: GeneratedOutputKind
@@ -122,6 +123,7 @@ async function parseOutputError(
     boundedInteger(rawDetails?.retryAfterSeconds, 0, 600) ??
     0
   const details: OutputErrorDetails = {
+    activeLimit: boundedInteger(rawDetails?.activeLimit, 1, 10),
     output,
     limit: boundedInteger(rawDetails?.limit, 0, 2_147_483_647),
     limitKind:
@@ -132,7 +134,12 @@ async function parseOutputError(
     timeoutSeconds: boundedInteger(rawDetails?.timeoutSeconds, 0, 600),
   }
   return {
-    code: typeof record?.code === 'string' ? record.code : 'unknown',
+    code:
+      typeof record?.code === 'string'
+        ? record.code
+        : response.status === 429
+          ? 'edge_rate_limit'
+          : 'unknown',
     details,
     retryAfterSeconds,
   }
@@ -314,6 +321,14 @@ function localizeOutputError(
   t: ReturnType<typeof useTranslations<'generatedOutput'>>,
 ): string {
   const { details } = error
+  if (error.code === 'actor_rate_limit')
+    return t('limits.actorRate', { seconds: error.retryAfterSeconds || 60 })
+  if (error.code === 'actor_concurrency_limit')
+    return (details.activeLimit ?? 1) === 1
+      ? t('limits.actorActive')
+      : t('limits.actorActiveMany', { limit: details.activeLimit ?? 1 })
+  if (error.code === 'quota_check_unavailable') return t('limits.unavailable')
+  if (error.code === 'edge_rate_limit') return t('limits.edge')
   const outputKey = details.output
   if (error.code === 'output_limit_exceeded') {
     if (details.limitKind === 'items' && details.limit != null) {
@@ -326,9 +341,7 @@ function localizeOutputError(
     }
   }
   if (error.code === 'capacity_busy') {
-    return t(`errors.${outputKey}.busy`, {
-      retryAfter: error.retryAfterSeconds,
-    })
+    return t('limits.capacity')
   }
   if (error.code === 'generation_timeout' && details.timeoutSeconds != null) {
     return t(`errors.${outputKey}.timeout`, {

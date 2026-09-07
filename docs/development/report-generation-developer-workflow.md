@@ -189,3 +189,9 @@ to the client.
 6. Update [reports.md](../reference/reports.md) when the change affects report
    types, field profiles, CSV/export contracts, authorization, filenames, or
    output behavior.
+
+## Shared actor admission
+
+See [export and report admission](../operations/export-report-admission.md) for
+covered routes, shared actor limits, distinct 429/503 reasons, English and
+Swedish messages, privacy handling and coordinated operational tuning.

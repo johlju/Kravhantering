@@ -1,3 +1,13 @@
+vi.mock('@/lib/dal/application-settings', async () => ({
+  getApplicationSettings: async () =>
+    (await import('@/lib/application-settings')).DEFAULT_APPLICATION_SETTINGS,
+}))
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('../helpers/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RequirementsServiceError } from '@/lib/requirements/errors'
 
@@ -305,7 +315,7 @@ describe('archiving retention routes', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(routeState.exportArchivingRetentionArchive).toHaveBeenCalledWith(
-      expect.objectContaining({ db: true }),
+      expect.objectContaining({ query: expect.any(Function) }),
       { policyId: 3, previewToken: 'token' },
     )
     expect(routeState.recordSecurityEvent).toHaveBeenCalledWith(

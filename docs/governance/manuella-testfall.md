@@ -2449,3 +2449,17 @@ betrodda kanten. Metadata saknar känsliga värden. Automatiserad täckning ska
 verifiera aktuell körningsgren och en separat mismatch-gren om lokal miljö inte
 säkert kan tvinga fram schemafel. Tooltipen visar appversion i global
 sidopanel.
+
+### EXPORT-01: orsaker till nekad export på svenska och engelska
+
+**Syfte:** Skilja personens kvot från upptagen kapacitet, otillgänglig
+kvotkontroll och nätverkets anropsgräns.
+
+**Steg:** Öppna Dataskydd på svenska och engelska. Starta en JSON-export
+under vart och ett av följande kontrollerade testvillkor: förbrukad
+startkvot, pågående arbete, upptagen tjänstekapacitet, otillgänglig
+kvotkontroll och överskriden nätverksgräns. Stäng felrutan mellan försöken.
+
+**Förväntat resultat:** Felrutan förklarar orsaken och nästa steg på valt
+språk. Nätverksgränsen beskrivs separat från personens kvot. Interna fel
+visas aldrig. En väntetid lovar inte att tjänsten återhämtar sig.

@@ -1,3 +1,11 @@
+import { DEFAULT_APPLICATION_SETTINGS } from '@/lib/application-settings'
+
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('../helpers/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { access, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,6 +40,7 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'csv-runner-test-'))
   process.env.KRAVHANTERING_EXPORT_TEMP_DIR = root
   mocks.getApplicationSettings.mockResolvedValue({
+    ...DEFAULT_APPLICATION_SETTINGS,
     csvExportConcurrencyPerNode: 2,
     csvExportMaxFileBytes: 1024,
     csvExportMaxItems: 2,

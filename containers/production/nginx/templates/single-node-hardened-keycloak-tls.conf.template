@@ -85,6 +85,12 @@ server {
         try_files $uri $uri/ =404;
     }
 
+    limit_req zone=api_per_client burst=${NGINX_API_BURST} nodelay;
+    limit_req zone=login_per_client burst=${NGINX_LOGIN_BURST} nodelay;
+    limit_req_status 429;
+    error_page 429 = @edge_rate_limited;
+    include /etc/nginx/snippets/edge-errors.conf;
+
     include /etc/nginx/snippets/generated-output-locations.conf;
     include /etc/nginx/snippets/readiness-locations.conf;
 

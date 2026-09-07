@@ -10,6 +10,8 @@ export interface ApplicationSettingEntity {
   csvExportMaxFileBytes: number
   csvExportMaxItems: number
   csvExportTimeoutSeconds: number
+  exportActorConcurrency: number
+  exportActorStartsPerMinute: number
   id: number
   pdfReportConcurrencyPerNode: number
   pdfReportMaxFileBytes: number
@@ -29,6 +31,16 @@ export const applicationSettingEntity =
     name: 'ApplicationSetting',
     tableName: 'application_settings',
     columns: {
+      exportActorStartsPerMinute: {
+        name: 'export_actor_starts_per_minute',
+        type: 'int',
+        default: 10,
+      },
+      exportActorConcurrency: {
+        name: 'export_actor_concurrency',
+        type: 'int',
+        default: 1,
+      },
       id: {
         generated: 'increment',
         name: 'id',
@@ -109,6 +121,14 @@ export const applicationSettingEntity =
       updatedAt: { name: 'updated_at', type: 'datetime2' },
     },
     checks: [
+      {
+        name: 'chk_application_settings_export_actor_starts_per_minute',
+        expression: '[export_actor_starts_per_minute] BETWEEN 1 AND 100',
+      },
+      {
+        name: 'chk_application_settings_export_actor_concurrency',
+        expression: '[export_actor_concurrency] BETWEEN 1 AND 10',
+      },
       {
         expression: '[id] = 1',
         name: 'chk_application_settings_id',

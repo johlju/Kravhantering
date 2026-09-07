@@ -60,6 +60,7 @@ export const DEMO_RESET_TABLES = Object.freeze([
   'requirement_import_validation_rate_buckets',
   'requirement_import_validation_sessions',
   'hsa_verification_quota_buckets',
+  'export_actor_quota_entries',
   'ai_forensic_evidence_events',
   'ai_forensic_capture_windows',
   'ai_connection_model_operational_states',

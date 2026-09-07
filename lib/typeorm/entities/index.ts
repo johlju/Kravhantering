@@ -1,3 +1,10 @@
+import { exportActorQuotaEntryEntity } from './export-actor-quota-entry'
+
+export {
+  type ExportActorQuotaEntryEntity,
+  exportActorQuotaEntryEntity,
+} from './export-actor-quota-entry'
+
 import { accessReviewItemEntity } from '@/lib/typeorm/entities/access-review-item'
 import { accessReviewRunEntity } from '@/lib/typeorm/entities/access-review-run'
 import { actionAuditEventEntity } from '@/lib/typeorm/entities/action-audit-event'
@@ -74,6 +81,7 @@ import { specificationRfiListEntity } from '@/lib/typeorm/entities/specification
 import { specificationRfiQuestionItemEntity } from '@/lib/typeorm/entities/specification-rfi-question-item'
 
 export const sqlServerEntities = [
+  exportActorQuotaEntryEntity,
   aiModelVerificationAttemptEntity,
   actionAuditEventEntity,
   aiConnectionEntity,

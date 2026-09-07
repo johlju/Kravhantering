@@ -6,7 +6,9 @@
  * (GET/HEAD/OPTIONS) requests are forwarded unchanged so existing call sites
  * and tests that pass a bare init object continue to behave identically.
  */
+
 import { dispatchAuthReauthRequired } from '@/lib/auth/client-events'
+import { serviceLimitMessage } from '@/lib/http/service-limit-message'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -40,12 +42,40 @@ function isSameOriginApiRequest(input: RequestInfo | URL): boolean {
   }
 }
 
-function reportUnauthorizedResponse(
+async function reportUnauthorizedResponse(
   input: RequestInfo | URL,
   response: Response,
-): Response {
+): Promise<Response> {
   if (response.status === 401 && isSameOriginApiRequest(input)) {
     dispatchAuthReauthRequired('api_unauthorized')
+  }
+  if (
+    (response.status === 429 || response.status === 503) &&
+    isSameOriginApiRequest(input)
+  ) {
+    let body: Record<string, unknown> = {}
+    try {
+      body = await response.clone().json()
+    } catch {
+      /* Never expose an ingress HTML body. */
+    }
+    const code =
+      typeof body?.code === 'string'
+        ? body.code
+        : response.status === 429
+          ? 'edge_rate_limit'
+          : undefined
+    const locale = window.location.pathname.startsWith('/sv') ? 'sv' : 'en'
+    const message = serviceLimitMessage(code, body?.details, locale)
+    if (message) {
+      const headers = new Headers(response.headers)
+      headers.delete('Content-Length')
+      headers.set('Content-Type', 'application/json')
+      return Response.json(
+        { code, details: body?.details, error: message },
+        { status: response.status, headers },
+      )
+    }
   }
   return response
 }

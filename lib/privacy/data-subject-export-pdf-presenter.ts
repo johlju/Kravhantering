@@ -222,6 +222,12 @@ const SOURCE_TEXT: Record<LocaleKey, Record<string, SourceInfo>> = {
       section: 'actionLog',
       title: 'Application action',
     },
+    'export_actor_quota_entries.subject': {
+      section: 'other',
+      title: 'Export and report actor quota',
+      description:
+        'Temporary metadata about this person’s export and report starts and active work.',
+    },
     'hsa_verification_quota_buckets.subject': {
       description:
         'The application temporarily stores aggregate HSA verification quota metadata for this person.',
@@ -378,6 +384,12 @@ const SOURCE_TEXT: Record<LocaleKey, Record<string, SourceInfo>> = {
       section: 'actionLog',
       title: 'Åtgärd i applikationen',
     },
+    'export_actor_quota_entries.subject': {
+      section: 'other',
+      title: 'Aktörskvot för exporter och rapporter',
+      description:
+        'Tillfälliga uppgifter om personens export- och rapportstarter samt pågående arbeten.',
+    },
     'hsa_verification_quota_buckets.subject': {
       description:
         'Applikationen lagrar tillfälligt aggregerad metadata om HSA-verifieringskvot för personen.',
@@ -507,6 +519,7 @@ const FIELD_LABELS: Record<LocaleKey, Record<string, string>> = {
     completed_by_display_name: 'Name',
     completed_by_hsa_id: 'HSA-id',
     created_at: 'Created',
+    released_at: 'Work finished',
     created_by: 'Name',
     created_by_display_name: 'Name',
     created_by_hsa_id: 'HSA-id',
@@ -568,6 +581,7 @@ const FIELD_LABELS: Record<LocaleKey, Record<string, string>> = {
     completed_by_display_name: 'Namn',
     completed_by_hsa_id: 'HSA-id',
     created_at: 'Skapad',
+    released_at: 'Arbetet avslutat',
     created_by: 'Namn',
     created_by_display_name: 'Namn',
     created_by_hsa_id: 'HSA-id',

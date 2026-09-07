@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import { createElement } from 'react'
 import { z } from 'zod'
 import AccessReviewExportPdfRenderer from '@/components/access-review/AccessReviewExportPdfRenderer'
@@ -16,6 +15,7 @@ import {
 import { recordSecurityEvent } from '@/lib/auth/audit'
 import { getRequestSqlServerDataSource } from '@/lib/db'
 import { throwIfGenerationAborted } from '@/lib/generated-output/operation'
+import { runBoundedStructuredOutput } from '@/lib/generated-output/structured-runner'
 import {
   customMutationPolicy,
   secureMutationRoute,
@@ -49,6 +49,7 @@ export const POST = secureMutationRoute({
       if (body.delivery === 'pdf') {
         return await runSynchronousPdfGeneration(
           db,
+          context,
           request.signal,
           async ({ capacity, itemLimit, signal }) => {
             const exportPayload = await buildAccessReviewExport(
@@ -81,15 +82,29 @@ export const POST = secureMutationRoute({
           },
         )
       }
-      const exportPayload = await buildAccessReviewExport(db, params.id, actor)
-      recordExportSecurityEvent(
-        body.delivery,
-        exportPayload,
-        params.id,
+      return await runBoundedStructuredOutput({
+        db,
         context,
-        request,
-      )
-      return NextResponse.json(exportPayload)
+        output: 'json',
+        requestSignal: request.signal,
+        collect: async ({ maxItems, itemLimitError }) => {
+          const exportPayload = await buildAccessReviewExport(
+            db,
+            params.id,
+            actor,
+            new Date(),
+            { maxItems, createItemLimitError: itemLimitError },
+          )
+          recordExportSecurityEvent(
+            body.delivery,
+            exportPayload,
+            params.id,
+            context,
+            request,
+          )
+          return exportPayload
+        },
+      })
     } catch (error) {
       await recordAccessReviewAuthorizationDenied(
         context,
@@ -102,7 +117,7 @@ export const POST = secureMutationRoute({
         error,
       )
       return (
-        synchronousPdfErrorResponse(error) ??
+        synchronousPdfErrorResponse(error, request) ??
         accessReviewErrorResponse('Failed to export access review', error)
       )
     }

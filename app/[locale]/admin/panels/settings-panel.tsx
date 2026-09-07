@@ -53,6 +53,8 @@ const IMPORT_SETTINGS: readonly SettingDefinition[] = [
 ]
 
 const EXPORT_SETTINGS: readonly SettingDefinition[] = [
+  { field: 'exportActorStartsPerMinute', unit: 'exports' },
+  { field: 'exportActorConcurrency', unit: 'exports' },
   { field: 'csvExportMaxItems', unit: 'rows' },
   {
     adjustmentStep: 1,

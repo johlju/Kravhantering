@@ -1,3 +1,11 @@
+import { DEFAULT_APPLICATION_SETTINGS } from '@/lib/application-settings'
+
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('../helpers/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CsrfError } from '@/lib/auth/csrf'
 import {
@@ -190,6 +198,7 @@ describe('access review routes', () => {
     vi.clearAllMocks()
     routeState.createRequestContext.mockResolvedValue(context())
     routeState.getApplicationSettings.mockResolvedValue({
+      ...DEFAULT_APPLICATION_SETTINGS,
       pdfReportConcurrencyPerNode: 3,
       pdfReportMaxRequirements: 1000,
       pdfReportTimeoutSeconds: 180,

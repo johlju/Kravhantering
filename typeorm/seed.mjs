@@ -111,6 +111,7 @@ const TABLE_ORDER = [
   'ai_forensic_capture_windows',
   'ai_forensic_evidence_events',
   'hsa_verification_quota_buckets',
+  'export_actor_quota_entries',
   'requirement_import_validation_sessions',
   'requirement_import_validation_rate_buckets',
   'application_settings',
@@ -161,6 +162,26 @@ const TABLE_ORDER = [
 ]
 
 const SEED_DATA = {
+  export_actor_quota_entries: {
+    identity: false,
+    columns: [
+      'id',
+      'actor_fingerprint',
+      'created_at',
+      'released_at',
+      'expires_at',
+    ],
+    pk: ['id'],
+    rows: [
+      [
+        '00000000-0000-4000-8000-000000009001',
+        DEMO_HSA_ACTOR_SUBJECT_FINGERPRINT,
+        '2026-04-20 20:07:00',
+        '2026-04-20 20:07:01',
+        '2026-04-20 20:22:00',
+      ],
+    ],
+  },
   hsa_verification_quota_buckets: {
     columns: [
       'id',

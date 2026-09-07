@@ -462,6 +462,13 @@ erDiagram
         datetime2 updated_at
     }
 
+    export_actor_quota_entries {
+        uniqueidentifier id PK
+        nvarchar actor_fingerprint
+        datetime2 created_at
+        datetime2 released_at
+        datetime2 expires_at
+    }
     hsa_verification_quota_buckets {
         integer id PK
         text bucket_kind
@@ -2443,6 +2450,41 @@ expired-row count, stored bytes and oldest age. It never logs stored session
 content. See
 [Scheduled Transient-State Cleanup](../operations/transient-state-cleanup.md).
 
+### `export_actor_quota_entries`
+
+Short-lived, pseudonymized operational data for the export and report actor
+quota. No foreign key or raw HSA-id is stored. Admission and privacy erasure
+serialize on the same actor application lock; the database supplies time.
+
+<!-- markdownlint-disable MD013 -->
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `id` | `uniqueidentifier`, primary key | Random admission token; late release cannot release another operation |
+| `actor_fingerprint` | `nvarchar(26)`, required | Exact normalized HSA-id HMAC using the HSA target fingerprint convention |
+| `created_at` | `datetime2(3)`, required | Admitted start, counted for a rolling 60 seconds |
+| `released_at` | `datetime2(3)`, nullable | Completion after work and stream cleanup; null means active until recovery |
+| `expires_at` | `datetime2(3)`, required | Recovery and cleanup time, 900 seconds after admission |
+
+<!-- markdownlint-enable MD013 -->
+
+Checks require a fingerprint with the `hfp_` prefix, recovery after admission,
+and release at or after admission. Indexes support actor-window admission and
+bounded expiry cleanup. The demo seed has a released expired row belonging to
+the existing HSA quota demo person. Required seed creates no usage.
+
+The `application_settings` singleton also contains
+`export_actor_starts_per_minute` (integer 1–100, default 10) and
+`export_actor_concurrency` (integer 1–10, default 1), each with a named check
+and default constraint. Existing audited updates apply without clearing usage.
+These fields have no requirement-version or import-schema representation.
+
+Person-data export exposes admission/release/recovery times for the exact
+HSA-id. Erasure refuses active work and deletes exact matching entries under
+the admission lock. Scheduled cleanup removes expired state without an archive
+requirement. See [admission operations](../operations/export-report-admission.md)
+for runtime permissions, bounded recovery, rollout and rollback constraints.
+
 ### `hsa_verification_quota_buckets`
 
 Short-lived, application-wide counters for HSA person verification. Each row
@@ -3519,6 +3561,8 @@ its purpose and the table/column(s) it covers.
 | `idx_requirement_import_validation_sessions_principal_expires_at` | `requirement_import_validation_sessions` | `creator_principal_fingerprint, expires_at` | Support owned lookup and active principal quota counts |
 | `idx_requirement_import_validation_sessions_destination_expires_at` | `requirement_import_validation_sessions` | `destination_kind, destination_id, expires_at` | Support active destination quota counts |
 | `idx_requirement_import_validation_rate_buckets_expires_at` | `requirement_import_validation_rate_buckets` | `expires_at` | Support bounded cleanup of expired creation counters |
+| `idx_export_actor_quota_entries_actor_fingerprint_created_at` | `export_actor_quota_entries` | `actor_fingerprint, created_at` | Actor admission and exact privacy lookup |
+| `idx_export_actor_quota_entries_expires_at` | `export_actor_quota_entries` | `expires_at` | Bounded transient cleanup |
 | `idx_hsa_verification_quota_buckets_expires_at` | `hsa_verification_quota_buckets` | `expires_at` | Support bounded cleanup of expired HSA verification quota rows |
 | `idx_hsa_verification_quota_buckets_actor_subject` | `hsa_verification_quota_buckets` | `actor_subject_fingerprint` where non-null | Support exact actor-side privacy lookup and erasure |
 | `idx_hsa_verification_quota_buckets_target` | `hsa_verification_quota_buckets` | `target_fingerprint` where non-null | Support exact target-side privacy lookup and erasure |
@@ -3683,6 +3727,7 @@ graph LR
     subgraph Transient Coordination State
         MIVS[requirement_import_validation_sessions]
         MIVR[requirement_import_validation_rate_buckets]
+        EAQE[export_actor_quota_entries]
         HVQB[hsa_verification_quota_buckets]
     end
 

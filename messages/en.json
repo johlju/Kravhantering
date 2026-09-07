@@ -1069,6 +1069,14 @@
         "workerFailed": "The PDF output could not be generated because of a temporary rendering error. Try again. Contact an administrator if the problem persists.",
         "unknown": "The PDF output could not be downloaded. Try again."
       }
+    },
+    "limits": {
+      "actorRate": "You have reached your export and report limit. Try again in {seconds} seconds.",
+      "actorActive": "You already have an export or report running. Wait for it to finish.",
+      "actorActiveMany": "You already have {limit} exports or reports running. Wait for one to finish.",
+      "capacity": "The service’s export and report capacity is currently occupied. Please try again shortly.",
+      "unavailable": "We could not check whether a new export or report can start because the service is temporarily unavailable. Please try again shortly.",
+      "edge": "Too many requests reached the service from your network. Please try again later."
     }
   },
   "reports": {
@@ -1744,7 +1752,8 @@
         "aiForensicEvidenceEvents": "AI forensic evidence events",
         "hsaVerificationQuotaBuckets": "HSA verification quotas",
         "requirementImportValidationRateBuckets": "MCP validation-session rate limits",
-        "requirementImportValidationSessions": "MCP import validation sessions"
+        "requirementImportValidationSessions": "MCP import validation sessions",
+        "exportActorQuotaEntries": "Export and report actor quotas"
       },
       "fields": {
         "identity": "Identity",
@@ -1783,7 +1792,8 @@
         "rateBucketDeletion": "Deleting the temporary rate-limit bucket resets the principal's current 10-minute creation count.",
         "hsaVerificationQuotaDeletion": "Deleting temporary HSA verification quota rows resets the person's current actor, actor-target, or target count.",
         "tokenInvalidation": "Deleting these temporary sessions immediately invalidates their validation tokens.",
-        "forensicEvidencePurge": "Erasure stops matching capture windows and permanently purges their isolated evidence."
+        "forensicEvidencePurge": "Erasure stops matching capture windows and permanently purges their isolated evidence.",
+        "exportActorQuotaDeletion": "Deletes this person’s temporary export and report usage. Wait for active work to finish first."
       },
       "blockers": {
         "ownerAreaReplacementRequired": "This owner is assigned to requirement areas. Update those areas first or specify a replacement HSA-id and name.",
@@ -2617,6 +2627,14 @@
         "pdfWorkerMemoryMib": {
           "label": "Worker memory per PDF rendering",
           "help": "Limits JavaScript memory for each isolated PDF worker. The container memory limit remains the final safeguard. Use minus or plus to adjust by 128 MiB, or enter an integer in MiB. Allowed: 128–4,096 MiB."
+        },
+        "exportActorStartsPerMinute": {
+          "label": "Export and report starts per minute",
+          "help": "Maximum admitted starts per person in any rolling 60 seconds, across all formats and app nodes. Failed and cancelled starts still count."
+        },
+        "exportActorConcurrency": {
+          "label": "Active exports and reports per person",
+          "help": "Shared across formats, sessions and app nodes, including administrators. Changing the limit does not cancel work."
         }
       }
     },

@@ -1206,7 +1206,36 @@ async function collectHsaVerificationQuotaBuckets(
   )
 }
 
+async function collectExportActorQuotaEntries(
+  db: QueryExecutor,
+  targetHsaId: string,
+): Promise<DataSubjectExportItem[]> {
+  const policy = policyFor('export_actor_quota_entries.subject')
+  const rows = await db.query<ExportRow[]>(
+    `/* privacy:data-export:export_actor_quota_entries.subject */
+    SELECT created_at AS createdAt, released_at AS releasedAt, expires_at AS expiresAt
+    FROM export_actor_quota_entries WHERE actor_fingerprint = @0 ORDER BY created_at, id`,
+    [requirementResponsibilityPersonTargetFingerprint(targetHsaId)],
+  )
+  return rows.flatMap(row =>
+    [
+      { fieldName: 'created_at', value: isoTimestamp(row.createdAt) ?? null },
+      { fieldName: 'released_at', value: isoTimestamp(row.releasedAt) ?? null },
+      { fieldName: 'expires_at', value: isoTimestamp(row.expiresAt) ?? null },
+    ].map(field =>
+      item(policy, 'export_actor_quota_subject', field.fieldName, field.value, {
+        timestamp: row.createdAt,
+      }),
+    ),
+  )
+}
+
 const SOURCE_DEFINITIONS: DataSubjectExportSourceDefinition[] = [
+  {
+    collect: collectExportActorQuotaEntries,
+    policy: policyFor('export_actor_quota_entries.subject'),
+    relationToSubject: 'export_actor_quota_subject',
+  },
   {
     collect: collectRequirementAreaOwners,
     policy: policyFor('requirement_areas.owner'),

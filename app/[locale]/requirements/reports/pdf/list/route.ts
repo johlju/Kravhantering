@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { getApplicationSettings } from '@/lib/dal/application-settings'
+import { runWithExportActorQuota } from '@/lib/generated-output/actor-quota'
 import {
   GeneratedOutputError,
   generatedOutputErrorResponse,
@@ -247,133 +248,144 @@ export async function GET(
     }
 
     const runtime = await createReportRuntime(request)
-    const settings = await getApplicationSettings(runtime.db)
-    const terminal = createGeneratedOutputTerminalRecorder(
-      'requirements.list_pdf_report',
+    return await runWithExportActorQuota(
+      runtime.db,
       runtime.context,
-    )
-    let byteCount = 0
-    let itemCount = 0
-    const terminalMetrics = () => ({
-      activeCount: generatedOutputCapacitySnapshot().activePdf,
-      byteCount,
-      concurrencyLimit: settings.pdfReportConcurrencyPerNode,
-      itemCount,
-      itemLimit: settings.pdfReportMaxRequirements,
-      timeoutMs: settings.pdfReportTimeoutSeconds * 1000,
-      workerMemoryLimitBytes: settings.pdfWorkerMemoryMib * 1024 * 1024,
-    })
-
-    try {
-      spool = await acquireGeneratedOutputSpool({
-        concurrencyLimit: settings.pdfReportConcurrencyPerNode,
-        maxFileBytes: settings.pdfReportMaxFileBytes,
-        output: 'pdf',
-      })
-      deadline = createGenerationDeadline(
-        settings.pdfReportTimeoutSeconds,
-        request.signal,
-      )
-      const ids = splitCsvParam(parsedQuery.data.ids ?? null)
-      const uniqueIds = [...new Set(ids)]
-      const requirements =
-        parsedQuery.data.ids == null
-          ? await collectFilteredRequirementsForListReport(
-              runtime,
-              parsedQuery.data,
-              reportLocale(locale),
-              settings.pdfReportMaxRequirements,
-              deadline.signal,
-            )
-          : await (async () => {
-              if (ids.length === 0) {
-                throw new ReportDataError('No requirement IDs provided', 400)
-              }
-              if (uniqueIds.length > settings.pdfReportMaxRequirements) {
-                throw new GeneratedOutputError(
-                  'output_limit_exceeded',
-                  'item_limit_exceeded',
-                  {
-                    limit: settings.pdfReportMaxRequirements,
-                    limitKind: 'items',
-                    output: 'pdf',
-                  },
-                )
-              }
-              for (const id of uniqueIds) {
-                throwIfGenerationAborted(deadline?.signal ?? request.signal)
-                await authorizeRequirementReportRead(
-                  runtime.authorization,
-                  runtime.context,
-                  id,
-                  'detail',
-                )
-              }
-              return collectMultipleRequirementListItemsForReport(
-                runtime.db,
-                uniqueIds,
-              )
-            })()
-      itemCount = requirements.length
-      throwIfGenerationAborted(deadline.signal)
-      byteCount = await renderReportInWorker({
-        locale,
-        maxBytes: settings.pdfReportMaxFileBytes,
-        memoryLimitMib: settings.pdfWorkerMemoryMib,
-        model: buildListReport(requirements, locale),
-        outputPath: spool.filePath,
-        signal: deadline.signal,
-      })
-      throwIfGenerationAborted(deadline.signal)
-      deadline.dispose()
-      deadline = undefined
-
-      const label = getReportLabels(locale).filenames.list
-      const filename = `${label} ${timestampForFilename()}.pdf`
-      const response = await createGeneratedOutputFileResponse(
-        spool,
-        {
-          'Content-Disposition': pdfContentDisposition(filename),
-          'Content-Type': 'application/pdf',
-        },
-        {
-          onCancel: () => terminal.cancelled(terminalMetrics()),
-          onComplete: () => terminal.completed(terminalMetrics()),
-          onError: () =>
-            terminal.failed(
-              new Error('PDF response stream failed'),
-              terminalMetrics(),
-            ),
-        },
-      )
-      spool = undefined
-      return response
-    } catch (error) {
-      deadline?.dispose()
-      deadline = undefined
-      spool?.releaseGeneration()
-      await spool?.releaseSpool().catch(() => {})
-      spool = undefined
-      terminal.failed(error, terminalMetrics())
-
-      if (error instanceof GeneratedOutputTimeoutError) {
-        return generatedOutputErrorResponse(
-          generatedOutputErrorFromTimeout('pdf', error),
+      'pdf',
+      request.signal,
+      async actorSignal => {
+        const settings = await getApplicationSettings(runtime.db)
+        const terminal = createGeneratedOutputTerminalRecorder(
+          'requirements.list_pdf_report',
+          runtime.context,
         )
-      }
-      if (isGeneratedOutputError(error)) {
-        return generatedOutputErrorResponse(error)
-      }
-      if (error instanceof ClientCancelledGeneratedOutputError) {
-        return new Response(null, {
-          headers: { 'Cache-Control': 'no-store' },
-          status: 499,
+        let byteCount = 0
+        let itemCount = 0
+        const terminalMetrics = () => ({
+          activeCount: generatedOutputCapacitySnapshot().activePdf,
+          byteCount,
+          concurrencyLimit: settings.pdfReportConcurrencyPerNode,
+          itemCount,
+          itemLimit: settings.pdfReportMaxRequirements,
+          timeoutMs: settings.pdfReportTimeoutSeconds * 1000,
+          workerMemoryLimitBytes: settings.pdfWorkerMemoryMib * 1024 * 1024,
         })
-      }
-      throw error
-    }
+
+        try {
+          spool = await acquireGeneratedOutputSpool({
+            concurrencyLimit: settings.pdfReportConcurrencyPerNode,
+            maxFileBytes: settings.pdfReportMaxFileBytes,
+            output: 'pdf',
+          })
+          deadline = createGenerationDeadline(
+            settings.pdfReportTimeoutSeconds,
+            actorSignal,
+          )
+          const ids = splitCsvParam(parsedQuery.data.ids ?? null)
+          const uniqueIds = [...new Set(ids)]
+          const requirements =
+            parsedQuery.data.ids == null
+              ? await collectFilteredRequirementsForListReport(
+                  runtime,
+                  parsedQuery.data,
+                  reportLocale(locale),
+                  settings.pdfReportMaxRequirements,
+                  deadline.signal,
+                )
+              : await (async () => {
+                  if (ids.length === 0) {
+                    throw new ReportDataError(
+                      'No requirement IDs provided',
+                      400,
+                    )
+                  }
+                  if (uniqueIds.length > settings.pdfReportMaxRequirements) {
+                    throw new GeneratedOutputError(
+                      'output_limit_exceeded',
+                      'item_limit_exceeded',
+                      {
+                        limit: settings.pdfReportMaxRequirements,
+                        limitKind: 'items',
+                        output: 'pdf',
+                      },
+                    )
+                  }
+                  for (const id of uniqueIds) {
+                    throwIfGenerationAborted(deadline?.signal ?? request.signal)
+                    await authorizeRequirementReportRead(
+                      runtime.authorization,
+                      runtime.context,
+                      id,
+                      'detail',
+                    )
+                  }
+                  return collectMultipleRequirementListItemsForReport(
+                    runtime.db,
+                    uniqueIds,
+                  )
+                })()
+          itemCount = requirements.length
+          throwIfGenerationAborted(deadline.signal)
+          byteCount = await renderReportInWorker({
+            locale,
+            maxBytes: settings.pdfReportMaxFileBytes,
+            memoryLimitMib: settings.pdfWorkerMemoryMib,
+            model: buildListReport(requirements, locale),
+            outputPath: spool.filePath,
+            signal: deadline.signal,
+          })
+          throwIfGenerationAborted(deadline.signal)
+          deadline.dispose()
+          deadline = undefined
+
+          const label = getReportLabels(locale).filenames.list
+          const filename = `${label} ${timestampForFilename()}.pdf`
+          const response = await createGeneratedOutputFileResponse(
+            spool,
+            {
+              'Content-Disposition': pdfContentDisposition(filename),
+              'Content-Type': 'application/pdf',
+            },
+            {
+              onCancel: () => terminal.cancelled(terminalMetrics()),
+              onComplete: () => terminal.completed(terminalMetrics()),
+              onError: () =>
+                terminal.failed(
+                  new Error('PDF response stream failed'),
+                  terminalMetrics(),
+                ),
+            },
+          )
+          spool = undefined
+          return response
+        } catch (error) {
+          deadline?.dispose()
+          deadline = undefined
+          spool?.releaseGeneration()
+          await spool?.releaseSpool().catch(() => {})
+          spool = undefined
+          terminal.failed(error, terminalMetrics())
+
+          if (error instanceof GeneratedOutputTimeoutError) {
+            return generatedOutputErrorResponse(
+              generatedOutputErrorFromTimeout('pdf', error),
+            )
+          }
+          if (isGeneratedOutputError(error)) {
+            return generatedOutputErrorResponse(error, request)
+          }
+          if (error instanceof ClientCancelledGeneratedOutputError) {
+            return new Response(null, {
+              headers: { 'Cache-Control': 'no-store' },
+              status: 499,
+            })
+          }
+          throw error
+        }
+      },
+    )
   } catch (error) {
-    return reportErrorResponse(error)
+    return reportErrorResponse(error, request)
   } finally {
     deadline?.dispose()
     spool?.releaseGeneration()

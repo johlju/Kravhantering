@@ -4,6 +4,7 @@ import { exportArchivingRetentionArchive } from '@/lib/archiving/retention'
 import { recordSecurityEvent } from '@/lib/auth/audit'
 import { CsrfError } from '@/lib/auth/csrf'
 import { getRequestSqlServerDataSource } from '@/lib/db'
+import { runBoundedStructuredOutput } from '@/lib/generated-output/structured-runner'
 import { logSanitizedError } from '@/lib/http/safe-errors'
 import {
   customMutationPolicy,
@@ -13,6 +14,7 @@ import {
   boundedDbStringSchema,
   positiveIntegerSchema,
 } from '@/lib/http/validation'
+import { synchronousGeneratedOutputErrorResponse } from '@/lib/pdf/synchronous-generation'
 import {
   assertPrivacyOfficer,
   auditActor,
@@ -38,19 +40,32 @@ export const POST = secureMutationRoute({
   handler: async ({ body, context, request }) => {
     try {
       const db = await getRequestSqlServerDataSource()
-      const result = await exportArchivingRetentionArchive(db, body)
-      recordSecurityEvent({
-        actor: auditActor(context),
-        detail: {
-          exportTokenFingerprint: result.exportToken.slice(0, 16),
-          policyId: body.policyId,
+      return await runBoundedStructuredOutput({
+        db,
+        context,
+        output: 'json',
+        requestSignal: request.signal,
+        collect: async ({ query }) => {
+          const result = await exportArchivingRetentionArchive({ query }, body)
+          recordSecurityEvent({
+            actor: auditActor(context),
+            detail: {
+              exportTokenFingerprint: result.exportToken.slice(0, 16),
+              policyId: body.policyId,
+            },
+            event: 'admin.archiving.exported',
+            outcome: 'success',
+            request: context.request ?? request,
+          })
+          return result
         },
-        event: 'admin.archiving.exported',
-        outcome: 'success',
-        request: context.request ?? request,
       })
-      return NextResponse.json(result)
     } catch (error) {
+      const generatedError = synchronousGeneratedOutputErrorResponse(
+        'json',
+        error,
+      )
+      if (generatedError) return generatedError
       if (error instanceof CsrfError || isRequirementsServiceError(error)) {
         const { body: errorBody, status } = toHttpErrorPayload(error)
         return NextResponse.json(errorBody, { status })

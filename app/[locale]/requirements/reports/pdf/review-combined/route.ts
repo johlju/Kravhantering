@@ -37,6 +37,7 @@ export async function GET(
     const uniqueIds = [...new Set(ids)]
     return await runSynchronousPdfGeneration(
       runtime.db,
+      runtime.context,
       request.signal,
       async ({ capacity, itemLimit }) => {
         assertPdfItemLimit(uniqueIds.length, itemLimit)
@@ -62,6 +63,6 @@ export async function GET(
       },
     )
   } catch (error) {
-    return reportErrorResponse(error)
+    return reportErrorResponse(error, request)
   }
 }
