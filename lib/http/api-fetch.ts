@@ -8,7 +8,7 @@
  */
 
 import { dispatchAuthReauthRequired } from '@/lib/auth/client-events'
-import { serviceLimitMessage } from '@/lib/http/service-limit-message'
+import { localizeServiceLimitResponse } from '@/lib/http/localize-service-limit-response'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -53,29 +53,8 @@ async function reportUnauthorizedResponse(
     (response.status === 429 || response.status === 503) &&
     isSameOriginApiRequest(input)
   ) {
-    let body: Record<string, unknown> = {}
-    try {
-      body = await response.clone().json()
-    } catch {
-      /* Never expose an ingress HTML body. */
-    }
-    const code =
-      typeof body?.code === 'string'
-        ? body.code
-        : response.status === 429
-          ? 'edge_rate_limit'
-          : undefined
     const locale = window.location.pathname.startsWith('/sv') ? 'sv' : 'en'
-    const message = serviceLimitMessage(code, body?.details, locale)
-    if (message) {
-      const headers = new Headers(response.headers)
-      headers.delete('Content-Length')
-      headers.set('Content-Type', 'application/json')
-      return Response.json(
-        { code, details: body?.details, error: message },
-        { status: response.status, headers },
-      )
-    }
+    return localizeServiceLimitResponse(response, locale)
   }
   return response
 }

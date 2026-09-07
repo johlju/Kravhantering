@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTH_REAUTH_REQUIRED_EVENT } from '@/lib/auth/client-events'
 import { apiFetch } from '@/lib/http/api-fetch'
+import en from '@/messages/en.json'
 
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
@@ -16,6 +17,55 @@ describe('apiFetch', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/items')
   })
+  it.each([
+    ['actor_rate_limit', 'actorRate', 429],
+    ['actor_concurrency_limit', 'actorActive', 429],
+    ['quota_check_unavailable', 'unavailable', 503],
+  ] as const)(
+    'localizes %s and preserves retry guidance',
+    async (code, key, status) => {
+      fetchMock.mockResolvedValue(
+        Response.json(
+          {
+            code,
+            error: 'internal diagnostics',
+            details: { retryAfterSeconds: 5 },
+          },
+          {
+            status,
+            headers: {
+              'Retry-After': '5',
+              'Content-Length': '100',
+              'Cache-Control': 'no-store',
+            },
+          },
+        ),
+      )
+      const response = await apiFetch('/api/requirements/export')
+      expect(response.status).toBe(status)
+      expect(response.headers.get('Retry-After')).toBe('5')
+      expect(response.headers.get('Cache-Control')).toBe('no-store')
+      expect(response.headers.get('Content-Length')).toBeNull()
+      expect(await response.json()).toMatchObject({
+        code,
+        error: en.generatedOutput.limits[key].replace('{seconds}', '5'),
+      })
+    },
+  )
+  it.each(['text/plain', 'application/json'])(
+    'preserves unrelated service errors with %s content',
+    async contentType => {
+      const original = new Response(
+        contentType === 'application/json'
+          ? '{"code":"maintenance"}'
+          : 'Temporarily unavailable',
+        { status: 503, headers: { 'Content-Type': contentType } },
+      )
+      fetchMock.mockResolvedValue(original)
+      expect(await apiFetch('/api/items')).toBe(original)
+      expect(original.bodyUsed).toBe(false)
+    },
+  )
 
   it('honors Request inputs and overlays init headers for safe methods', async () => {
     const input = new Request('http://localhost/api/items', {

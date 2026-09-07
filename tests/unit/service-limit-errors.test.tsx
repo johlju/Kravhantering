@@ -78,6 +78,9 @@ describe('safe service-limit messages', () => {
       expect(serviceLimitMessage('capacity_busy', {}, locale)).toBe(
         messages.capacity,
       )
+      expect(serviceLimitMessage('edge_rate_limit', {}, locale)).toBe(
+        messages.edge,
+      )
       expect(
         serviceLimitMessage('unknown_code', 'private diagnostics', locale),
       ).toBeUndefined()

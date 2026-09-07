@@ -1,4 +1,14 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import { resetAuthConfigForTests } from '@/lib/auth/config'
 import {
   admitExportActor,
   releaseExportActor,
@@ -25,6 +35,25 @@ const fingerprint = (actor: number) => `hfp_${String(actor).padStart(22, '0')}`
 describe('Export and report actor quota in SQL Server', () => {
   const db = useSqlIntegrationDatabase()
   let replica: SqlServerDatabase
+  beforeEach(() => {
+    resetAuthConfigForTests()
+    vi.stubEnv('AUTH_OIDC_CLIENT_ID', 'sql-integration-client')
+    vi.stubEnv('AUTH_OIDC_CLIENT_SECRET', 'sql-integration-client-secret')
+    vi.stubEnv('AUTH_OIDC_ISSUER_URL', 'https://idp.example.test')
+    vi.stubEnv('AUTH_OIDC_POST_LOGOUT_REDIRECT_URI', 'https://example.test/')
+    vi.stubEnv(
+      'AUTH_OIDC_REDIRECT_URI',
+      'https://example.test/api/auth/callback',
+    )
+    vi.stubEnv(
+      'AUTH_SESSION_COOKIE_PASSWORD',
+      'sql-integration-cookie-password-at-least-32-characters',
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    resetAuthConfigForTests()
+  })
   beforeAll(async () => {
     replica = createAppDataSource({ url: resolveSqlIntegrationTestsUrl() })
     await replica.initialize()

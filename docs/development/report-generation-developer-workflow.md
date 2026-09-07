@@ -196,6 +196,14 @@ See [export and report admission](../operations/export-report-admission.md) for
 covered routes, shared actor limits, distinct 429/503 reasons, English and
 Swedish messages, privacy handling and coordinated operational tuning.
 
+HTTP limit messages import the small `messages/service-limits.en.json` and
+`messages/service-limits.sv.json` catalogs. Keep their copy aligned with
+`generatedOutput.limits` in the main catalogs; the service-limit message tests
+compare both surfaces. Importing full catalogs into HTTP helpers also adds
+them to browser bundles used by ordinary API requests. The measured Admin
+Center and RFI bundle baselines include the compact quota response handling
+and retain five percent headroom.
+
 Actor admission and streaming lifetime tests live in
 `lib/__tests__/export-actor-quota.test.ts` and
 `tests/unit/generated-output-stream-lifetime.test.ts`. The structured runner

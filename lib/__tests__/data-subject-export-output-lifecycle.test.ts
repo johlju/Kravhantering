@@ -1,6 +1,6 @@
 vi.mock('@/lib/generated-output/actor-quota', async () => ({
   runWithExportActorQuota: (
-    await import('../../tests/helpers/generated-output-admission')
+    await import('@/lib/__tests__/generated-output-admission')
   ).allowGeneratedOutput,
 }))
 

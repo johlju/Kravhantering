@@ -1,12 +1,12 @@
-import en from '@/messages/en.json'
-import sv from '@/messages/sv.json'
+import en from '@/messages/service-limits.en.json'
+import sv from '@/messages/service-limits.sv.json'
 
 export function serviceLimitMessage(
   code: unknown,
   details: unknown,
   locale: string,
 ): string | undefined {
-  const messages = (locale === 'sv' ? sv : en).generatedOutput.limits
+  const messages = locale === 'sv' ? sv : en
   const values =
     details && typeof details === 'object'
       ? (details as Record<string, unknown>)

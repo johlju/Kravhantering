@@ -1,0 +1,8 @@
+{
+  "actorRate": "Du har nått din gräns för exporter och rapporter. Försök igen om {seconds} sekunder.",
+  "actorActive": "Du har redan en export eller rapport igång. Vänta tills den är klar.",
+  "actorActiveMany": "Du har redan {limit} exporter eller rapporter igång. Vänta tills ett arbete är klart.",
+  "unavailable": "Vi kunde inte kontrollera om en ny export eller rapport kan starta eftersom tjänsten är tillfälligt otillgänglig. Försök igen om en stund.",
+  "capacity": "Tjänstens kapacitet för exporter och rapporter är upptagen just nu. Försök igen om en stund.",
+  "edge": "För många anrop har nått tjänsten från ditt nätverk. Försök igen senare."
+}
