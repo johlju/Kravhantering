@@ -446,10 +446,12 @@ paths:
         '400': { $ref: '#/components/responses/NoStoreBadRequest' }
         '401': { $ref: '#/components/responses/NoStoreUnauthorized' }
         '403': { $ref: '#/components/responses/NoStoreForbidden' }
+        '422': { $ref: '#/components/responses/NoStoreUnprocessableEntity' }
+        '429': { $ref: '#/components/responses/NoStoreTooManyRequests' }
         '431':
           $ref: '#/components/responses/RequestHeaderFieldsTooLarge'
-        "429":
-          $ref: "#/components/responses/EdgeRateLimit"
+        '500': { $ref: '#/components/responses/NoStoreInternalServerError' }
+        '503': { $ref: '#/components/responses/NoStoreServiceUnavailable' }
 
   /api/requirements/{id}:
     parameters:
@@ -1307,13 +1309,13 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     NoStoreTooManyRequests:
-      description: Generated-output capacity is temporarily busy.
+      description: Actor quota, shared generated-output capacity, or the network request limit was reached.
       headers:
         Cache-Control:
           $ref: '#/components/headers/NoStore'
         Retry-After:
-          description: Seconds to wait before retrying.
-          schema: { type: integer, minimum: 5, maximum: 5 }
+          description: Optional advisory delay in seconds. Active actor limits do not estimate completion time.
+          schema: { type: integer, minimum: 1, maximum: 600 }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1330,6 +1332,9 @@ components:
       headers:
         Cache-Control:
           $ref: '#/components/headers/NoStore'
+        Retry-After:
+          description: Optional advisory delay before retrying a failed quota check.
+          schema: { type: integer, minimum: 1, maximum: 600 }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
