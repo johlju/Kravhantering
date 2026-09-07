@@ -290,15 +290,15 @@ export const RUNTIME_PERMISSION_MANIFEST = Object.freeze(
     }
     if (entry.object === 'dbo.hsa_id_prefixes') {
       return [
-        currentEntry,
-        Object.freeze({
-          object: 'dbo.hsa_verification_quota_buckets',
-          permissions: CRUD,
-        }),
         Object.freeze({
           object: 'dbo.export_actor_quota_entries',
           permissions: READ_CREATE_DELETE,
           updateColumns: Object.freeze(['released_at']),
+        }),
+        currentEntry,
+        Object.freeze({
+          object: 'dbo.hsa_verification_quota_buckets',
+          permissions: CRUD,
         }),
       ]
     }

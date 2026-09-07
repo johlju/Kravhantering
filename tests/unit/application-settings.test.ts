@@ -19,6 +19,8 @@ describe('application settings contract', () => {
       ).toBe(true)
     }
     expect(DEFAULT_APPLICATION_SETTINGS).toEqual({
+      exportActorStartsPerMinute: 10,
+      exportActorConcurrency: 1,
       csvExportConcurrencyPerNode: 5,
       csvExportMaxFileBytes: 100 * MIB,
       csvExportMaxItems: 1000,
@@ -77,7 +79,7 @@ describe('application settings contract', () => {
     ).toMatchObject({
       name: 'csv_export_max_items',
     })
-    expect(applicationSettingEntity.options.checks).toHaveLength(15)
+    expect(applicationSettingEntity.options.checks).toHaveLength(17)
     expect(
       applicationSettingEntity.options.checks?.map(check => check.name),
     ).toContain('chk_application_settings_pdf_worker_memory_mib')

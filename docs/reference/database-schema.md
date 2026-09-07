@@ -421,6 +421,8 @@ erDiagram
         integer requirement_import_max_proposed_needs_references
         integer requirement_import_max_nested_items
         integer requirement_import_max_json_depth
+        integer export_actor_starts_per_minute
+        integer export_actor_concurrency
         integer csv_export_max_items
         integer csv_export_max_file_bytes
         integer csv_export_concurrency_per_node
@@ -2223,6 +2225,8 @@ as bytes; the UI converts them to MiB.
 | `requirement_import_max_proposed_needs_references` | integer | `500` | `0`–`500` |
 | `requirement_import_max_nested_items` | integer | `200` | `0`–`200` |
 | `requirement_import_max_json_depth` | integer | `8` | `4`–`8` |
+| `export_actor_starts_per_minute` | integer | `10` | `1`–`100` |
+| `export_actor_concurrency` | integer | `1` | `1`–`10` |
 | `csv_export_max_items` | integer | `1000` | `1`–`5000` |
 | `csv_export_max_file_bytes` | integer | `104857600` | `1`–`1024` MiB in `1 MiB` steps |
 | `csv_export_concurrency_per_node` | integer | `5` | `1`–`20` |
@@ -2238,7 +2242,7 @@ as bytes; the UI converts them to MiB.
 
 Required and demo seed profiles create row `id = 1` without overwriting an
 existing row. `chk_application_settings_id` enforces the singleton identity.
-The fourteen field-specific `chk_application_settings_*` constraints enforce the
+The sixteen field-specific `chk_application_settings_*` constraints enforce the
 ranges above; the two byte fields additionally enforce exact `1 MiB` steps.
 Lowering `requirement_import_max_rows` atomically clamps the persisted MCP row
 override when necessary. Each import or generated-output operation reads one

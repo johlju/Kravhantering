@@ -7,6 +7,10 @@ import {
   generatedOutputErrorResponse,
 } from '@/lib/generated-output/errors'
 import { apiFetch } from '@/lib/http/api-fetch'
+import {
+  requestErrorLocale,
+  serviceLimitMessage,
+} from '@/lib/http/service-limit-message'
 import en from '@/messages/en.json'
 import sv from '@/messages/sv.json'
 
@@ -32,6 +36,70 @@ function Download() {
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('safe service-limit messages', () => {
+  it.each(['en', 'sv'] as const)(
+    'bounds external details and handles all codes in %s',
+    locale => {
+      const messages = (locale === 'sv' ? sv : en).generatedOutput.limits
+      for (const [value, seconds] of [
+        [-2, 1],
+        [900, 600],
+        [3.5, 60],
+        ['secret', 60],
+      ] as const)
+        expect(
+          serviceLimitMessage(
+            'actor_rate_limit',
+            { retryAfterSeconds: value },
+            locale,
+          ),
+        ).toBe(messages.actorRate.replace('{seconds}', String(seconds)))
+      expect(serviceLimitMessage('actor_rate_limit', null, locale)).toBe(
+        messages.actorRate.replace('{seconds}', '60'),
+      )
+      expect(
+        serviceLimitMessage(
+          'actor_concurrency_limit',
+          { activeLimit: 50 },
+          locale,
+        ),
+      ).toBe(messages.actorActiveMany.replace('{limit}', '10'))
+      expect(
+        serviceLimitMessage(
+          'actor_concurrency_limit',
+          { activeLimit: 0.5 },
+          locale,
+        ),
+      ).toBe(messages.actorActive)
+      expect(serviceLimitMessage('quota_check_unavailable', {}, locale)).toBe(
+        messages.unavailable,
+      )
+      expect(serviceLimitMessage('capacity_busy', {}, locale)).toBe(
+        messages.capacity,
+      )
+      expect(
+        serviceLimitMessage('unknown_code', 'private diagnostics', locale),
+      ).toBeUndefined()
+    },
+  )
+  it.each([
+    ['/sv/report', 'en', 'sv'],
+    ['/en/report', 'sv', 'en'],
+    ['/api/report?locale=sv', 'en', 'sv'],
+    ['/api/report?locale=en', 'sv', 'en'],
+    ['/api/report', 'SV-se,en', 'sv'],
+    ['/api/report', '', 'en'],
+  ])('selects the error language for %s and %s', (path, language, expected) => {
+    expect(
+      requestErrorLocale(
+        new Request(`http://localhost${path}`, {
+          headers: { 'Accept-Language': language },
+        }),
+      ),
+    ).toBe(expected)
+  })
+})
 
 describe.each([
   ['en', en],

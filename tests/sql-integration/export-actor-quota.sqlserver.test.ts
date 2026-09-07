@@ -243,8 +243,8 @@ describe('Export and report actor quota in SQL Server', () => {
       requestId: 'same-proxy',
       source: 'rest',
     })
-    const actorA = context('SE5560000001-quotaactor1')
-    const actorB = context('SE5560000001-quotaactor2')
+    const actorA = context('SE5560000001-actor1')
+    const actorB = context('SE5560000001-actor2')
     let finish!: () => void
     let markStarted!: () => void
     const started = new Promise<void>(resolve => {
@@ -260,7 +260,7 @@ describe('Export and report actor quota in SQL Server', () => {
           }),
       ),
     )
-    await started
+    await Promise.race([started, first])
     try {
       await expect(
         runWithExportActorQuota(
@@ -293,7 +293,7 @@ describe('Export and report actor quota in SQL Server', () => {
     const context = {
       actor: {
         isAuthenticated: true,
-        hsaId: 'SE5560000001-boundedarchive',
+        hsaId: 'SE5560000001-archive',
         roles: ['Admin'],
       },
       correlationId: 'archive',

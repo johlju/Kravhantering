@@ -195,3 +195,18 @@ to the client.
 See [export and report admission](../operations/export-report-admission.md) for
 covered routes, shared actor limits, distinct 429/503 reasons, English and
 Swedish messages, privacy handling and coordinated operational tuning.
+
+Actor admission and streaming lifetime tests live in
+`lib/__tests__/export-actor-quota.test.ts` and
+`tests/unit/generated-output-stream-lifetime.test.ts`. The structured runner
+has focused row, byte, query-failure and serialization tests. SQL integration
+covers shared rolling usage, concurrent connections, tuning, privacy, cleanup
+and runtime permissions. Nginx container tests cover both trusted-address
+modes and independent login limits.
+
+The watchdog tests run real child processes to verify termination with a
+blocked main event loop and survival after disarming. Those child-process
+paths and SQL integration paths are not included in the focused Vitest
+coverage totals. Additional watchdog startup-error and unexpected-exit fault
+injection remain coverage gaps; retain the real process tests when adding
+those cases.

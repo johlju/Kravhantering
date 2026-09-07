@@ -308,15 +308,13 @@ function cleanupFileStream(
   cleanup: () => Promise<void>,
   lifecycle: GeneratedOutputStreamLifecycle,
 ): ReadableStream<Uint8Array> {
-  let cleaned = false
-  const cleanupOnce = async (): Promise<void> => {
-    if (cleaned) return
-    cleaned = true
-    await cleanup()
-  }
+  let cleanupPromise: Promise<void> | undefined
+  let cancelled = false
+  const cleanupOnce = (): Promise<void> => (cleanupPromise ??= cleanup())
 
   return new ReadableStream<Uint8Array>({
     cancel: async reason => {
+      cancelled = true
       source.destroy(
         reason instanceof Error ? reason : new Error('Client cancelled'),
       )
@@ -336,12 +334,17 @@ function cleanupFileStream(
         lifecycle.onComplete?.()
         void cleanupOnce()
           .catch(() => {})
-          .then(() => controller.close())
+          .then(() => {
+            if (!cancelled) controller.close()
+          })
       })
       source.once('error', error => {
-        controller.error(error)
         lifecycle.onError?.()
-        void cleanupOnce().catch(() => {})
+        void cleanupOnce()
+          .catch(() => {})
+          .then(() => {
+            if (!cancelled) controller.error(error)
+          })
       })
     },
     pull() {

@@ -1,9 +1,9 @@
-import { Worker } from 'node:worker_threads'
 import {
   admitExportActor,
   releaseExportActor,
 } from '@/lib/dal/export-actor-quota'
 import type { SqlServerDatabase } from '@/lib/db'
+import { armExportActorWatchdog } from '@/lib/generated-output/actor-watchdog'
 import {
   GeneratedOutputError,
   type GeneratedOutputKind,
@@ -37,10 +37,10 @@ export async function runWithExportActorQuota<T extends OutputResult>(
       'quota_check_unavailable',
       { output, retryAfterSeconds: 5 },
     )
-  let watchdog: Worker | undefined
+  let disarmWatchdog: (() => Promise<void>) | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let id: string | undefined
-  let finished = false
+  let finishing: Promise<void> | undefined
   const recordFailure = (error: GeneratedOutputError) =>
     recordCapacityEvent({
       correlationId: context.correlationId,
@@ -57,19 +57,18 @@ export async function runWithExportActorQuota<T extends OutputResult>(
       statusCode: error.status,
       surface: 'export',
     })
-  const finish = async () => {
-    if (finished) return
-    finished = true
-    clearTimeout(timer)
-    await watchdog?.terminate()
-    if (id) {
-      try {
-        await releaseExportActor(db, id)
-      } catch {
-        recordFailure(unavailable())
+  const finish = () =>
+    (finishing ??= (async () => {
+      clearTimeout(timer)
+      await disarmWatchdog?.()
+      if (id) {
+        try {
+          await releaseExportActor(db, id)
+        } catch {
+          recordFailure(unavailable())
+        }
       }
-    }
-  }
+    })())
   try {
     signal.throwIfAborted()
     timer = setTimeout(
@@ -116,25 +115,9 @@ export async function runWithExportActorQuota<T extends OutputResult>(
     })
     // Arm a fail-stop fence only for admitted work. Its absolute monotonic
     // deadline starts before SQL, so delayed worker startup cannot extend it.
-    watchdog = new Worker(
-      `
-      const { workerData, parentPort } = require('node:worker_threads');
-      const remaining = Number(BigInt(workerData) - process.hrtime.bigint()) / 1e6;
-      setTimeout(() => process.kill(process.pid, 'SIGKILL'), Math.max(0, remaining));
-      parentPort.postMessage('armed');
-    `,
-      {
-        eval: true,
-        workerData: String(
-          startedAt + BigInt(FAIL_STOP_MS) * BigInt(1_000_000),
-        ),
-      },
+    disarmWatchdog = await armExportActorWatchdog(
+      startedAt + BigInt(FAIL_STOP_MS) * BigInt(1_000_000),
     )
-    await new Promise<void>((resolve, reject) => {
-      watchdog?.once('message', () => resolve())
-      watchdog?.once('error', reject)
-    })
-    watchdog.unref()
     if (
       process.hrtime.bigint() - startedAt >=
       BigInt(OPERATION_LIFETIME_MS) * BigInt(1_000_000)

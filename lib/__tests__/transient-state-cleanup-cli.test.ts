@@ -249,10 +249,10 @@ describe('transient cleanup command', () => {
     expect(code).toBe(0)
     const events = output.map(line => JSON.parse(line))
     expect(events.slice(0, -1).map(event => event.outcome)).toEqual(
-      Array(6).fill('not_applicable'),
+      Array(7).fill('not_applicable'),
     )
     expect(events.at(-1)).toMatchObject({ outcome: 'success', deleted_rows: 0 })
-    expect(query).toHaveBeenCalledTimes(6)
+    expect(query).toHaveBeenCalledTimes(7)
   })
 
   it.each([
@@ -316,7 +316,7 @@ describe('transient cleanup command', () => {
         write: vi.fn(),
       }),
     ).resolves.toBe(0)
-    expect(query).toHaveBeenCalledTimes(19)
+    expect(query).toHaveBeenCalledTimes(22)
   })
 
   it('fails missing purge permissions even when every backlog is empty', async () => {
