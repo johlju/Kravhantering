@@ -1334,7 +1334,7 @@ test.describe('Requirements library', () => {
     expect(downloadCount).toBe(0)
   })
 
-  test('CSV export busy response shows a stable countdown and retries only on request', async ({
+  test('EXPORT-01: CSV export busy response shows a stable countdown and retries only on request', async ({
     page,
   }) => {
     let attempts = 0
@@ -1377,7 +1377,7 @@ test.describe('Requirements library', () => {
       name: 'Nedladdningen misslyckades',
     })
     await expect(errorDialog).toContainText(
-      'Så många CSV-exporter som tillåts samtidigt pågår redan.',
+      'Tjänstens kapacitet för exporter och rapporter är upptagen just nu. Försök igen om en stund.',
     )
     await expect(errorDialog).not.toContainText('internal queue saturation')
     await expect(

@@ -131,7 +131,13 @@ test.describe('Admin settings', () => {
       ])
 
       const inputs = panel.locator('input[id^="admin-application-setting-"]')
-      await expect(inputs).toHaveCount(14)
+      await expect(inputs).toHaveCount(16)
+      await expect(
+        panel.locator('#admin-application-setting-exportActorStartsPerMinute'),
+      ).toHaveValue(String(original.exportActorStartsPerMinute))
+      await expect(
+        panel.locator('#admin-application-setting-exportActorConcurrency'),
+      ).toHaveValue(String(original.exportActorConcurrency))
       await expect(
         panel.locator('#admin-application-setting-requirementImportMaxRows'),
       ).toHaveValue(String(original.requirementImportMaxRows))
