@@ -1,0 +1,8 @@
+{
+  "actorRate": "You have reached your export and report limit. Try again in {seconds} seconds.",
+  "actorActive": "You already have an export or report running. Wait for it to finish.",
+  "actorActiveMany": "You already have {limit} exports or reports running. Wait for one to finish.",
+  "unavailable": "We could not check whether a new export or report can start because the service is temporarily unavailable. Please try again shortly.",
+  "capacity": "The service’s export and report capacity is currently occupied. Please try again shortly.",
+  "edge": "Too many requests reached the service from your network. Please try again later."
+}

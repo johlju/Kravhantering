@@ -6,7 +6,9 @@
  * (GET/HEAD/OPTIONS) requests are forwarded unchanged so existing call sites
  * and tests that pass a bare init object continue to behave identically.
  */
+
 import { dispatchAuthReauthRequired } from '@/lib/auth/client-events'
+import { localizeServiceLimitResponse } from '@/lib/http/localize-service-limit-response'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -40,12 +42,19 @@ function isSameOriginApiRequest(input: RequestInfo | URL): boolean {
   }
 }
 
-function reportUnauthorizedResponse(
+async function reportUnauthorizedResponse(
   input: RequestInfo | URL,
   response: Response,
-): Response {
+): Promise<Response> {
   if (response.status === 401 && isSameOriginApiRequest(input)) {
     dispatchAuthReauthRequired('api_unauthorized')
+  }
+  if (
+    (response.status === 429 || response.status === 503) &&
+    isSameOriginApiRequest(input)
+  ) {
+    const locale = window.location.pathname.startsWith('/sv') ? 'sv' : 'en'
+    return localizeServiceLimitResponse(response, locale)
   }
   return response
 }

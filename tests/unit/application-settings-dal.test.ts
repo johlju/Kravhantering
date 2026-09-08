@@ -8,6 +8,8 @@ import {
 
 function persistedRow() {
   return {
+    exportActorStartsPerMinute: '10',
+    exportActorConcurrency: '1',
     createdAt: '2026-07-18T10:00:00.000Z',
     csvExportConcurrencyPerNode: '5',
     csvExportMaxFileBytes: '104857600',

@@ -1,4 +1,8 @@
 import {
+  GeneratedOutputError,
+  generatedOutputErrorResponse,
+} from '@/lib/generated-output/errors'
+import {
   isRestMethod,
   type RestCachePolicy,
   resolveRestPathPolicy,
@@ -76,7 +80,34 @@ export function withRestResponsePolicy<
     request: TRequest,
     ...args: TArgs
   ): Promise<Response> => {
-    const response = await handler(request, ...args)
+    let response = await handler(request, ...args)
+    if (
+      (response.status === 429 || response.status === 503) &&
+      request.headers.get('accept')?.includes('text/html')
+    ) {
+      const body = await response
+        .clone()
+        .json()
+        .catch(() => null)
+      if (
+        body &&
+        [
+          'actor_rate_limit',
+          'actor_concurrency_limit',
+          'quota_check_unavailable',
+          'capacity_busy',
+        ].includes(body.code)
+      ) {
+        response = generatedOutputErrorResponse(
+          new GeneratedOutputError(
+            body.code,
+            body.code === 'capacity_busy' ? 'concurrency_limit' : body.code,
+            body.details,
+          ),
+          request,
+        )
+      }
+    }
     return applyRestResponsePolicy(request, response)
   }
   return brandRouteHandler(wrapped, 'response-policy')

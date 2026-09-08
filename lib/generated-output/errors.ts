@@ -1,5 +1,12 @@
+import {
+  requestErrorLocale,
+  serviceLimitMessage,
+} from '@/lib/http/service-limit-message'
 export type GeneratedOutputKind = 'csv' | 'json' | 'pdf'
 export type GeneratedOutputErrorCode =
+  | 'actor_rate_limit'
+  | 'actor_concurrency_limit'
+  | 'quota_check_unavailable'
   | 'capacity_busy'
   | 'generation_timeout'
   | 'output_limit_exceeded'
@@ -8,6 +15,9 @@ export type GeneratedOutputErrorCode =
   | 'temporary_storage_unavailable'
 
 export type GeneratedOutputCapacityReason =
+  | 'actor_rate_limit'
+  | 'actor_concurrency_limit'
+  | 'quota_check_unavailable'
   | 'byte_limit_exceeded'
   | 'client_cancelled'
   | 'concurrency_limit'
@@ -18,6 +28,7 @@ export type GeneratedOutputCapacityReason =
   | 'worker_memory_exceeded'
 
 export interface GeneratedOutputErrorDetails {
+  activeLimit?: number
   limit?: number
   limitKind?: 'bytes' | 'items'
   output: GeneratedOutputKind
@@ -26,6 +37,11 @@ export interface GeneratedOutputErrorDetails {
 }
 
 const FALLBACK_MESSAGES: Record<GeneratedOutputErrorCode, string> = {
+  actor_rate_limit: 'You have reached your export and report limit.',
+  actor_concurrency_limit:
+    'Your export and report active-work limit has been reached.',
+  quota_check_unavailable:
+    'We could not check whether a new export or report can start. Please try again shortly.',
   capacity_busy: 'Generation capacity is temporarily busy.',
   generation_timeout: 'Output generation exceeded its configured time limit.',
   output_limit_exceeded: 'Output exceeds its configured limit.',
@@ -36,6 +52,9 @@ const FALLBACK_MESSAGES: Record<GeneratedOutputErrorCode, string> = {
 }
 
 const STATUS_BY_CODE: Record<GeneratedOutputErrorCode, 422 | 429 | 503> = {
+  actor_rate_limit: 429,
+  actor_concurrency_limit: 429,
+  quota_check_unavailable: 503,
   capacity_busy: 429,
   generation_timeout: 503,
   output_limit_exceeded: 422,
@@ -75,6 +94,8 @@ export function sanitizeGeneratedOutputDetails(
   details: GeneratedOutputErrorDetails,
 ): GeneratedOutputErrorDetails {
   const safe: GeneratedOutputErrorDetails = { output: details.output }
+  if (isBoundedInteger(details.activeLimit, 1, 10))
+    safe.activeLimit = details.activeLimit
   if (details.limitKind === 'bytes' || details.limitKind === 'items') {
     safe.limitKind = details.limitKind
   }
@@ -92,13 +113,47 @@ export function sanitizeGeneratedOutputDetails(
 
 export function generatedOutputErrorResponse(
   error: GeneratedOutputError,
+  request?: Request,
 ): Response {
   const headers = new Headers({
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json',
   })
-  if (error.code === 'capacity_busy') {
+  if (
+    error.details.retryAfterSeconds != null ||
+    error.code === 'capacity_busy'
+  ) {
     headers.set('Retry-After', String(error.details.retryAfterSeconds ?? 5))
+  }
+  if (
+    request &&
+    (request.headers.get('accept')?.includes('text/html') ||
+      request.headers.get('sec-fetch-mode') === 'navigate')
+  ) {
+    const locale = requestErrorLocale(request)
+    const message =
+      serviceLimitMessage(error.code, error.details, locale) ?? error.message
+    const escaped = message.replace(
+      /[&<>"']/g,
+      character =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[character] ?? '',
+    )
+    headers.set('Content-Type', 'text/html; charset=utf-8')
+    headers.set('X-Content-Type-Options', 'nosniff')
+    headers.set(
+      'Content-Security-Policy',
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    )
+    return new Response(
+      `<!doctype html><html lang="${locale}"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${error.status}</title><main><h1>${error.status}</h1><p>${escaped}</p></main></html>`,
+      { status: error.status, headers },
+    )
   }
   return Response.json(
     {

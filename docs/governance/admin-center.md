@@ -844,3 +844,14 @@ bort den lokalt. Misslyckad verifiering behåller den aktiva nyckeln. Borttagnin
 raderar lagrat hemligt material och stoppar lokal användning; den återkallar
 inte nyckeln hos leverantören. Återkalla nyckeln direkt hos leverantören vid
 behov. Környckeln hanteras separat.
+
+## Export and report limits
+
+See [export and report admission](../operations/export-report-admission.md) for
+covered routes, shared actor limits, distinct 429/503 reasons, English and
+Swedish messages, privacy handling and coordinated operational tuning.
+
+Admin application settings expose starts per rolling minute and active work
+per person. Each field has localized help and a Developer Mode marker.
+Updates audit old and new values without resetting usage. Privacy erasure
+requires the target person’s active output to finish before quota deletion.

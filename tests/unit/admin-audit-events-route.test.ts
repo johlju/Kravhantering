@@ -1,3 +1,13 @@
+vi.mock('@/lib/dal/application-settings', async () => ({
+  getApplicationSettings: async () =>
+    (await import('@/lib/application-settings')).DEFAULT_APPLICATION_SETTINGS,
+}))
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('@/lib/__tests__/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const routeState = vi.hoisted(() => ({

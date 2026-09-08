@@ -1,3 +1,9 @@
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('@/lib/__tests__/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 // @vitest-environment node
 import { createReadStream, type ReadStream } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'

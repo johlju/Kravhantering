@@ -242,3 +242,21 @@ och schemalagd rensning. Ingen export krävs före radering. Detta är ett
 uttryckligt undantag från apparkivering för transient tillstånd. Backupretention
 och återställning ägs av driftorganisationen; ett återställt försök måste
 fortfarande uppfylla sin ursprungliga tidsgräns.
+
+## Aktörskvot för exporter och rapporter
+
+`export_actor_quota_entries` är kortlivade pseudonymiserade driftuppgifter.
+Informationsmängden innehåller ett slumpmässigt operations-ID, personens
+HSA-fingeravtryck samt tid för start, avslut och återhämtning. Rått HSA-id,
+exportmål, dokumentinnehåll och klientadress lagras inte. Driftansvarig äger
+schemalagd rensning och övervakning av kvotens tillgänglighet.
+
+Undantag från Arkivering: ingen arkivexport krävs före rensning eftersom
+uppgifterna enbart samordnar kortlivad teknisk kapacitet. Schemalagd
+transient rensning tar bort rader efter 15 minuter. Dataskydd exporterar
+tidsuppgifter för exakt HSA-id och kan radera matchande kvotdata när
+personens pågående arbeten har avslutats. Radering och ny antagning använder
+samma databaslås. Privilegierad radering återställer återstående startkvot.
+
+Se [driftkontraktet](../operations/export-report-admission.md) för
+fingeravtrycksnyckel, rensningskompatibilitet och samordnad driftsättning.

@@ -15,6 +15,8 @@ interface ApplicationSettingsRow {
   csvExportMaxFileBytes: number | string
   csvExportMaxItems: number | string
   csvExportTimeoutSeconds: number | string
+  exportActorConcurrency: number | string
+  exportActorStartsPerMinute: number | string
   id: number | string
   pdfReportConcurrencyPerNode: number | string
   pdfReportMaxFileBytes: number | string
@@ -54,6 +56,8 @@ export interface ApplicationSettingUpdate {
 
 const COLUMN_BY_FIELD: Readonly<Record<ApplicationSettingField, string>> =
   Object.freeze({
+    exportActorStartsPerMinute: 'export_actor_starts_per_minute',
+    exportActorConcurrency: 'export_actor_concurrency',
     csvExportConcurrencyPerNode: 'csv_export_concurrency_per_node',
     csvExportMaxFileBytes: 'csv_export_max_file_bytes',
     csvExportMaxItems: 'csv_export_max_items',
@@ -75,6 +79,8 @@ const COLUMN_BY_FIELD: Readonly<Record<ApplicationSettingField, string>> =
 const APPLICATION_SETTINGS_SELECT = `
   SELECT
     [id],
+    [export_actor_starts_per_minute] AS [exportActorStartsPerMinute],
+    [export_actor_concurrency] AS [exportActorConcurrency],
     [csv_export_max_items] AS [csvExportMaxItems],
     [csv_export_max_file_bytes] AS [csvExportMaxFileBytes],
     [csv_export_concurrency_per_node] AS [csvExportConcurrencyPerNode],
@@ -97,6 +103,8 @@ const APPLICATION_SETTINGS_SELECT = `
 
 function rowToSettings(row: ApplicationSettingsRow): ApplicationSettings {
   return {
+    exportActorStartsPerMinute: Number(row.exportActorStartsPerMinute),
+    exportActorConcurrency: Number(row.exportActorConcurrency),
     csvExportConcurrencyPerNode: Number(row.csvExportConcurrencyPerNode),
     csvExportMaxFileBytes: Number(row.csvExportMaxFileBytes),
     csvExportMaxItems: Number(row.csvExportMaxItems),

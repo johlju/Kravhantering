@@ -36,6 +36,7 @@ export async function GET(
     )
     return await runSynchronousPdfGeneration(
       runtime.db,
+      runtime.context,
       request.signal,
       async ({ capacity, itemLimit }) => {
         await assertRequirementReportItemLimit(runtime.db, id, {
@@ -57,6 +58,6 @@ export async function GET(
       },
     )
   } catch (error) {
-    return reportErrorResponse(error)
+    return reportErrorResponse(error, request)
   }
 }

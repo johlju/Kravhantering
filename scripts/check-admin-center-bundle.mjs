@@ -64,20 +64,20 @@ export const ADMIN_WORKSPACES = [
 ]
 
 export const ADMIN_WORKSPACE_GZIP_MAX_BYTES = {
-  // 2026-07-20 isolated-route baseline: 13,236 gzip bytes plus 5% headroom.
-  accessReview: 13_898,
-  // 2026-07-25 eager bounded-export baseline: 10,101 gzip bytes plus 5% headroom.
-  actionAuditLog: 10_607,
-  // 2026-08-15 AI forensic metadata baseline: 8,608 gzip bytes plus 5% headroom.
-  archiving: 9_039,
-  // 2026-07-20 isolated-route baseline: 9,265 gzip bytes plus 5% headroom.
-  columns: 9_729,
-  // 2026-07-20 isolated-route baseline: 9,191 gzip bytes plus 5% headroom.
-  identity: 9_651,
-  // 2026-07-20 isolated-route baseline: 12,599 gzip bytes plus 5% headroom.
-  privacy: 13_229,
-  // 2026-08-14 MCP quota-control baseline: 17,174 gzip bytes plus 5% headroom.
-  settings: 18_033,
+  // 2026-09-07 compact quota-message baseline: 14,733 gzip bytes plus 5% headroom.
+  accessReview: 15_470,
+  // 2026-09-07 compact quota-message baseline: 11,207 gzip bytes plus 5% headroom.
+  actionAuditLog: 11_768,
+  // 2026-09-07 compact quota-message baseline: 9,612 gzip bytes plus 5% headroom.
+  archiving: 10_093,
+  // 2026-09-07 compact quota-message baseline: 10,394 gzip bytes plus 5% headroom.
+  columns: 10_914,
+  // 2026-09-07 compact quota-message baseline: 10,239 gzip bytes plus 5% headroom.
+  identity: 10_751,
+  // 2026-09-07 compact quota-message baseline: 13,546 gzip bytes plus 5% headroom.
+  privacy: 14_224,
+  // 2026-09-07 actor settings and quota-message baseline: 18,269 gzip bytes plus 5% headroom.
+  settings: 19_183,
   // 2026-07-20 isolated-route baseline: 4,879 gzip bytes plus 5% headroom.
   statusesAndWorkflows: 5_123,
   // 2026-07-20 isolated-route baseline: 5,256 gzip bytes plus 5% headroom.

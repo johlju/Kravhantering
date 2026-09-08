@@ -1,5 +1,6 @@
 import { getApplicationSettings } from '@/lib/dal/application-settings'
 import type { SqlServerDatabase } from '@/lib/db'
+import { runWithExportActorQuota } from '@/lib/generated-output/actor-quota'
 import {
   type GeneratedOutputCapacity,
   runWithGeneratedOutputCapacity,
@@ -17,6 +18,7 @@ import {
   generatedOutputErrorFromTimeout,
   throwIfGenerationAborted,
 } from '@/lib/generated-output/operation'
+import type { RequestContext } from '@/lib/requirements/auth'
 
 export interface SynchronousPdfGenerationContext {
   capacity: GeneratedOutputCapacity
@@ -36,7 +38,7 @@ export function assertPdfItemLimit(count: number, limit: number): void {
   if (count > limit) throw createPdfItemLimitError(limit)
 }
 
-export async function runSynchronousPdfGeneration<T>(
+async function generateSynchronousPdf<T>(
   db: SqlServerDatabase,
   requestSignal: AbortSignal | undefined,
   work: (context: SynchronousPdfGenerationContext) => Promise<T>,
@@ -71,13 +73,15 @@ export async function runSynchronousPdfGeneration<T>(
 
 export function synchronousPdfErrorResponse(
   error: unknown,
+  request?: Request,
 ): Response | undefined {
-  return synchronousGeneratedOutputErrorResponse('pdf', error)
+  return synchronousGeneratedOutputErrorResponse('pdf', error, request)
 }
 
 export function synchronousGeneratedOutputErrorResponse(
   output: GeneratedOutputKind,
   error: unknown,
+  request?: Request,
 ): Response | undefined {
   if (error instanceof GeneratedOutputTimeoutError) {
     return generatedOutputErrorResponse(
@@ -85,7 +89,7 @@ export function synchronousGeneratedOutputErrorResponse(
     )
   }
   if (isGeneratedOutputError(error)) {
-    return generatedOutputErrorResponse(error)
+    return generatedOutputErrorResponse(error, request)
   }
   if (error instanceof ClientCancelledGeneratedOutputError) {
     return new Response(null, {
@@ -94,4 +98,15 @@ export function synchronousGeneratedOutputErrorResponse(
     })
   }
   return undefined
+}
+
+export async function runSynchronousPdfGeneration(
+  db: SqlServerDatabase,
+  context: RequestContext,
+  requestSignal: AbortSignal | undefined,
+  work: (context: SynchronousPdfGenerationContext) => Promise<Response>,
+): Promise<Response> {
+  return runWithExportActorQuota(db, context, 'pdf', requestSignal, signal =>
+    generateSynchronousPdf(db, signal, work),
+  )
 }

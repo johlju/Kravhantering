@@ -63,6 +63,7 @@ export async function GET(
 
     return await runSynchronousPdfGeneration(
       runtime.db,
+      runtime.context,
       request.signal,
       async ({ capacity, itemLimit, signal }) => {
         const data = await collectCompleteSpecificationOutputData(
@@ -91,6 +92,6 @@ export async function GET(
       },
     )
   } catch (error) {
-    return reportErrorResponse(error)
+    return reportErrorResponse(error, request)
   }
 }

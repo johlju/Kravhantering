@@ -7,7 +7,7 @@
     "areasPerChunk": 1,
     "targetSpecs": 10
   },
-  "discoveredSpecCount": 47,
+  "discoveredSpecCount": 48,
   "suites": {
     "dev": {
       "chunks": [
@@ -44,7 +44,7 @@
         {
           "id": "dev-privacy",
           "paths": ["tests/integration/privacy"],
-          "specCount": 1
+          "specCount": 2
         },
         {
           "id": "dev-requirement-packages",
@@ -81,7 +81,7 @@
         "tests/integration/platform/error-boundary-smoke.spec.ts",
         "tests/integration/platform/smoke.spec.ts"
       ],
-      "includedSpecCount": 40
+      "includedSpecCount": 41
     },
     "prodlike": {
       "chunks": [
@@ -124,6 +124,7 @@
         "tests/integration/navigation/global-navigation.spec.ts",
         "tests/integration/navigation/mobile-smoke.spec.ts",
         "tests/integration/privacy/data-export.spec.ts",
+        "tests/integration/privacy/export-actor-quota.spec.ts",
         "tests/integration/requirement-packages/list.spec.ts",
         "tests/integration/requirement-selection/answer-dnd.spec.ts",
         "tests/integration/requirement-selection/questions-detail.spec.ts",

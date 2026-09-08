@@ -6,6 +6,7 @@ import {
 } from '@/app/api/rfi-questions/_schemas'
 import { getSpecificationById } from '@/lib/dal/requirements-specifications'
 import { getSpecificationRfiList } from '@/lib/dal/rfi-questions'
+import { runBoundedStructuredOutput } from '@/lib/generated-output/structured-runner'
 import { csvContentDisposition } from '@/lib/http/content-disposition'
 import { withRestResponsePolicy } from '@/lib/http/response-policy'
 import { parseRouteParams, parseSearchParams } from '@/lib/http/validation'
@@ -23,7 +24,6 @@ import {
   buildSpecificationRfiListCsv,
   default as SpecificationRfiListPdfRenderer,
 } from '@/lib/rfi/rfi-list-export'
-import { withUtf8Bom } from '@/lib/text-export'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,6 +84,7 @@ async function getHandler(
     if (parsedQuery.data.format === 'pdf') {
       const response = await runSynchronousPdfGeneration(
         runtime.db,
+        runtime.context,
         request.signal,
         async ({ capacity, itemLimit }) => {
           const list = await getSpecificationRfiList(
@@ -108,22 +109,32 @@ async function getHandler(
       return applyResponseCorrelationHeaders(response, runtime.context)
     }
 
-    const list = await getSpecificationRfiList(runtime.db, specification.id)
-    const response = new NextResponse(
-      withUtf8Bom(
-        buildSpecificationRfiListCsv(exportMeta, list, parsedQuery.data.locale),
-      ),
-      {
-        headers: {
-          'Content-Disposition': csvContentDisposition(`${baseFilename}.csv`),
-          'Content-Type': 'text/csv; charset=utf-8',
-        },
+    const response = await runBoundedStructuredOutput({
+      db: runtime.db,
+      context: runtime.context,
+      output: 'csv',
+      requestSignal: request.signal,
+      headers: {
+        'Content-Disposition': csvContentDisposition(`${baseFilename}.csv`),
       },
-    )
+      collect: async ({ maxItems, signal, itemLimitError }) => {
+        const list = await getSpecificationRfiList(
+          runtime.db,
+          specification.id,
+          { maxItems, createItemLimitError: itemLimitError },
+        )
+        signal.throwIfAborted()
+        return buildSpecificationRfiListCsv(
+          exportMeta,
+          list,
+          parsedQuery.data.locale,
+        )
+      },
+    })
     return applyResponseCorrelationHeaders(response, runtime.context)
   } catch (error) {
     return applyResponseCorrelationHeaders(
-      synchronousPdfErrorResponse(error) ?? errorResponse(error),
+      synchronousPdfErrorResponse(error, request) ?? errorResponse(error),
       runtime.context,
     )
   }

@@ -1,3 +1,9 @@
+vi.mock('@/lib/generated-output/actor-quota', async () => ({
+  runWithExportActorQuota: (
+    await import('@/lib/__tests__/generated-output-admission')
+  ).allowGeneratedOutput,
+}))
+
 import { parse as parseContentDisposition } from 'content-disposition'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {

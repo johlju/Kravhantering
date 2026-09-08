@@ -707,6 +707,21 @@ const GROUP_POLICIES: PrivacyGroupPolicy[] = [
   },
   {
     allowedActions: ['delete', 'skip'],
+    countSql:
+      'SELECT COUNT(*) AS count FROM export_actor_quota_entries WHERE actor_fingerprint = @0',
+    defaultWithReplacement: 'delete',
+    defaultWithoutReplacement: 'delete',
+    fieldKey: 'subjectFingerprint',
+    hsaColumn: 'actor_fingerprint',
+    key: 'export_actor_quota_entries.subject',
+    kind: 'fingerprintOnly',
+    matchBy: 'hsaVerificationTargetFingerprint',
+    objectKey: 'exportActorQuotaEntries',
+    table: 'export_actor_quota_entries',
+    warningKey: 'exportActorQuotaDeletion',
+  },
+  {
+    allowedActions: ['delete', 'skip'],
     countSql: `SELECT COUNT(*) AS count
       FROM hsa_verification_quota_buckets
       WHERE actor_subject_fingerprint = @0
@@ -1166,6 +1181,32 @@ async function applyDirectHsaGroup(
          OR target_fingerprint = @0`,
       [targetHsaId],
     )
+    return
+  }
+  if (
+    policy.key === 'export_actor_quota_entries.subject' &&
+    action === 'delete'
+  ) {
+    const rows = await tx.query<Array<{ active: number }>>(
+      `
+      DECLARE @lock_result int;
+      EXEC @lock_result = sys.sp_getapplock @Resource = @1,
+        @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 1000;
+      IF @lock_result < 0 THROW 51065, 'Export quota coordination unavailable.', 1;
+      IF EXISTS (SELECT 1 FROM export_actor_quota_entries
+        WHERE actor_fingerprint = @0 AND released_at IS NULL AND expires_at > SYSUTCDATETIME())
+        SELECT 1 AS active;
+      ELSE BEGIN
+        DELETE FROM export_actor_quota_entries WHERE actor_fingerprint = @0;
+        SELECT 0 AS active;
+      END`,
+      [targetHsaId, `kravhantering:export-actor:v1:${targetHsaId}`],
+    )
+    if (rows[0]?.active)
+      throw conflictError(
+        'Wait for the person’s export or report to finish before erasing quota data.',
+        { reason: 'active_export_actor_quota' },
+      )
     return
   }
   if (!policy.table || !policy.hsaColumn || action === 'skip') return

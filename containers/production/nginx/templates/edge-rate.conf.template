@@ -1,0 +1,38 @@
+# Empty keys are not counted. Readiness keeps its independent admission policy.
+map $uri $api_rate_key {
+    default "";
+    /api/ready "";
+    ~^/api/ $binary_remote_addr;
+    ~^/(sv|en)/.*reports/pdf/ $binary_remote_addr;
+}
+map $uri $login_rate_key {
+    default "";
+    /api/auth/login $binary_remote_addr;
+}
+limit_req_zone $api_rate_key zone=api_per_client:10m rate=${NGINX_API_RATE}r/s;
+limit_req_zone $login_rate_key zone=login_per_client:1m rate=${NGINX_LOGIN_RATE}r/s;
+map $http_accept_language $edge_language {
+    default en;
+    ~*^sv sv;
+}
+map $uri $edge_locale {
+    default $edge_language;
+    ~^/sv/ sv;
+    ~^/en/ en;
+}
+map $edge_locale $edge_message {
+    default 'Too many requests reached the service from your network. Please try again later.';
+    sv 'För många anrop har nått tjänsten från ditt nätverk. Försök igen senare.';
+}
+map $http_accept $edge_wants_html {
+    default 0;
+    ~*text/html 1;
+}
+map $edge_wants_html $edge_content_type {
+    default 'application/json; charset=utf-8';
+    1 'text/html; charset=utf-8';
+}
+map $edge_wants_html $edge_error_body {
+    default '{"code":"edge_rate_limit","error":"$edge_message","details":{"retryAfterSeconds":1}}';
+    1 '<!doctype html><html lang="$edge_locale"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>429</title><main><h1>429</h1><p>$edge_message</p></main></html>';
+}

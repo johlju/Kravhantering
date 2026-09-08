@@ -26,6 +26,9 @@ export type CapacityPageSurface =
   | 'rest'
 export type CapacityCursorFailureCategory = 'invalid_cursor'
 export type CapacityReason =
+  | 'actor_rate_limit'
+  | 'actor_concurrency_limit'
+  | 'quota_check_unavailable'
   | 'byte_limit_exceeded'
   | 'client_cancelled'
   | 'concurrency_limit'

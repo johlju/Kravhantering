@@ -21,7 +21,7 @@ paths:
       x-auth: public
       x-csrf: none
       x-cache: no-store
-      tags: [auth]
+      tags: [ auth ]
       operationId: getCurrentSession
       summary: Return the current session projection.
       security: []
@@ -37,13 +37,15 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/AnonymousSession'
                   - $ref: '#/components/schemas/AuthenticatedSession'
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/hsa-person-lookup-capability:
     get:
       x-auth: session
       x-csrf: none
       x-cache: no-store
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: getHsaPersonLookupCapability
       summary: Return bounded live HSA lookup availability.
       responses:
@@ -57,13 +59,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/HsaPersonLookupCapability'
         '401': { $ref: '#/components/responses/NoStoreUnauthorized' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/privacy/erasure-preview:
     post:
       x-auth: session
       x-csrf: same-origin
       x-cache: no-store
-      tags: [privacy]
+      tags: [ privacy ]
       operationId: previewPrivacyErasure
       summary: Preview HSA-id based privacy erasure.
       parameters:
@@ -102,13 +106,15 @@ paths:
         '401': { $ref: '#/components/responses/NoStoreUnauthorized' }
         '403': { $ref: '#/components/responses/NoStoreForbidden' }
         '500': { $ref: '#/components/responses/NoStoreInternalServerError' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/privacy/erasure-requests:
     post:
       x-auth: session
       x-csrf: same-origin
       x-cache: no-store
-      tags: [privacy]
+      tags: [ privacy ]
       operationId: executePrivacyErasure
       summary: Execute HSA-id based privacy erasure from a preview token.
       parameters:
@@ -142,13 +148,15 @@ paths:
         '403': { $ref: '#/components/responses/NoStoreForbidden' }
         '409': { $ref: '#/components/responses/NoStoreConflict' }
         '500': { $ref: '#/components/responses/NoStoreInternalServerError' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/privacy/data-subject-export:
     post:
       x-auth: session
       x-csrf: same-origin
       x-cache: no-store
-      tags: [privacy]
+      tags: [ privacy ]
       operationId: createDataSubjectExport
       summary: Generate a data subject access export.
       parameters:
@@ -181,7 +189,7 @@ paths:
             Content-Length:
               schema: { type: integer, minimum: 1 }
             X-Accel-Buffering:
-              schema: { type: string, enum: ['no'] }
+              schema: { type: string, enum: [ 'no' ] }
           content:
             application/json:
               schema:
@@ -203,7 +211,7 @@ paths:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: listRequirements
       summary: List requirements as JSON.
       parameters:
@@ -289,7 +297,7 @@ paths:
             maxItems: 100
             items:
               type: string
-              enum: ['true', 'false']
+              enum: [ 'true', 'false' ]
           style: form
           explode: true
       responses:
@@ -301,11 +309,13 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
     post:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: createRequirement
       summary: Create a requirement draft.
       parameters:
@@ -327,13 +337,15 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirements/export:
     get:
       x-auth: session
       x-csrf: none
       x-cache: no-store
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: exportRequirements
       summary: Export the complete filtered requirements library as CSV.
       parameters:
@@ -417,7 +429,7 @@ paths:
             maxItems: 100
             items:
               type: string
-              enum: ['true', 'false']
+              enum: [ 'true', 'false' ]
           style: form
           explode: true
       responses:
@@ -434,8 +446,12 @@ paths:
         '400': { $ref: '#/components/responses/NoStoreBadRequest' }
         '401': { $ref: '#/components/responses/NoStoreUnauthorized' }
         '403': { $ref: '#/components/responses/NoStoreForbidden' }
+        '422': { $ref: '#/components/responses/NoStoreUnprocessableEntity' }
+        '429': { $ref: '#/components/responses/NoStoreTooManyRequests' }
         '431':
           $ref: '#/components/responses/RequestHeaderFieldsTooLarge'
+        '500': { $ref: '#/components/responses/NoStoreInternalServerError' }
+        '503': { $ref: '#/components/responses/NoStoreServiceUnavailable' }
 
   /api/requirements/{id}:
     parameters:
@@ -444,7 +460,7 @@ paths:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: getRequirement
       summary: Get a requirement with version history.
       responses:
@@ -457,11 +473,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
     put:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: editRequirement
       summary: Edit a requirement draft.
       parameters:
@@ -483,12 +501,14 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
     delete:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: archiveRequirement
       summary: Archive a requirement.
       parameters:
@@ -505,6 +525,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirements-specifications/{id}/items:
     parameters:
@@ -513,7 +535,7 @@ paths:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: listRequirementsSpecificationItems
       summary: List one bounded page of requirement applications.
       parameters:
@@ -570,7 +592,8 @@ paths:
           explode: true
         - name: probeRequirementIds
           in: query
-          description: Restrict the page to specific library requirements when probing whether known requirements match the active filters.
+          description: Restrict the page to specific library requirements when probing
+            whether known requirements match the active filters.
           schema:
             type: array
             maxItems: 200
@@ -590,7 +613,7 @@ paths:
           schema:
             type: array
             maxItems: 2
-            items: { type: string, enum: ['true', 'false'] }
+            items: { type: string, enum: [ 'true', 'false' ] }
           style: form
           explode: true
         - name: needsReferenceIds
@@ -636,6 +659,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
   /api/requirements-specifications/{id}/requirement-packages:
     parameters:
       - $ref: '#/components/parameters/SpecificationId'
@@ -643,9 +668,10 @@ paths:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: listRequirementsSpecificationRequirementPackages
-      summary: List one bounded page of requirement packages represented in a requirements specification.
+      summary: List one bounded page of requirement packages represented in a
+        requirements specification.
       parameters:
         - name: limit
           in: query
@@ -668,7 +694,8 @@ paths:
             maxLength: 250
         - name: includeIds
           in: query
-          description: Resolve selected package IDs against the same specification-scoped catalog.
+          description: Resolve selected package IDs against the same specification-scoped
+            catalog.
           schema:
             type: array
             maxItems: 200
@@ -678,7 +705,8 @@ paths:
           explode: true
       responses:
         '200':
-          description: Bounded requirement-package catalog page and authoritative selected-package resolution.
+          description: Bounded requirement-package catalog page and authoritative
+            selected-package resolution.
           content:
             application/json:
               schema:
@@ -688,6 +716,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalServerError' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
   /api/requirements/{id}/versions/{version}:
     parameters:
       - $ref: '#/components/parameters/RequirementId'
@@ -696,7 +726,7 @@ paths:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: getRequirementVersion
       summary: Get one requirement version.
       responses:
@@ -709,6 +739,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirements/{id}/delete-draft:
     parameters:
@@ -717,7 +749,7 @@ paths:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: deleteRequirementDraft
       summary: Delete the current draft version.
       parameters:
@@ -734,6 +766,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirements/{id}/restore:
     parameters:
@@ -742,7 +776,7 @@ paths:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: restoreRequirementVersion
       summary: Restore a historical requirement version.
       parameters:
@@ -754,7 +788,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [versionNumber]
+              required: [ versionNumber ]
               additionalProperties: false
               properties:
                 versionNumber: { type: integer, minimum: 1 }
@@ -769,6 +803,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirements/{id}/reactivate:
     parameters:
@@ -777,7 +813,7 @@ paths:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: reactivateRequirement
       summary: Reactivate an archived requirement.
       parameters:
@@ -790,6 +826,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-transitions/{id}:
     parameters:
@@ -798,7 +836,7 @@ paths:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [requirements]
+      tags: [ requirements ]
       operationId: transitionRequirement
       summary: Transition a requirement to another status.
       parameters:
@@ -810,7 +848,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [statusId]
+              required: [ statusId ]
               additionalProperties: false
               properties:
                 statusId: { type: integer, minimum: 1 }
@@ -825,30 +863,36 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-area-stewardship:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listRequirementAreaStewardship
       responses:
         '200': { $ref: '#/components/responses/JsonObject' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-areas:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listRequirementAreas
       responses:
         '200': { $ref: '#/components/responses/JsonObject' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-areas/{id}:
     parameters:
@@ -857,7 +901,7 @@ paths:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: getRequirementArea
       responses:
         '200':
@@ -870,54 +914,62 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-categories:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listRequirementCategories
       responses:
         '200': { $ref: '#/components/responses/JsonObject' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-types:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listRequirementTypes
       responses:
         '200': { $ref: '#/components/responses/JsonObject' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-statuses:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listRequirementStatuses
       responses:
         '200': { $ref: '#/components/responses/JsonObject' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/requirement-packages:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listRequirementPackages
       parameters:
         - name: includeArchived
           in: query
-          schema: { type: string, enum: ['true', 'false'] }
+          schema: { type: string, enum: [ 'true', 'false' ] }
         - name: includeIds
           in: query
           schema:
@@ -931,13 +983,15 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/quality-characteristics:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listQualityCharacteristics
       parameters:
         - name: typeId
@@ -948,30 +1002,34 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/priority-levels:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listPriorityLevels
       responses:
         '200': { $ref: '#/components/responses/JsonObject' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/norm-references:
     get:
       x-auth: session
       x-csrf: none
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: listNormReferences
       parameters:
         - name: includeArchived
           in: query
-          schema: { type: string, enum: ['true', 'false'] }
+          schema: { type: string, enum: [ 'true', 'false' ] }
         - name: includeIds
           in: query
           schema:
@@ -982,7 +1040,7 @@ paths:
           explode: true
         - name: linked
           in: query
-          schema: { type: string, enum: ['true', 'false'] }
+          schema: { type: string, enum: [ 'true', 'false' ] }
         - name: statuses
           in: query
           schema:
@@ -996,6 +1054,8 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/norm-reference-actions/{id}/archive:
     parameters:
@@ -1004,7 +1064,7 @@ paths:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: archiveNormReference
       summary: Archive a norm reference.
       parameters:
@@ -1016,6 +1076,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
   /api/norm-references/{id}/reactivate:
     parameters:
@@ -1024,7 +1086,7 @@ paths:
       x-auth: session
       x-csrf: same-origin
       x-cache: framework-default
-      tags: [catalogs]
+      tags: [ catalogs ]
       operationId: reactivateNormReference
       summary: Reactivate an archived norm reference.
       parameters:
@@ -1036,6 +1098,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        "429":
+          $ref: "#/components/responses/EdgeRateLimit"
 
 components:
   securitySchemes:
@@ -1049,7 +1113,7 @@ components:
       description: Prevent storage by browsers and intermediary caches.
       schema:
         type: string
-        enum: [no-store]
+        enum: [ no-store ]
 
   parameters:
     RequirementId:
@@ -1095,7 +1159,7 @@ components:
       in: query
       schema:
         type: string
-        enum: [en, sv]
+        enum: [ en, sv ]
     Limit:
       name: limit
       in: query
@@ -1138,21 +1202,21 @@ components:
       in: query
       schema:
         type: string
-        enum: [asc, desc]
+        enum: [ asc, desc ]
     Origin:
       name: Origin
       in: header
       required: true
       schema:
         type: string
-        enum: [http://localhost:3001]
+        enum: [ http://localhost:3001 ]
     XRequestedWith:
       name: X-Requested-With
       in: header
       required: true
       schema:
         type: string
-        enum: [XMLHttpRequest]
+        enum: [ XMLHttpRequest ]
 
   responses:
     JsonObject:
@@ -1166,7 +1230,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [ok]
+            required: [ ok ]
             additionalProperties: true
             properties:
               ok: { type: boolean }
@@ -1245,13 +1309,13 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     NoStoreTooManyRequests:
-      description: Generated-output capacity is temporarily busy.
+      description: Actor quota, shared generated-output capacity, or the network request limit was reached.
       headers:
         Cache-Control:
           $ref: '#/components/headers/NoStore'
         Retry-After:
-          description: Seconds to wait before retrying.
-          schema: { type: integer, minimum: 5, maximum: 5 }
+          description: Optional advisory delay in seconds. Active actor limits do not estimate completion time.
+          schema: { type: integer, minimum: 1, maximum: 600 }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1268,9 +1332,33 @@ components:
       headers:
         Cache-Control:
           $ref: '#/components/headers/NoStore'
+        Retry-After:
+          description: Optional advisory delay before retrying a failed quota check.
+          schema: { type: integer, minimum: 1, maximum: 600 }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
+    EdgeRateLimit:
+      description: Too many requests from the resolved client network. Retry later.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - code
+              - error
+            properties:
+              code:
+                type: string
+                enum:
+                  - edge_rate_limit
+              error:
+                type: string
 
   schemas:
     LooseObject:
@@ -1286,22 +1374,22 @@ components:
         error: { type: string }
     HsaPersonLookupCapability:
       type: object
-      required: [available]
+      required: [ available ]
       additionalProperties: false
       properties:
         available: { type: boolean }
     AnonymousSession:
       type: object
-      required: [authenticated]
+      required: [ authenticated ]
       additionalProperties: false
       properties:
-        authenticated: { type: boolean, enum: [false] }
+        authenticated: { type: boolean, enum: [ false ] }
     AuthenticatedSession:
       type: object
-      required: [authenticated, sub, hsaId, roles]
+      required: [ authenticated, sub, hsaId, roles ]
       additionalProperties: false
       properties:
-        authenticated: { type: boolean, enum: [true] }
+        authenticated: { type: boolean, enum: [ true ] }
         sub: { type: string }
         hsaId: { type: string }
         givenName: { type: string, nullable: true }
@@ -1321,7 +1409,7 @@ components:
       example: SE5560000001-kalle1
     RequirementAreaPermissions:
       type: object
-      required: [canAuthor, canManageAssignments]
+      required: [ canAuthor, canManageAssignments ]
       additionalProperties: false
       properties:
         canAuthor: { type: boolean }
@@ -1355,20 +1443,20 @@ components:
         updatedAt: { type: string, format: date-time }
     RequirementAreaDetailResponse:
       type: object
-      required: [area]
+      required: [ area ]
       additionalProperties: false
       properties:
         area:
           $ref: '#/components/schemas/RequirementAreaDetail'
     PrivacyTarget:
       type: object
-      required: [hsaId]
+      required: [ hsaId ]
       additionalProperties: false
       properties:
         hsaId: { $ref: '#/components/schemas/HsaId' }
     PrivacyReplacement:
       type: object
-      required: [displayName, hsaId]
+      required: [ displayName, hsaId ]
       additionalProperties: false
       properties:
         displayName: { type: string, minLength: 1, maxLength: 450 }
@@ -1378,7 +1466,7 @@ components:
         lastName: { type: string, maxLength: 450 }
     PrivacyErasurePreviewRequest:
       type: object
-      required: [target]
+      required: [ target ]
       additionalProperties: false
       properties:
         replacement:
@@ -1388,7 +1476,7 @@ components:
         target: { $ref: '#/components/schemas/PrivacyTarget' }
     PrivacyErasureRequest:
       type: object
-      required: [previewToken, target]
+      required: [ previewToken, target ]
       additionalProperties: false
       properties:
         actions:
@@ -1396,7 +1484,7 @@ components:
           maxProperties: 100
           additionalProperties:
             type: string
-            enum: [anonymize, delete, skip, switch]
+            enum: [ anonymize, delete, skip, switch ]
         previewToken: { type: string, minLength: 1, maxLength: 450 }
         replacement:
           nullable: true
@@ -1405,10 +1493,10 @@ components:
         target: { $ref: '#/components/schemas/PrivacyTarget' }
     PrivacyErasureAction:
       type: string
-      enum: [anonymize, delete, skip, switch]
+      enum: [ anonymize, delete, skip, switch ]
     PrivacyErasureGroup:
       type: object
-      required: [allowedActions, count, key, recommendedAction]
+      required: [ allowedActions, count, key, recommendedAction ]
       additionalProperties: true
       properties:
         affectedReferences:
@@ -1430,7 +1518,7 @@ components:
           $ref: '#/components/schemas/PrivacyErasureAction'
     PrivacyErasurePreviewResponse:
       type: object
-      required: [groups, previewToken, targetFingerprint, totalCount]
+      required: [ groups, previewToken, targetFingerprint, totalCount ]
       additionalProperties: false
       properties:
         groups:
@@ -1442,7 +1530,7 @@ components:
         totalCount: { type: integer, minimum: 0 }
     PrivacyErasureActionCounts:
       type: object
-      required: [anonymize, delete, skip, switch]
+      required: [ anonymize, delete, skip, switch ]
       additionalProperties: false
       properties:
         anonymize: { type: integer, minimum: 0 }
@@ -1451,7 +1539,7 @@ components:
         switch: { type: integer, minimum: 0 }
     PrivacyErasureResult:
       type: object
-      required: [actions, groups, requestId, targetFingerprint, totalCount]
+      required: [ actions, groups, requestId, targetFingerprint, totalCount ]
       additionalProperties: false
       properties:
         actions: { $ref: '#/components/schemas/PrivacyErasureActionCounts' }
@@ -1464,15 +1552,15 @@ components:
         totalCount: { type: integer, minimum: 0 }
     DataSubjectExportRequest:
       type: object
-      required: [delivery]
+      required: [ delivery ]
       additionalProperties: false
       properties:
-        delivery: { type: string, enum: [json, pdf] }
-        locale: { type: string, enum: [en, sv], default: sv }
+        delivery: { type: string, enum: [ json, pdf ] }
+        locale: { type: string, enum: [ en, sv ], default: sv }
         target: { $ref: '#/components/schemas/PrivacyTarget' }
     DataSubjectExportActor:
       type: object
-      required: [displayName, hsaId, source]
+      required: [ displayName, hsaId, source ]
       additionalProperties: true
       properties:
         displayName: { type: string, minLength: 1 }
@@ -1485,7 +1573,7 @@ components:
         sub: { type: string, maxLength: 450 }
     DataSubjectExportSummary:
       type: object
-      required: [itemCount, limitationCount, sourceCount]
+      required: [ itemCount, limitationCount, sourceCount ]
       additionalProperties: false
       properties:
         itemCount: { type: integer, minimum: 0 }
@@ -1493,13 +1581,13 @@ components:
         sourceCount: { type: integer, minimum: 0 }
     DataSubjectExportItem:
       type: object
-      required: [fieldName, relationToSubject, sourceKey, table, value]
+      required: [ fieldName, relationToSubject, sourceKey, table, value ]
       additionalProperties: false
       properties:
         fieldName: { type: string, minLength: 1, maxLength: 255 }
         relatedObject:
           type: object
-          required: [key, type]
+          required: [ key, type ]
           additionalProperties: false
           properties:
             key: { type: string, maxLength: 450 }
@@ -1519,7 +1607,7 @@ components:
               items: { type: string, maxLength: 450 }
     DataSubjectExportSource:
       type: object
-      required: [fieldKey, items, key, objectKey, relationToSubject, table]
+      required: [ fieldKey, items, key, objectKey, relationToSubject, table ]
       additionalProperties: false
       properties:
         fieldKey: { type: string, minLength: 1, maxLength: 255 }
@@ -1554,7 +1642,7 @@ components:
             additionalProperties: true
         schemaVersion:
           type: string
-          enum: [privacy-data-subject-export.v1]
+          enum: [ privacy-data-subject-export.v1 ]
         sources:
           type: array
           maxItems: 100
@@ -1562,7 +1650,7 @@ components:
             $ref: '#/components/schemas/DataSubjectExportSource'
         subject:
           type: object
-          required: [hsaId, targetFingerprint]
+          required: [ hsaId, targetFingerprint ]
           additionalProperties: false
           properties:
             hsaId: { $ref: '#/components/schemas/HsaId' }
@@ -1574,12 +1662,12 @@ components:
           $ref: '#/components/schemas/DataSubjectExportSummary'
     RequirementListResponse:
       type: object
-      required: [pagination, requirements]
+      required: [ pagination, requirements ]
       additionalProperties: false
       properties:
         pagination:
           type: object
-          required: [count, hasMore, limit, nextCursor]
+          required: [ count, hasMore, limit, nextCursor ]
           additionalProperties: false
           properties:
             count: { type: integer, minimum: 0, maximum: 200 }
@@ -1596,7 +1684,7 @@ components:
           items: { $ref: '#/components/schemas/RequirementSummary' }
     SpecificationItemPageResponse:
       type: object
-      required: [items, pagination]
+      required: [ items, pagination ]
       additionalProperties: false
       properties:
         items:
@@ -1606,7 +1694,7 @@ components:
           items: { $ref: '#/components/schemas/SpecificationItemSummary' }
         pagination:
           type: object
-          required: [count, hasMore, limit, nextCursor]
+          required: [ count, hasMore, limit, nextCursor ]
           additionalProperties: false
           properties:
             count: { type: integer, minimum: 0, maximum: 100 }
@@ -1618,7 +1706,7 @@ components:
               maxLength: 512
     SpecificationRequirementPackage:
       type: object
-      required: [id, name, purposeAndScope]
+      required: [ id, name, purposeAndScope ]
       additionalProperties: false
       properties:
         id: { type: integer, minimum: 1 }
@@ -1637,7 +1725,7 @@ components:
       properties:
         pagination:
           type: object
-          required: [count, hasMore, limit, nextCursor]
+          required: [ count, hasMore, limit, nextCursor ]
           additionalProperties: false
           properties:
             count: { type: integer, minimum: 0, maximum: 100 }
@@ -1661,7 +1749,7 @@ components:
             $ref: '#/components/schemas/SpecificationRequirementPackage'
     SpecificationItemSummary:
       type: object
-      required: [id, isArchived, itemRef, kind, uniqueId, version]
+      required: [ id, isArchived, itemRef, kind, uniqueId, version ]
       additionalProperties: true
       properties:
         id: { type: integer }
@@ -1671,7 +1759,7 @@ components:
           pattern: '^(lib|local):[1-9][0-9]*$'
         kind:
           type: string
-          enum: [library, specificationLocal]
+          enum: [ library, specificationLocal ]
         uniqueId: { type: string }
         version:
           nullable: true
@@ -1679,7 +1767,7 @@ components:
             - $ref: '#/components/schemas/RequirementVersion'
     RequirementSummary:
       type: object
-      required: [id, uniqueId]
+      required: [ id, uniqueId ]
       additionalProperties: true
       properties:
         id: { type: integer }
@@ -1691,7 +1779,7 @@ components:
             - $ref: '#/components/schemas/RequirementVersion'
     RequirementDetail:
       type: object
-      required: [id, uniqueId, permissions]
+      required: [ id, uniqueId, permissions ]
       additionalProperties: true
       properties:
         id: { type: integer }
@@ -1735,14 +1823,14 @@ components:
         canViewHistory: { type: boolean }
     RequirementVersionResponse:
       type: object
-      required: [uniqueId, version]
+      required: [ uniqueId, version ]
       additionalProperties: true
       properties:
         uniqueId: { type: string }
         version: { $ref: '#/components/schemas/RequirementVersion' }
     RequirementMutationResult:
       type: object
-      required: [version]
+      required: [ version ]
       additionalProperties: true
       properties:
         id: { type: integer }
@@ -1750,12 +1838,12 @@ components:
         version: { $ref: '#/components/schemas/RequirementVersion' }
     RequirementCreateResult:
       type: object
-      required: [requirement, version]
+      required: [ requirement, version ]
       additionalProperties: true
       properties:
         requirement:
           type: object
-          required: [id, uniqueId]
+          required: [ id, uniqueId ]
           additionalProperties: true
           properties:
             id: { type: integer }
@@ -1763,14 +1851,14 @@ components:
         version: { $ref: '#/components/schemas/RequirementVersion' }
     RestoreResult:
       type: object
-      required: [ok, version]
+      required: [ ok, version ]
       additionalProperties: true
       properties:
         ok: { type: boolean }
         version: { $ref: '#/components/schemas/RequirementVersion' }
     ArchiveRequirementResult:
       type: object
-      required: [detail, id, ok, uniqueId]
+      required: [ detail, id, ok, uniqueId ]
       additionalProperties: true
       properties:
         detail:
@@ -1801,7 +1889,7 @@ components:
                 properties:
                   type:
                     type: string
-                    enum: [draftRequirementVersion]
+                    enum: [ draftRequirementVersion ]
                   requirementUniqueId: { type: string }
                   versionNumber:
                     type: integer
@@ -1814,7 +1902,7 @@ components:
                 properties:
                   type:
                     type: string
-                    enum: [requirement]
+                    enum: [ requirement ]
                   requirementUniqueId: { type: string }
     RequirementVersion:
       type: object
@@ -1832,7 +1920,7 @@ components:
         revisionToken: { type: string }
     RequirementCreateMutation:
       type: object
-      required: [areaId, description]
+      required: [ areaId, description ]
       additionalProperties: false
       properties:
         acceptanceCriteria: { type: string, maxLength: 4000 }
@@ -1856,7 +1944,7 @@ components:
         verificationMethod: { type: string, maxLength: 4000 }
     RequirementEditMutation:
       type: object
-      required: [baseRevisionToken, baseVersionId, description]
+      required: [ baseRevisionToken, baseVersionId, description ]
       additionalProperties: false
       properties:
         acceptanceCriteria: { type: string, maxLength: 4000 }

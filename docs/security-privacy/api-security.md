@@ -427,3 +427,17 @@ their auth/CSRF behavior is understood.
   generated examples never log or expose raw target HSA-id values in audit
   details. Data-subject export examples should keep covering both self-export
   and `PrivacyOfficer` cross-user export.
+
+## Export and report admission contract
+
+See [export and report admission](../operations/export-report-admission.md) for
+covered routes, shared actor limits, distinct 429/503 reasons, English and
+Swedish messages, privacy handling and coordinated operational tuning.
+
+The requirements-library CSV and person-data JSON/PDF export operations are
+covered by Schemathesis. Their contract includes actor and service-capacity
+429 responses, bounded-output 422 responses, and temporary 503 failures.
+Retry delays vary with rolling usage; active actor limits do not estimate
+completion time. Other export/report and admin setting operations retain
+focused coverage outside Schemathesis. General API edge denials also apply
+to routes covered by the static JSON contract.

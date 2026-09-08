@@ -782,8 +782,10 @@ describe('data-subject export service', () => {
         { createItemLimitError, maxItems: 6, signal },
       ),
     ).rejects.toMatchObject({ limit: 6 })
-    const firstQuery = excess.query.mock.calls[0]
-    expect(firstQuery[0]).toContain('SELECT TOP (@1)')
-    expect(firstQuery[1]).toEqual([TARGET_HSA_ID, 7])
+    const firstQuery = excess.query.mock.calls.find(([sql]) =>
+      sql.includes('privacy:data-export:requirement_areas.owner'),
+    )
+    expect(firstQuery?.[0]).toContain('SELECT TOP (@1)')
+    expect(firstQuery?.[1]).toEqual([TARGET_HSA_ID, 7])
   })
 })

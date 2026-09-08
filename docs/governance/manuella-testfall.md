@@ -1980,7 +1980,9 @@ kontrollera valideringen.
 ### ADMIN-15: Inställningar styr export- och rapportgränser
 
 **Steg:** Öppna `/sv/admin?tab=settings` som Admin och kontrollera nätverket
-medan data laddas. Öppna hjälpknappen för vart och ett av de nio gränsfälten.
+medan data laddas. Kontrollera att de 16 gränsfälten visas och att
+aktörens startkvot per minut och samtidighetsgräns visar sparade värden.
+Öppna hjälpknappen för vart och ett av gränsfälten.
 Prova min-, max- och ogiltiga värden. Spara med både blur och Enter, simulera
 omkastade svar och kontrollera åtgärdsloggen. Kör därefter CSV/PDF som träffar
 ändrade gränser.
@@ -2473,3 +2475,24 @@ betrodda kanten. Metadata saknar känsliga värden. Automatiserad täckning ska
 verifiera aktuell körningsgren och en separat mismatch-gren om lokal miljö inte
 säkert kan tvinga fram schemafel. Tooltipen visar appversion i global
 sidopanel.
+
+### EXPORT-01: orsaker till nekad export på svenska och engelska
+
+**Syfte:** Skilja personens kvot från upptagen kapacitet, otillgänglig
+kvotkontroll och nätverkets anropsgräns.
+
+**Steg:** Öppna Dataskydd på svenska och engelska. Starta en JSON-export
+under vart och ett av följande kontrollerade testvillkor: förbrukad
+startkvot, pågående arbete, upptagen tjänstekapacitet, otillgänglig
+kvotkontroll och överskriden nätverksgräns. Stäng felrutan mellan försöken.
+Öppna därefter kravbiblioteket på svenska och starta en CSV-export med
+upptagen tjänstekapacitet. Kontrollera att `Försök igen` är inaktiverad under
+nedräkningen och att inget nytt försök startar automatiskt. Låt kapaciteten
+bli tillgänglig och välj `Försök igen`.
+
+**Förväntat resultat:** Felrutan förklarar orsaken och nästa steg på valt
+språk. Nätverksgränsen beskrivs separat från personens kvot. Interna fel
+visas aldrig. En väntetid lovar inte att tjänsten återhämtar sig.
+CSV-exporten visar samma förklaring om upptagen tjänstekapacitet.
+Det manuella försöket laddar ned CSV-filen, stänger felrutan och återför
+fokus till exportknappen.

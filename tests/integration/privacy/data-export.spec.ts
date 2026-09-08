@@ -952,7 +952,7 @@ test('PRIV-12: saturated structured-export capacity can be retried', async ({
     await expect(async () => {
       await page.getByRole('button', { name: 'Exportera JSON' }).click()
       await expect(dialog).toContainText(
-        'Så många strukturerade exporter som tillåts samtidigt pågår redan.',
+        'Tjänstens kapacitet för exporter och rapporter är upptagen just nu.',
         { timeout: 1_000 },
       )
     }).toPass({ timeout: 15_000 })
@@ -960,7 +960,7 @@ test('PRIV-12: saturated structured-export capacity can be retried', async ({
 
   await test.step('retry safely after the capacity delay', async () => {
     await expect(dialog).toContainText(
-      'Så många strukturerade exporter som tillåts samtidigt pågår redan.',
+      'Tjänstens kapacitet för exporter och rapporter är upptagen just nu.',
     )
     await expect(dialog).not.toContainText(
       'Internal capacity text that must not be shown',

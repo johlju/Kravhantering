@@ -1,3 +1,16 @@
+import type { SqlServerDatabase } from '@/lib/db'
+import type { RequestContext } from '@/lib/requirements/auth'
+
+vi.mock('@/lib/generated-output/actor-quota', () => ({
+  runWithExportActorQuota: (
+    _db: SqlServerDatabase,
+    _context: RequestContext,
+    _output: string,
+    signal: AbortSignal | undefined,
+    work: (signal: AbortSignal) => Promise<Response>,
+  ) => work(signal ?? new AbortController().signal),
+}))
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   acquireGeneratedOutputCapacity,
@@ -32,6 +45,7 @@ describe('synchronous PDF generation utility', () => {
       markStarted = resolve
     })
     const generation = runSynchronousPdfGeneration(
+      {} as never,
       {} as never,
       request.signal,
       () =>

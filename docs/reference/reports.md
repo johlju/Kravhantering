@@ -497,3 +497,9 @@ When a requirement transitions from Published to Review for archiving
 - Subtitle: "Kravet granskas för arkivering"
 - Amber warning banner instead of blue info notice
 - In the combined report TOC, archiving requests are grouped first
+
+## Export and report actor quota
+
+See [export and report admission](../operations/export-report-admission.md) for
+covered routes, shared actor limits, distinct 429/503 reasons, English and
+Swedish messages, privacy handling and coordinated operational tuning.

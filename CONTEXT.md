@@ -313,6 +313,17 @@ tidsfönster. Kvoten gäller gemensamt över alla applikationsinstanser.
 
 _Avoid_: HSA-throttle, delat throttle-lager, processlokal hastighetsgräns.
 
+**Aktörskvot för exporter och rapporter**:
+En applikationsgemensam gräns för hur ofta en autentiserad person får starta
+exporter och rapporter och hur många sådana arbeten personen får ha igång
+samtidigt. Kvoten följer personen över sessioner och applikationsinstanser
+och gäller även administratörer.
+
+- `en`: Export and report actor quota
+
+_Avoid_: Exportbudget när personens förbrukning avses, IP-kvot,
+processlokal kapacitetsgräns.
+
 **Behörighetsöversyn**:
 En formell genomgång av uppdrag och roller där varje behörighetsrad bedöms och
 beslutas.

@@ -31,6 +31,17 @@ function publishedPort(containerName, containerPort) {
 }
 
 function requestHeaders(port, protocol, forwardedFor, canonicalIp) {
+  childProcess.execFileSync('curl', [
+    '--fail',
+    '--silent',
+    '--insecure',
+    '--retry',
+    '10',
+    '--retry-all-errors',
+    '--retry-delay',
+    '0',
+    `${protocol}://127.0.0.1:${port}/probe-ready`,
+  ])
   return childProcess.execFileSync(
     'curl',
     [
@@ -131,6 +142,18 @@ function startLoadBalancedEdge(
     'NGINX_RESOLVER=127.0.0.11',
     '--volume',
     `${workspace}/containers/production/nginx/nginx.conf:/etc/nginx/nginx.conf:ro`,
+    '--env',
+    'NGINX_API_RATE=50',
+    '--env',
+    'NGINX_API_BURST=200',
+    '--env',
+    'NGINX_LOGIN_RATE=5',
+    '--env',
+    'NGINX_LOGIN_BURST=50',
+    '--volume',
+    `${workspace}/containers/production/nginx/templates/edge-rate.conf.template:/etc/nginx/templates/edge-rate.conf.template:ro`,
+    '--volume',
+    `${workspace}/containers/production/nginx/templates/edge-errors.conf:/etc/nginx/snippets/edge-errors.conf:ro`,
     '--volume',
     `${workspace}/containers/production/nginx/templates/app-node-http.conf.template:/etc/nginx/templates/default.conf.template:ro`,
     '--volume',
@@ -171,6 +194,18 @@ function startTlsEdge(templateName, readinessProbeConfig) {
     'NGINX_IDENTITY_RESOLVER=127.0.0.11',
     '--volume',
     `${workspace}/containers/production/nginx/nginx.conf:/etc/nginx/nginx.conf:ro`,
+    '--env',
+    'NGINX_API_RATE=50',
+    '--env',
+    'NGINX_API_BURST=200',
+    '--env',
+    'NGINX_LOGIN_RATE=5',
+    '--env',
+    'NGINX_LOGIN_BURST=50',
+    '--volume',
+    `${workspace}/containers/production/nginx/templates/edge-rate.conf.template:/etc/nginx/templates/edge-rate.conf.template:ro`,
+    '--volume',
+    `${workspace}/containers/production/nginx/templates/edge-errors.conf:/etc/nginx/snippets/edge-errors.conf:ro`,
     '--volume',
     `${workspace}/containers/production/nginx/templates/${templateName}:/etc/nginx/templates/default.conf.template:ro`,
     '--volume',
@@ -500,5 +535,74 @@ describe.runIf(enabled)('nginx trusted client-IP boundary', () => {
     const rejectedMethod = readinessRequest(edge, 'POST', gateway, 'https')
     expect(rejectedMethod).toMatchObject({ body: '', status: 405 })
     expect(rejectedMethod.headers).toMatch(/^Allow:\s*GET, HEAD\s*$/imu)
+  })
+  it.each(['direct', 'trusted'])(
+    'enforces API bursts through the %s address boundary and dedicated export locations',
+    async mode => {
+      const edge = startLoadBalancedEdge(
+        mode === 'trusted' ? `set_real_ip_from ${gateway}/32;\n` : '',
+      )
+      // Wait for configuration and DNS using the existing health probe helper.
+      requestHeaders(edge.port, 'http', '198.51.100.80', '203.0.113.99')
+      const request = (index, accept = 'application/json') =>
+        fetch(
+          `http://127.0.0.1:${edge.port}/api/requirements/export?request=${index}`,
+          {
+            headers: {
+              accept,
+              'Accept-Language': 'sv',
+              'X-Forwarded-For':
+                mode === 'trusted'
+                  ? '198.51.100.80'
+                  : `203.0.113.${index % 250}`,
+              'X-Kravhantering-Client-IP': `203.0.113.${index % 250}`,
+            },
+          },
+        )
+      const normal = await Promise.all(
+        Array.from({ length: 20 }, (_, index) => request(index)),
+      )
+      expect(normal.every(response => response.status === 204)).toBe(true)
+      const burst = await Promise.all(
+        Array.from({ length: 350 }, (_, index) => request(index)),
+      )
+      const denied = burst.find(response => response.status === 429)
+      expect(denied).toBeDefined()
+      expect(await denied.json()).toMatchObject({
+        code: 'edge_rate_limit',
+        error:
+          'För många anrop har nått tjänsten från ditt nätverk. Försök igen senare.',
+      })
+      expect(denied.headers.get('cache-control')).toBe('no-store')
+      expect(denied.headers.get('retry-after')).toBe('1')
+      const navigations = await Promise.all(
+        Array.from({ length: 250 }, (_, index) =>
+          request(900 + index, 'text/html'),
+        ),
+      )
+      const navigation = navigations.find(response => response.status === 429)
+      expect(navigation).toBeDefined()
+      expect(navigation.headers.get('content-type')).toContain('text/html')
+      expect(await navigation.text()).toContain('För många anrop')
+    },
+  )
+
+  it('limits login starts separately while a callback remains usable', async () => {
+    const edge = startLoadBalancedEdge(`set_real_ip_from ${gateway}/32;\n`)
+    requestHeaders(edge.port, 'http', '198.51.100.81', '203.0.113.99')
+    const headers = { 'X-Forwarded-For': '198.51.100.81' }
+    const responses = await Promise.all(
+      Array.from({ length: 75 }, () =>
+        fetch(`http://127.0.0.1:${edge.port}/api/auth/login`, { headers }),
+      ),
+    )
+    expect(responses.some(response => response.status === 429)).toBe(true)
+    expect(
+      (
+        await fetch(`http://127.0.0.1:${edge.port}/api/auth/callback`, {
+          headers,
+        })
+      ).status,
+    ).toBe(204)
   })
 })

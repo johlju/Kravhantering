@@ -11,9 +11,7 @@ vi.mock('next-intl', () => ({
       'common.cancel': 'Cancel',
       'common.close': 'Close',
       'generatedOutput.fileReady': 'The file is ready',
-      'generatedOutput.errors.pdf.busy': `Busy ${String(
-        (values as { retryAfter?: number } | undefined)?.retryAfter,
-      )}`,
+      'generatedOutput.limits.capacity': 'Service capacity is occupied',
       'generatedOutput.errors.csv.bytes': 'CSV byte limit',
       'generatedOutput.errors.csv.items': 'CSV item limit',
       'generatedOutput.errors.csv.storage': 'CSV storage unavailable',
@@ -402,7 +400,7 @@ describe('useGeneratedOutputDownload', () => {
     expect(
       screen.getByRole('alertdialog', { name: 'Download failed' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Busy 2')).toBeInTheDocument()
+    expect(screen.getByText('Service capacity is occupied')).toBeInTheDocument()
     expect(screen.queryByText(/RAW SERVER/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry in 2 s' })).toBeDisabled()
     act(() => vi.advanceTimersByTime(2000))

@@ -1,5 +1,6 @@
 import { getApplicationSettings } from '@/lib/dal/application-settings'
 import type { SqlServerDatabase } from '@/lib/db'
+import { runWithExportActorQuota } from '@/lib/generated-output/actor-quota'
 import {
   GeneratedOutputError,
   isGeneratedOutputError,
@@ -19,6 +20,7 @@ import {
   generatedOutputCapacitySnapshot,
   writeBoundedFile,
 } from '@/lib/generated-output/spool'
+import { serializeJsonChunks } from '@/lib/generated-output/structured-runner'
 import {
   jsonContentDisposition,
   pdfContentDisposition,
@@ -53,7 +55,7 @@ export interface GeneratedDataSubjectExport {
   response: Response
 }
 
-export async function generateDataSubjectExport(
+async function generateDataSubjectExportOutput(
   options: GenerateDataSubjectExportOptions,
 ): Promise<GeneratedDataSubjectExport> {
   const settings = await getApplicationSettings(options.db)
@@ -272,29 +274,15 @@ function observedItemCount(error: unknown, current: number): number {
   return current
 }
 
-function* serializeJsonChunks(value: unknown): Generator<string> {
-  if (Array.isArray(value)) {
-    yield '['
-    for (const [index, item] of value.entries()) {
-      if (index > 0) yield ','
-      yield* serializeJsonChunks(item === undefined ? null : item)
-    }
-    yield ']'
-    return
-  }
-  if (value && typeof value === 'object') {
-    yield '{'
-    let emitted = 0
-    for (const [key, item] of Object.entries(value)) {
-      if (item === undefined) continue
-      if (emitted > 0) yield ','
-      yield JSON.stringify(key)
-      yield ':'
-      yield* serializeJsonChunks(item)
-      emitted += 1
-    }
-    yield '}'
-    return
-  }
-  yield JSON.stringify(value) ?? 'null'
+export async function generateDataSubjectExport(
+  options: GenerateDataSubjectExportOptions,
+): Promise<GeneratedDataSubjectExport> {
+  return runWithExportActorQuota(
+    options.db,
+    options.context,
+    options.delivery,
+    options.requestSignal,
+    signal =>
+      generateDataSubjectExportOutput({ ...options, requestSignal: signal }),
+  )
 }
