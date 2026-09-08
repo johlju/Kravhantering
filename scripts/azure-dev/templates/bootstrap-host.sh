@@ -36,6 +36,7 @@ ZSHRC_SOURCE="${AZURE_DEV_ZSHRC_SOURCE:-${WORKSPACE_DIR}/scripts/azure-dev/templ
 SERVICE_ENV_SOURCE_DIR="${AZURE_DEV_SERVICE_ENV_SOURCE:-}"
 CODEX_CONFIG_SOURCE="${AZURE_DEV_CODEX_CONFIG_SOURCE:-${WORKSPACE_DIR}/scripts/azure-dev/templates/codex-config.toml}"
 CODEX_CONFIG_MERGER="${AZURE_DEV_CODEX_CONFIG_MERGER:-${WORKSPACE_DIR}/scripts/azure-dev/templates/merge-codex-config.py}"
+PODMAN_CLIENT_SOURCE="${AZURE_DEV_PODMAN_CLIENT_SOURCE:-${WORKSPACE_DIR}/scripts/azure-dev/templates/podman-client.sh}"
 CODEX_INSTALLER="${AZURE_DEV_CODEX_INSTALLER:-${WORKSPACE_DIR}/scripts/azure-dev/templates/install-codex.sh}"
 CODEX_ORCHESTRATOR="${AZURE_DEV_CODEX_ORCHESTRATOR:-${WORKSPACE_DIR}/scripts/azure-dev/templates/install-azure-codex.sh}"
 CODEX_SESSION_POLICY="${AZURE_DEV_CODEX_SESSION_POLICY:-${WORKSPACE_DIR}/scripts/azure-dev/templates/install-azure-codex-session-policy.sh}"
@@ -1169,6 +1170,21 @@ run_codex_as_vscode() {
     "${CODEX_MANAGED_LAUNCHER}" "$@"
 }
 
+configure_codex_podman() {
+  local uid
+  uid="$(id -u "${VSCODE_USER}")"
+
+  install -o "${VSCODE_USER}" -g "${VSCODE_USER}" -m 0755 \
+    "${PODMAN_CLIENT_SOURCE}" "${VSCODE_HOME}/.local/bin/podman"
+  # The engine must run outside the Codex mount and user namespaces.
+  run_user_systemctl "${uid}" enable --now podman.socket
+  run_codex_as_vscode "${uid}" sandbox -P kravhantering-development \
+    -C "${WORKSPACE_DIR}" -- \
+    env CONTAINER_HOST="unix:///run/user/${uid}/podman/podman.sock" \
+    podman info --format '{{.Store.GraphRoot}}'
+  log 'Codex rootless Podman API connection configured and validated'
+}
+
 configure_codex_app_server() {
   local uid version_result expected_socket
   uid="$(id -u "${VSCODE_USER}")"
@@ -1701,6 +1717,7 @@ main() {
   install_quadlet_units
   build_hsa_images
   start_user_quadlets
+  configure_codex_podman
   configure_codex_app_server
   reconcile_persistent_hsa_renewal
   normalize_hsa_app_bundle_host_ownership
