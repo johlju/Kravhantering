@@ -344,8 +344,9 @@ sequenceDiagram
   `auth.csrf.rejected`, `auth.authorization.denied`,
   `auth.authorization.denied.audit_failed`,
   `privacy.data_subject_export.generated`, `privacy.erasure.executed`,
-  `privacy.erasure.previewed`, and
-  `requirements.sensitive_mutation.succeeded`.
+  `privacy.erasure.previewed`,
+  `requirements.sensitive_mutation.succeeded`, and
+  `security.csp.violation_reported`.
 - Audit events intentionally redact sensitive fields such as tokens, secrets,
   authorization codes, PKCE verifiers, `state`, and `nonce`. When a top-level
   detail key is redacted, the audit writer also emits a structured
@@ -427,3 +428,13 @@ sequenceDiagram
 See [export and report admission](../operations/export-report-admission.md) for
 covered routes, shared actor limits, distinct 429/503 reasons, English and
 Swedish messages, privacy handling and coordinated operational tuning.
+
+## Anonymous CSP telemetry
+
+The registry admits native `POST /api/security/csp-reports` without reading a
+session or requiring the application mutation header. Even attached cookies are
+ignored for report identity. The dedicated wrapper accepts only this operation.
+`security.csp.violation_reported` uses an anonymous actor and fixed request
+metadata; `outcome: success` means accepted telemetry, not a successful attack.
+Admin settings retain normal authorization and CSRF. See
+[CSP reporting](../operations/csp-reporting.md).

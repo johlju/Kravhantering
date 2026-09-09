@@ -125,6 +125,7 @@ const API_DOCS_CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
   "base-uri 'none'",
   "form-action 'none'",
+  'report-to csp',
 ].join('; ')
 
 const nextConfig: NextConfig = {
@@ -264,6 +265,10 @@ const nextConfig: NextConfig = {
           {
             key: 'Content-Security-Policy',
             value: API_DOCS_CONTENT_SECURITY_POLICY,
+          },
+          {
+            key: 'Reporting-Endpoints',
+            value: 'csp="/api/security/csp-reports"',
           },
         ],
       },
