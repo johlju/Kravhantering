@@ -302,9 +302,9 @@ describe('useSuggestionWorkflow', () => {
     ).toBe('resolved')
 
     await act(async () => {
-      await result.current.handleCreateSuggestion('', '')
-      await result.current.handleEditSuggestion('', '')
-      await result.current.handleRecordResolution(1, '', '')
+      await result.current.handleCreateSuggestion('')
+      await result.current.handleEditSuggestion('')
+      await result.current.handleRecordResolution(1, '')
     })
     expect(apiFetchMock).not.toHaveBeenCalled()
   })
@@ -352,7 +352,7 @@ describe('useSuggestionWorkflow', () => {
 
     act(() => result.current.openCreateDialog())
     expect(result.current.showSuggestionForm).toBe(true)
-    await act(() => result.current.handleCreateSuggestion(' New text ', ''))
+    await act(() => result.current.handleCreateSuggestion(' New text '))
     expect(result.current.showSuggestionForm).toBe(false)
     expect(apiFetchMock).toHaveBeenCalledWith(
       '/api/requirement-suggestions/9',
@@ -360,7 +360,6 @@ describe('useSuggestionWorkflow', () => {
         method: 'POST',
         body: JSON.stringify({
           content: ' New text ',
-          createdBy: null,
           requirementVersionId: null,
         }),
       }),
@@ -368,9 +367,7 @@ describe('useSuggestionWorkflow', () => {
 
     act(() => result.current.openEditDialog(draftSuggestion))
     expect(result.current.editSuggestionTarget).toBe(draftSuggestion)
-    await act(() =>
-      result.current.handleEditSuggestion('Edited text', 'Ignored'),
-    )
+    await act(() => result.current.handleEditSuggestion('Edited text'))
     expect(result.current.showEditSuggestionForm).toBe(false)
 
     const deleteAnchor = document.createElement('button')
@@ -396,9 +393,7 @@ describe('useSuggestionWorkflow', () => {
 
     act(() => result.current.openResolutionDialog(draftSuggestion))
     expect(result.current.resolutionTarget).toBe(draftSuggestion)
-    await act(() =>
-      result.current.handleRecordResolution(1, 'Implemented', 'Reviewer'),
-    )
+    await act(() => result.current.handleRecordResolution(1, 'Implemented'))
     expect(result.current.showResolutionForm).toBe(false)
     expect(apiFetchMock).toHaveBeenCalledWith(
       '/api/improvement-suggestions/51/resolution',
@@ -407,7 +402,6 @@ describe('useSuggestionWorkflow', () => {
         body: JSON.stringify({
           resolution: 1,
           resolutionMotivation: 'Implemented',
-          resolvedBy: 'Reviewer',
         }),
       }),
     )
@@ -432,7 +426,7 @@ describe('useSuggestionWorkflow', () => {
     )
 
     apiFetchMock.mockRejectedValueOnce(new Error('offline'))
-    await act(() => result.current.handleCreateSuggestion('Text', 'Author'))
+    await act(() => result.current.handleCreateSuggestion('Text'))
     expect(result.current.suggestionError).toBe(
       'improvementSuggestion.saveFailed',
     )
@@ -441,14 +435,14 @@ describe('useSuggestionWorkflow', () => {
       response({ suggestions: [draftSuggestion] }),
     )
     act(() => result.current.openCreateDialog())
-    await act(() => result.current.handleCreateSuggestion('Reload', 'Author'))
+    await act(() => result.current.handleCreateSuggestion('Reload'))
     await waitFor(() =>
       expect(result.current.versionSuggestionItems).toHaveLength(1),
     )
 
     act(() => result.current.openEditDialog(draftSuggestion))
     apiFetchMock.mockResolvedValueOnce(response({ error: 'bad edit' }, false))
-    await act(() => result.current.handleEditSuggestion('Edit', ''))
+    await act(() => result.current.handleEditSuggestion('Edit'))
     expect(result.current.suggestionError).toBe(
       'improvementSuggestion.saveFailed',
     )
@@ -473,9 +467,7 @@ describe('useSuggestionWorkflow', () => {
 
     act(() => result.current.openResolutionDialog(draftSuggestion))
     apiFetchMock.mockRejectedValueOnce('unavailable')
-    await act(() =>
-      result.current.handleRecordResolution(2, 'No change', 'Reviewer'),
-    )
+    await act(() => result.current.handleRecordResolution(2, 'No change'))
     expect(result.current.suggestionError).toBe(
       'improvementSuggestion.resolutionFailed',
     )

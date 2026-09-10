@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { routing } from '@/i18n/routing'
+import { getSession, isSignedIn } from '@/lib/auth/session'
 import { formatActorDisplayNameForLocale } from '@/lib/privacy/display-name'
 import {
   loadRequirementsSpecificationDetailInitialData,
@@ -95,8 +96,10 @@ export default async function RequirementsSpecificationDetailPage({
       </main>
     )
   }
+  const session = await getSession()
   return (
     <RequirementsSpecificationDetailClient
+      currentActorName={isSignedIn(session) ? session.name : null}
       initialData={initialData}
       specificationId={resolvedSpecification.id}
     />

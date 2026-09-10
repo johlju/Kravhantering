@@ -77,6 +77,9 @@ async function mockSuggestions(
   page: Page,
   initialSuggestions: SuggestionData[],
 ) {
+  const identityResponse = await page.request.get('/api/auth/me')
+  await expectApiResponseOk(identityResponse, 'load signed-in suggestion actor')
+  const actor = (await identityResponse.json()) as { name: string }
   let nextId = Math.max(0, ...initialSuggestions.map(item => item.id)) + 1
   let suggestions = [...initialSuggestions]
   const requests: unknown[] = []
@@ -86,12 +89,11 @@ async function mockSuggestions(
     if (request.method() === 'POST') {
       const body = request.postDataJSON() as {
         content: string
-        createdBy?: string | null
         requirementVersionId?: number | null
       }
       const created = suggestion(nextId, {
         content: body.content,
-        createdBy: body.createdBy ?? null,
+        createdBy: actor.name,
         requirementVersionId: body.requirementVersionId ?? null,
       })
       nextId += 1
@@ -135,7 +137,6 @@ async function mockSuggestions(
       const body = route.request().postDataJSON() as {
         resolution: number
         resolutionMotivation: string
-        resolvedBy: string
       }
       suggestions = suggestions.map(item =>
         item.id === id
@@ -144,7 +145,7 @@ async function mockSuggestions(
               resolution: body.resolution,
               resolutionMotivation: body.resolutionMotivation,
               resolvedAt: '2026-06-01T11:00:00.000Z',
-              resolvedBy: body.resolvedBy,
+              resolvedBy: actor.name,
             }
           : item,
       )
@@ -155,7 +156,20 @@ async function mockSuggestions(
     },
   )
 
+  await page.route('**/api/improvement-suggestions/*', async route => {
+    const id = Number(route.request().url().split('/').pop())
+    const body = route.request().postDataJSON() as { content: string }
+    suggestions = suggestions.map(item =>
+      item.id === id ? { ...item, content: body.content } : item,
+    )
+    requests.push({ body, id, type: 'edit' })
+    await fulfillJson(route, {
+      suggestion: suggestions.find(item => item.id === id),
+    })
+  })
+
   return {
+    actorName: actor.name,
     get requests() {
       return requests
     },
@@ -270,9 +284,12 @@ test.describe('Requirement collaboration', () => {
     await dialog
       .getByLabel('Innehåll *')
       .fill('Playwright föreslår tydligare verifiering.')
-    await dialog
-      .getByRole('textbox', { name: 'Inskickad av' })
-      .fill('Playwright')
+    await expect(
+      dialog.getByRole('status', { name: 'Inskickad av' }),
+    ).toHaveText(suggestionMock.actorName)
+    await expect(
+      dialog.locator('[data-developer-mode-value="suggestion-recorded-actor"]'),
+    ).toHaveAttribute('data-developer-mode-name', 'section')
     await dialog.getByRole('button', { name: 'Spara' }).click()
 
     await expect(
@@ -287,9 +304,47 @@ test.describe('Requirement collaboration', () => {
     await expect(
       detailPane.getByRole('button', { name: 'Åtgärdad ↗' }),
     ).toHaveCount(0)
-    expect(suggestionMock.requests).toContainEqual(
-      expect.objectContaining({ type: 'create' }),
-    )
+    await expect(
+      detailPane
+        .getByRole('status')
+        .filter({ hasText: 'Playwright föreslår tydligare verifiering.' }),
+    ).toContainText(suggestionMock.actorName)
+    expect(suggestionMock.requests).toContainEqual({
+      type: 'create',
+      body: {
+        content: 'Playwright föreslår tydligare verifiering.',
+        requirementVersionId: SELECTED_INT0001_VERSION_ID,
+      },
+    })
+  })
+
+  test('COL-02a: edits content while retaining the original submitter', async ({
+    page,
+  }) => {
+    const suggestionMock = await mockSuggestions(page, [
+      suggestion(14, { createdBy: 'Original submitter' }),
+    ])
+    const detailPane = await openRequirementDetail(page)
+    await test.step('edit the content and retain the recorded submitter', async () => {
+      await detailPane.getByRole('button', { name: 'Redigera förslag' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Redigera förslag' })
+      await expect(
+        dialog.getByRole('status', { name: 'Inskickad av' }),
+      ).toHaveText('Original submitter')
+      await expect(dialog.getByRole('button', { name: 'Spara' })).toBeDisabled()
+      await dialog.getByLabel('Innehåll *').fill('Förtydligat förslag')
+      await dialog.getByRole('button', { name: 'Spara' }).click()
+      await expect(
+        detailPane
+          .getByRole('status')
+          .filter({ hasText: 'Förtydligat förslag' }),
+      ).toContainText('Original submitter')
+      expect(suggestionMock.requests).toContainEqual({
+        type: 'edit',
+        id: 14,
+        body: { content: 'Förtydligat förslag' },
+      })
+    })
   })
 
   test('COL-03: requests review for a draft improvement suggestion', async ({
@@ -328,8 +383,13 @@ test.describe('Requirement collaboration', () => {
 
     await detailPane.getByRole('button', { name: 'Åtgärdad ↗' }).click()
     const dialog = page.getByRole('dialog', { name: 'Registrera åtgärd' })
+    await expect(
+      dialog.getByRole('button', { name: 'Registrera åtgärd' }),
+    ).toBeDisabled()
     await dialog.getByLabel('Motivering *').fill('Åtgärdas i kravtexten.')
-    await dialog.getByLabel('Granskad av *').fill('Playwright reviewer')
+    await expect(
+      dialog.getByRole('status', { name: 'Granskad av' }),
+    ).toHaveText(suggestionMock.actorName)
     await dialog.getByRole('button', { name: 'Registrera åtgärd' }).click()
 
     await expect(
@@ -344,6 +404,17 @@ test.describe('Requirement collaboration', () => {
     await expect(
       detailPane.getByRole('button', { name: 'Granskning ↗' }),
     ).toHaveCount(0)
+    await expect(
+      detailPane
+        .getByRole('status')
+        .filter({ hasText: 'Playwright förslag att åtgärda' }),
+    ).toContainText(suggestionMock.actorName)
+    const reloadedPane = await openRequirementDetail(page)
+    await expect(
+      reloadedPane
+        .getByRole('status')
+        .filter({ hasText: 'Playwright förslag att åtgärda' }),
+    ).toContainText(suggestionMock.actorName)
     expect(suggestionMock.requests).toContainEqual(
       expect.objectContaining({
         body: expect.objectContaining({ resolution: 1 }),
@@ -367,8 +438,13 @@ test.describe('Requirement collaboration', () => {
     await detailPane.getByRole('button', { name: 'Åtgärdad ↗' }).click()
     const dialog = page.getByRole('dialog', { name: 'Registrera åtgärd' })
     await dialog.getByLabel('Avvisa').check()
+    await expect(
+      dialog.getByRole('button', { name: 'Registrera åtgärd' }),
+    ).toBeDisabled()
     await dialog.getByLabel('Motivering *').fill('Förslaget avvisas.')
-    await dialog.getByLabel('Granskad av *').fill('Playwright reviewer')
+    await expect(
+      dialog.getByRole('status', { name: 'Granskad av' }),
+    ).toHaveText(suggestionMock.actorName)
     await dialog.getByRole('button', { name: 'Registrera åtgärd' }).click()
 
     await expect(
@@ -383,6 +459,17 @@ test.describe('Requirement collaboration', () => {
     await expect(
       detailPane.getByRole('button', { name: 'Granskning ↗' }),
     ).toHaveCount(0)
+    await expect(
+      detailPane
+        .getByRole('status')
+        .filter({ hasText: 'Playwright förslag att avvisa' }),
+    ).toContainText(suggestionMock.actorName)
+    const reloadedPane = await openRequirementDetail(page)
+    await expect(
+      reloadedPane
+        .getByRole('status')
+        .filter({ hasText: 'Playwright förslag att avvisa' }),
+    ).toContainText(suggestionMock.actorName)
     expect(suggestionMock.requests).toContainEqual(
       expect.objectContaining({
         body: expect.objectContaining({ resolution: 2 }),

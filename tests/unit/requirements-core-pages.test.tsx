@@ -8,6 +8,11 @@ const pageMocks = vi.hoisted(() => ({
   requirementDetailClient: vi.fn(() => null),
 }))
 
+vi.mock('@/lib/auth/session', () => ({
+  getSession: vi.fn(async () => ({ name: 'Signed-in actor' })),
+  isSignedIn: vi.fn(() => true),
+}))
+
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }))
@@ -68,11 +73,12 @@ describe('requirements core pages', () => {
   it('passes route identifiers to detail and edit clients', async () => {
     const detail = (await RequirementDetailPage({
       params: Promise.resolve({ id: 'REQ-42' }),
-    })) as ReactElement<{ requirementId: string }>
+    })) as ReactElement<{ currentActorName: string; requirementId: string }>
     const edit = (await EditRequirementPage({
       params: Promise.resolve({ id: '42' }),
     })) as ReactElement<{ requirementId: string }>
 
+    expect(detail.props.currentActorName).toBe('Signed-in actor')
     expect(detail.props.requirementId).toBe('REQ-42')
     expect(edit.props.requirementId).toBe('42')
   })
@@ -85,11 +91,25 @@ describe('requirements core pages', () => {
       params: Promise.resolve({ id: '42', version: 'latest' }),
     })) as ReactElement<{ defaultVersion?: number; requirementId: string }>
 
-    expect(version.props).toEqual({ defaultVersion: 3, requirementId: '42' })
+    expect(version.props).toEqual({
+      currentActorName: 'Signed-in actor',
+      defaultVersion: 3,
+      requirementId: '42',
+    })
     expect(malformed.props).toEqual({
+      currentActorName: 'Signed-in actor',
       defaultVersion: undefined,
       requirementId: '42',
     })
+  })
+
+  it('does not project a name from an unsigned session into suggestion forms', async () => {
+    const { isSignedIn } = await import('@/lib/auth/session')
+    vi.mocked(isSignedIn).mockReturnValueOnce(false)
+    const detail = (await RequirementDetailPage({
+      params: Promise.resolve({ id: '42' }),
+    })) as ReactElement<{ currentActorName: string | null }>
+    expect(detail.props.currentActorName).toBeNull()
   })
 
   it('renders the create form from both create surfaces', () => {

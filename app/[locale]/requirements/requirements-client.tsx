@@ -269,9 +269,11 @@ function selectionMatchesRequirementRow(
 }
 
 export default function RequirementsClient({
+  currentActorName,
   aiGenerationAvailability = DEFAULT_AI_REQUIREMENT_GENERATION_AVAILABILITY,
   initialColumnDefaults,
 }: {
+  currentActorName?: string | null
   aiGenerationAvailability?: AiRequirementGenerationAvailability
   initialColumnDefaults?: RequirementListColumnDefault[]
 }) {
@@ -1437,6 +1439,7 @@ export default function RequirementsClient({
                   qualityCharacteristics={qualityCharacteristics}
                   renderExpanded={id => (
                     <RequirementDetailClient
+                      currentActorName={currentActorName}
                       detailCache={detailCache}
                       detailPrefetchContext={libraryDetailContext}
                       inline

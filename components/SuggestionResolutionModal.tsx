@@ -8,6 +8,7 @@ import AnimatedHelpPanel from '@/components/AnimatedHelpPanel'
 import DirtyStateButton from '@/components/DirtyStateButton'
 import FieldHelpButton from '@/components/FieldHelpButton'
 import { modalResizableTextareaRows3ClassName } from '@/components/modal-textarea-class'
+import SuggestionActorContext from '@/components/SuggestionActorContext'
 import { useDiscardChangesConfirmation } from '@/hooks/useDiscardChangesConfirmation'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { devMarker } from '@/lib/developer-mode-markers'
@@ -17,13 +18,15 @@ import { dialogPanelMotion, fadeMotion } from '@/lib/reduced-motion'
 const textareaClassName = `w-full rounded-lg border border-secondary-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-secondary-600 dark:bg-secondary-900 ${modalResizableTextareaRows3ClassName}`
 
 interface SuggestionResolutionModalProps {
+  currentActorName?: string | null
   loading?: boolean
   onClose: () => void
-  onSubmit: (resolution: 1 | 2, motivation: string, resolvedBy: string) => void
+  onSubmit: (resolution: 1 | 2, motivation: string) => void
   open: boolean
 }
 
 export default function SuggestionResolutionModal({
+  currentActorName,
   loading,
   onClose,
   onSubmit,
@@ -33,9 +36,8 @@ export default function SuggestionResolutionModal({
   const tc = useTranslations('common')
   const [resolution, setResolution] = useState<1 | 2>(1)
   const [motivation, setMotivation] = useState('')
-  const [resolvedBy, setResolvedBy] = useState('')
   const [baselineSignature, setBaselineSignature] = useState(() =>
-    createDirtySnapshot({ motivation: '', resolution: 1, resolvedBy: '' }),
+    createDirtySnapshot({ motivation: '', resolution: 1 }),
   )
   const [openHelp, setOpenHelp] = useState<Set<string>>(() => new Set())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -47,9 +49,8 @@ export default function SuggestionResolutionModal({
     if (open) {
       setResolution(1)
       setMotivation('')
-      setResolvedBy('')
       setBaselineSignature(
-        createDirtySnapshot({ motivation: '', resolution: 1, resolvedBy: '' }),
+        createDirtySnapshot({ motivation: '', resolution: 1 }),
       )
       setOpenHelp(new Set())
     }
@@ -68,8 +69,7 @@ export default function SuggestionResolutionModal({
   }
 
   const formDirty =
-    baselineSignature !==
-    createDirtySnapshot({ motivation, resolution, resolvedBy })
+    baselineSignature !== createDirtySnapshot({ motivation, resolution })
 
   const requestClose = useCallback(
     async (anchorEl?: HTMLElement | null) => {
@@ -91,10 +91,10 @@ export default function SuggestionResolutionModal({
   })
 
   const handleSubmit = useCallback(() => {
-    if (!motivation.trim() || !resolvedBy.trim()) return
+    if (!motivation.trim()) return
     if (!formDirty) return
-    onSubmit(resolution, motivation.trim(), resolvedBy.trim())
-  }, [formDirty, resolution, motivation, resolvedBy, onSubmit])
+    onSubmit(resolution, motivation.trim())
+  }, [formDirty, resolution, motivation, onSubmit])
 
   if (typeof window === 'undefined') return null
 
@@ -183,36 +183,11 @@ export default function SuggestionResolutionModal({
                 />
               </div>
 
-              <div>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <label
-                    className="text-sm font-medium text-secondary-900 dark:text-secondary-100"
-                    htmlFor="resolution-resolvedBy"
-                  >
-                    {tf('resolvedBy')} *
-                  </label>
-                  <FieldHelpButton
-                    controls="help-resolution-resolvedBy"
-                    expanded={openHelp.has('resolvedBy')}
-                    label={`${tc('help')}: ${tf('resolvedBy')}`}
-                    onClick={() => toggleHelp('resolvedBy')}
-                  />
-                </div>
-                <AnimatedHelpPanel
-                  id="help-resolution-resolvedBy"
-                  isOpen={openHelp.has('resolvedBy')}
-                >
-                  {tf('resolvedByHelp')}
-                </AnimatedHelpPanel>
-                <input
-                  className="w-full rounded-lg border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-900 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  id="resolution-resolvedBy"
-                  onChange={e => setResolvedBy(e.target.value)}
-                  placeholder={tf('resolvedByPlaceholder')}
-                  type="text"
-                  value={resolvedBy}
-                />
-              </div>
+              <SuggestionActorContext
+                currentActorName={currentActorName}
+                helpText={tf('resolvedByHelp')}
+                label={tf('resolvedBy')}
+              />
 
               <div className="flex gap-2 justify-end">
                 <button
@@ -228,7 +203,7 @@ export default function SuggestionResolutionModal({
                 <DirtyStateButton
                   className="btn-primary text-sm px-4 py-2"
                   dirty={formDirty}
-                  disabled={!motivation.trim() || !resolvedBy.trim() || loading}
+                  disabled={!motivation.trim() || loading}
                   onClick={handleSubmit}
                   type="button"
                 >

@@ -9,11 +9,13 @@ import { devMarker } from '@/lib/developer-mode-markers'
 import type { UseSuggestionWorkflowResult } from './use-suggestion-workflow'
 
 interface ImprovementSuggestionsSectionProps {
+  currentActorName?: string | null
   detailContext?: string
   workflow: UseSuggestionWorkflowResult
 }
 
 export default function ImprovementSuggestionsSection({
+  currentActorName,
   detailContext,
   workflow,
 }: ImprovementSuggestionsSectionProps) {
@@ -159,14 +161,16 @@ export default function ImprovementSuggestionsSection({
       </section>
 
       <SuggestionFormModal
+        currentActorName={currentActorName}
         loading={workflow.suggestionSaving}
         onClose={workflow.closeDialog}
         onSubmit={workflow.handleCreateSuggestion}
         open={workflow.showSuggestionForm}
       />
       <SuggestionFormModal
+        currentActorName={currentActorName}
         initialContent={workflow.editSuggestionTarget?.content ?? ''}
-        initialCreatedBy={workflow.editSuggestionTarget?.createdBy ?? ''}
+        initialCreatedBy={workflow.editSuggestionTarget?.createdBy ?? null}
         loading={workflow.suggestionSaving}
         onClose={workflow.closeDialog}
         onSubmit={workflow.handleEditSuggestion}
@@ -174,6 +178,7 @@ export default function ImprovementSuggestionsSection({
         title={tf('editSuggestion')}
       />
       <SuggestionResolutionModal
+        currentActorName={currentActorName}
         loading={workflow.suggestionSaving}
         onClose={workflow.closeDialog}
         onSubmit={workflow.handleRecordResolution}
