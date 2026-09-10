@@ -157,6 +157,10 @@ async function mockSuggestions(
   )
 
   await page.route('**/api/improvement-suggestions/*', async route => {
+    if (route.request().method() !== 'PUT') {
+      await route.fallback()
+      return
+    }
     const id = Number(route.request().url().split('/').pop())
     const body = route.request().postDataJSON() as { content: string }
     suggestions = suggestions.map(item =>
