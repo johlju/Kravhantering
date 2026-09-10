@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
+import { getSession, isSignedIn } from '@/lib/auth/session'
 import RequirementDetailClient from '../requirement-detail-client'
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -16,8 +17,10 @@ export default async function RequirementVersionPage({
 }) {
   const { id, version } = await params
   const versionNumber = Number(version)
+  const session = await getSession()
   return (
     <RequirementDetailClient
+      currentActorName={isSignedIn(session) ? session.name : null}
       defaultVersion={Number.isNaN(versionNumber) ? undefined : versionNumber}
       requirementId={id}
     />

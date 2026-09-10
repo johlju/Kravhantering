@@ -191,8 +191,8 @@ describe('ImprovementSuggestionsSection', () => {
       within(editDialog).getByLabelText(/content/, { selector: 'textarea' }),
     ).toHaveValue(draftSuggestion.content)
     expect(
-      within(editDialog).getByLabelText(/createdBy/, { selector: 'input' }),
-    ).toHaveValue(draftSuggestion.createdBy)
+      within(editDialog).getByRole('status', { name: 'createdBy' }),
+    ).toHaveTextContent('Alice')
     expect(
       screen.getByRole('dialog', { name: 'recordResolution' }),
     ).toBeInTheDocument()

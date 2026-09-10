@@ -8,6 +8,7 @@ import AnimatedHelpPanel from '@/components/AnimatedHelpPanel'
 import DirtyStateButton from '@/components/DirtyStateButton'
 import FieldHelpButton from '@/components/FieldHelpButton'
 import { modalResizableTextareaRows4ClassName } from '@/components/modal-textarea-class'
+import SuggestionActorContext from '@/components/SuggestionActorContext'
 import { useDiscardChangesConfirmation } from '@/hooks/useDiscardChangesConfirmation'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { devMarker } from '@/lib/developer-mode-markers'
@@ -17,16 +18,18 @@ import { dialogPanelMotion, fadeMotion } from '@/lib/reduced-motion'
 const textareaClassName = `w-full rounded-lg border border-secondary-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-secondary-600 dark:bg-secondary-900 ${modalResizableTextareaRows4ClassName}`
 
 interface SuggestionFormModalProps {
+  currentActorName?: string | null
   initialContent?: string
-  initialCreatedBy?: string
+  initialCreatedBy?: string | null
   loading?: boolean
   onClose: () => void
-  onSubmit: (content: string, createdBy: string) => void
+  onSubmit: (content: string) => void
   open: boolean
   title?: string
 }
 
 export default function SuggestionFormModal({
+  currentActorName,
   initialContent,
   initialCreatedBy,
   loading,
@@ -38,9 +41,8 @@ export default function SuggestionFormModal({
   const tf = useTranslations('improvementSuggestion')
   const tc = useTranslations('common')
   const [content, setContent] = useState('')
-  const [createdBy, setCreatedBy] = useState('')
   const [baselineSignature, setBaselineSignature] = useState(() =>
-    createDirtySnapshot({ content: '', createdBy: '' }),
+    createDirtySnapshot({ content: '' }),
   )
   const [openHelp, setOpenHelp] = useState<Set<string>>(() => new Set())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -51,18 +53,15 @@ export default function SuggestionFormModal({
   useEffect(() => {
     if (open) {
       const nextContent = initialContent ?? ''
-      const nextCreatedBy = initialCreatedBy ?? ''
       setContent(nextContent)
-      setCreatedBy(nextCreatedBy)
       setBaselineSignature(
         createDirtySnapshot({
           content: nextContent,
-          createdBy: nextCreatedBy,
         }),
       )
       setOpenHelp(new Set())
     }
-  }, [open, initialContent, initialCreatedBy])
+  }, [open, initialContent])
 
   const toggleHelp = (field: string) => {
     setOpenHelp(prev => {
@@ -76,8 +75,7 @@ export default function SuggestionFormModal({
     })
   }
 
-  const formDirty =
-    baselineSignature !== createDirtySnapshot({ content, createdBy })
+  const formDirty = baselineSignature !== createDirtySnapshot({ content })
 
   const requestClose = useCallback(
     async (anchorEl?: HTMLElement | null) => {
@@ -101,8 +99,8 @@ export default function SuggestionFormModal({
   const handleSubmit = useCallback(() => {
     if (!content.trim()) return
     if (!formDirty) return
-    onSubmit(content.trim(), createdBy.trim())
-  }, [content, createdBy, formDirty, onSubmit])
+    onSubmit(content.trim())
+  }, [content, formDirty, onSubmit])
 
   if (typeof window === 'undefined') return null
 
@@ -170,36 +168,16 @@ export default function SuggestionFormModal({
                 />
               </div>
 
-              <div>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <label
-                    className="text-sm font-medium text-secondary-900 dark:text-secondary-100"
-                    htmlFor="suggestion-createdBy"
-                  >
-                    {tf('createdBy')}
-                  </label>
-                  <FieldHelpButton
-                    controls="help-createdBy"
-                    expanded={openHelp.has('createdBy')}
-                    label={`${tc('help')}: ${tf('createdBy')}`}
-                    onClick={() => toggleHelp('createdBy')}
-                  />
-                </div>
-                <AnimatedHelpPanel
-                  id="help-createdBy"
-                  isOpen={openHelp.has('createdBy')}
-                >
-                  {tf('createdByHelp')}
-                </AnimatedHelpPanel>
-                <input
-                  className="w-full rounded-lg border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-900 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  id="suggestion-createdBy"
-                  onChange={e => setCreatedBy(e.target.value)}
-                  placeholder={tf('createdByPlaceholder')}
-                  type="text"
-                  value={createdBy}
-                />
-              </div>
+              <SuggestionActorContext
+                currentActorName={currentActorName}
+                helpText={tf(
+                  initialCreatedBy === undefined
+                    ? 'createdByHelp'
+                    : 'originalCreatedByHelp',
+                )}
+                label={tf('createdBy')}
+                recordedName={initialCreatedBy}
+              />
 
               <div className="flex gap-2 justify-end">
                 <button

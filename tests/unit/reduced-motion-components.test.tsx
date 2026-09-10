@@ -23,6 +23,7 @@ vi.mock('@/lib/reduced-motion', async importOriginal => {
 })
 
 vi.mock('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string) => key,
 }))
 

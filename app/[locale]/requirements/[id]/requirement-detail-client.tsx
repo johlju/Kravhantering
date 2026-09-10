@@ -77,6 +77,7 @@ interface SpecificationDeviationPermissions {
 }
 
 interface RequirementDetailClientPropsBase {
+  currentActorName?: string | null
   defaultVersion?: number
   detailCache?: LibraryRequirementDetailCache
   detailPrefetchContext?: RequirementDetailPrefetchContext
@@ -106,6 +107,7 @@ type RequirementDetailClientProps =
   | RequirementDetailClientSpecificationItem
 
 export default function RequirementDetailClient({
+  currentActorName,
   defaultVersion,
   detailCache,
   detailPrefetchContext,
@@ -1154,6 +1156,7 @@ export default function RequirementDetailClient({
             />
 
             <ImprovementSuggestionsSection
+              currentActorName={currentActorName}
               detailContext={detailContext}
               workflow={suggestionWorkflow}
             />

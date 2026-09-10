@@ -14,6 +14,11 @@ const pageState = vi.hoisted(() => ({
   })),
 }))
 
+vi.mock('@/lib/auth/session', () => ({
+  getSession: vi.fn(async () => ({ name: 'Signed-in actor' })),
+  isSignedIn: vi.fn(() => true),
+}))
+
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn(async () => (key: string) => key),
 }))
@@ -47,6 +52,7 @@ import RequirementsPage, {
 
 interface RequirementsPageElementProps {
   aiGenerationAvailability: AiRequirementGenerationAvailability
+  currentActorName: string
   initialColumnDefaults: unknown
 }
 
@@ -85,6 +91,7 @@ describe('requirements page', () => {
       (await RequirementsPage()) as ReactElement<RequirementsPageElementProps>
 
     expect(page.props).toEqual({
+      currentActorName: 'Signed-in actor',
       aiGenerationAvailability: availability,
       initialColumnDefaults: columnDefaults,
     })

@@ -6,8 +6,10 @@ import SuggestionFormModal from '@/components/SuggestionFormModal'
 import SuggestionResolutionModal from '@/components/SuggestionResolutionModal'
 
 const confirmDiscardChangesMock = vi.hoisted(() => vi.fn())
+const localeMock = vi.hoisted(() => ({ value: 'en' }))
 
 vi.mock('next-intl', () => ({
+  useLocale: () => localeMock.value,
   useTranslations: () => (key: string) => key,
 }))
 
@@ -18,6 +20,7 @@ vi.mock('@/hooks/useDiscardChangesConfirmation', () => ({
 describe('SuggestionFormModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localeMock.value = 'en'
     confirmDiscardChangesMock.mockResolvedValue(true)
   })
 
@@ -26,6 +29,7 @@ describe('SuggestionFormModal', () => {
     const user = userEvent.setup()
     const { rerender } = render(
       <SuggestionFormModal
+        currentActorName="Reviewer"
         onClose={vi.fn()}
         onSubmit={onSubmit}
         open={false}
@@ -34,6 +38,7 @@ describe('SuggestionFormModal', () => {
 
     rerender(
       <SuggestionFormModal
+        currentActorName="Reviewer"
         initialContent="Original suggestion"
         initialCreatedBy="Alice"
         onClose={vi.fn()}
@@ -47,13 +52,11 @@ describe('SuggestionFormModal', () => {
     const content = within(dialog).getByLabelText(/content/, {
       selector: 'textarea',
     })
-    const createdBy = within(dialog).getByLabelText(/createdBy/, {
-      selector: 'input',
-    })
+    const createdBy = within(dialog).getByRole('status', { name: 'createdBy' })
     const save = within(dialog).getByRole('button', { name: 'save' })
 
     expect(content).toHaveValue('Original suggestion')
-    expect(createdBy).toHaveValue('Alice')
+    expect(createdBy).toHaveTextContent('Alice')
     expect(save).toBeDisabled()
 
     const contentHelp = within(dialog).getByRole('button', {
@@ -65,26 +68,113 @@ describe('SuggestionFormModal', () => {
     await user.click(contentHelp)
     expect(contentHelp).toHaveAttribute('aria-expanded', 'false')
 
-    const createdByHelp = within(dialog).getByRole('button', {
-      name: 'help: createdBy',
-    })
-    await user.click(createdByHelp)
-    expect(within(dialog).getByText('createdByHelp')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('originalCreatedByHelp'),
+    ).toBeInTheDocument()
 
     await user.clear(content)
     await user.type(content, '  Improved wording  ')
-    await user.clear(createdBy)
-    await user.type(createdBy, '  Bob  ')
     expect(save).toBeEnabled()
 
     await user.click(save)
-    expect(onSubmit).toHaveBeenCalledWith('Improved wording', 'Bob')
+    expect(onSubmit).toHaveBeenCalledWith('Improved wording')
+  })
+
+  it('creates a suggestion using content while showing the authenticated submitter', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <SuggestionFormModal
+        currentActorName="Reviewer"
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+        open
+      />,
+    )
+    const actor = screen.getByRole('status', { name: 'createdBy' })
+    expect(actor).toHaveTextContent('Reviewer')
+    expect(actor.parentElement).toHaveAttribute(
+      'data-developer-mode-value',
+      'suggestion-recorded-actor',
+    )
+    expect(screen.getByRole('button', { name: 'save' })).toBeDisabled()
+    await user.type(
+      screen.getByRole('textbox', { name: /content/ }),
+      '  Clearer criteria  ',
+    )
+    await user.click(screen.getByRole('button', { name: 'save' }))
+    expect(onSubmit).toHaveBeenCalledWith('Clearer criteria')
+  })
+
+  it.each([
+    ['en', 'Anonymous'],
+    ['sv', 'Anonym'],
+  ])('localizes an anonymized original submitter in %s', (locale, expected) => {
+    localeMock.value = locale
+    render(
+      <SuggestionFormModal
+        currentActorName="Reviewer"
+        initialContent="Original"
+        initialCreatedBy="no-user"
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        open
+      />,
+    )
+    expect(screen.getByRole('status', { name: 'createdBy' })).toHaveTextContent(
+      expected,
+    )
+  })
+
+  it('keeps an unknown original submitter distinct from the current actor', () => {
+    render(
+      <SuggestionFormModal
+        currentActorName="Reviewer"
+        initialContent="Original"
+        initialCreatedBy={null}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        open
+      />,
+    )
+    expect(screen.getByRole('status', { name: 'createdBy' })).toHaveTextContent(
+      '—',
+    )
+  })
+
+  it('keeps submission based on content when the actor context is unavailable', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <SuggestionFormModal
+        currentActorName={null}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+        open
+      />,
+    )
+    expect(screen.getByRole('status', { name: 'createdBy' })).toHaveTextContent(
+      'actorUnavailable',
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: /content/ }),
+      'Clearer criteria',
+    )
+    await user.click(screen.getByRole('button', { name: 'save' }))
+    expect(onSubmit).toHaveBeenCalledWith('Clearer criteria')
   })
 
   it('closes a clean form directly and confirms before discarding edits', async () => {
     const onClose = vi.fn()
     const user = userEvent.setup()
-    render(<SuggestionFormModal onClose={onClose} onSubmit={vi.fn()} open />)
+    render(
+      <SuggestionFormModal
+        currentActorName="Reviewer"
+        onClose={onClose}
+        onSubmit={vi.fn()}
+        open
+      />,
+    )
 
     const dialog = screen.getByRole('dialog', { name: 'newSuggestion' })
     const cancel = within(dialog).getByRole('button', { name: 'cancel' })
@@ -112,6 +202,7 @@ describe('SuggestionFormModal', () => {
     const user = userEvent.setup()
     render(
       <SuggestionFormModal
+        currentActorName="Reviewer"
         initialContent="Ready"
         loading
         onClose={onClose}
@@ -129,48 +220,67 @@ describe('SuggestionFormModal', () => {
     await user.keyboard('{Escape}')
     expect(onClose).not.toHaveBeenCalled()
     expect(onSubmit).not.toHaveBeenCalled()
+    expect(await screen.findByText('Reviewer')).toBeInTheDocument()
   })
 })
 
 describe('SuggestionResolutionModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localeMock.value = 'en'
     confirmDiscardChangesMock.mockResolvedValue(true)
   })
 
-  it('requires both text fields and submits a trimmed dismissal', async () => {
-    const onSubmit = vi.fn()
-    const user = userEvent.setup()
-    render(
-      <SuggestionResolutionModal onClose={vi.fn()} onSubmit={onSubmit} open />,
-    )
+  it.each([
+    ['resolve', 1],
+    ['dismiss', 2],
+  ] as const)(
+    'requires motivation and submits the %s outcome without name entry',
+    async (outcome, resolution) => {
+      const onSubmit = vi.fn()
+      const user = userEvent.setup()
+      const { rerender } = render(
+        <SuggestionResolutionModal
+          currentActorName="Reviewer"
+          onClose={vi.fn()}
+          onSubmit={onSubmit}
+          open={false}
+        />,
+      )
+      rerender(
+        <SuggestionResolutionModal
+          currentActorName="Reviewer"
+          onClose={vi.fn()}
+          onSubmit={onSubmit}
+          open
+        />,
+      )
 
-    const dialog = screen.getByRole('dialog', { name: 'recordResolution' })
-    const submit = within(dialog).getByRole('button', {
-      name: 'recordResolution',
-    })
-    expect(within(dialog).getByRole('radio', { name: 'resolve' })).toBeChecked()
-    expect(submit).toBeDisabled()
+      const dialog = screen.getByRole('dialog', { name: 'recordResolution' })
+      const submit = within(dialog).getByRole('button', {
+        name: 'recordResolution',
+      })
+      expect(
+        within(dialog).getByRole('radio', { name: 'resolve' }),
+      ).toBeChecked()
+      expect(submit).toBeDisabled()
 
-    await user.click(within(dialog).getByRole('radio', { name: 'dismiss' }))
-    await user.click(within(dialog).getByRole('radio', { name: 'resolve' }))
-    await user.click(within(dialog).getByRole('radio', { name: 'dismiss' }))
-    await user.type(
-      within(dialog).getByLabelText(/resolutionMotivation/, {
-        selector: 'textarea',
-      }),
-      '  Duplicate request  ',
-    )
-    expect(submit).toBeDisabled()
-    await user.type(
-      within(dialog).getByLabelText(/resolvedBy/, { selector: 'input' }),
-      '  Reviewer  ',
-    )
-    expect(submit).toBeEnabled()
+      expect(await within(dialog).findByText('Reviewer')).toBeInTheDocument()
+      await user.click(within(dialog).getByRole('radio', { name: 'dismiss' }))
+      await user.click(within(dialog).getByRole('radio', { name: outcome }))
+      expect(submit).toBeDisabled()
+      await user.type(
+        within(dialog).getByLabelText(/resolutionMotivation/, {
+          selector: 'textarea',
+        }),
+        '  Duplicate request  ',
+      )
+      expect(submit).toBeEnabled()
 
-    await user.click(submit)
-    expect(onSubmit).toHaveBeenCalledWith(2, 'Duplicate request', 'Reviewer')
-  })
+      await user.click(submit)
+      expect(onSubmit).toHaveBeenCalledWith(resolution, 'Duplicate request')
+    },
+  )
 
   it('toggles help and protects dirty work on cancel and Escape', async () => {
     confirmDiscardChangesMock
@@ -179,7 +289,12 @@ describe('SuggestionResolutionModal', () => {
     const onClose = vi.fn()
     const user = userEvent.setup()
     render(
-      <SuggestionResolutionModal onClose={onClose} onSubmit={vi.fn()} open />,
+      <SuggestionResolutionModal
+        currentActorName="Reviewer"
+        onClose={onClose}
+        onSubmit={vi.fn()}
+        open
+      />,
     )
 
     const dialog = screen.getByRole('dialog', { name: 'recordResolution' })
@@ -193,10 +308,6 @@ describe('SuggestionResolutionModal', () => {
     await user.click(motivationHelp)
     expect(motivationHelp).toHaveAttribute('aria-expanded', 'false')
 
-    const resolvedByHelp = within(dialog).getByRole('button', {
-      name: 'help: resolvedBy',
-    })
-    await user.click(resolvedByHelp)
     expect(within(dialog).getByText('resolvedByHelp')).toBeInTheDocument()
 
     await user.type(
@@ -219,7 +330,12 @@ describe('SuggestionResolutionModal', () => {
     const onClose = vi.fn()
     const user = userEvent.setup()
     const { rerender } = render(
-      <SuggestionResolutionModal onClose={onClose} onSubmit={vi.fn()} open />,
+      <SuggestionResolutionModal
+        currentActorName="Reviewer"
+        onClose={onClose}
+        onSubmit={vi.fn()}
+        open
+      />,
     )
 
     const cancel = screen.getByRole('button', { name: 'cancel' })
@@ -229,6 +345,7 @@ describe('SuggestionResolutionModal', () => {
 
     rerender(
       <SuggestionResolutionModal
+        currentActorName="Reviewer"
         loading
         onClose={onClose}
         onSubmit={vi.fn()}
@@ -247,6 +364,7 @@ describe('SuggestionResolutionModal', () => {
       expect(
         renderToString(
           <SuggestionResolutionModal
+            currentActorName="Reviewer"
             onClose={vi.fn()}
             onSubmit={vi.fn()}
             open

@@ -1325,11 +1325,23 @@ välj ett testunderlag.
 
 ### COL-02: registrera förbättringsförslag
 
-**Steg:** Öppna ett krav och skapa ett förbättringsförslag. Försök lösa eller
-avvisa förslaget innan granskning begärts.
+**Steg:** Öppna ett krav och registrera ett förbättringsförslag. Kontrollera
+att din inloggade identitet visas som skrivskyddad information under
+Inskickad av. Fyll i innehållet och spara. Försök lösa eller avvisa förslaget
+innan granskning begärts.
 
-**Förväntat resultat:** Förslaget visas med rätt status och skapare.
-Åtgärderna för att lösa eller avvisa är inte tillgängliga före granskning.
+**Förväntat resultat:** Förslaget visas som utkast med samma inloggade person
+som skapare. Ingen namninmatning krävs. Åtgärderna för att lösa eller avvisa
+är inte tillgängliga före granskning.
+
+### COL-02a: redigera förbättringsförslag med ursprunglig skapare
+
+**Steg:** Öppna ett redigerbart förslag som skapats av en annan person.
+Kontrollera Inskickad av, ändra innehållet och spara.
+
+**Förväntat resultat:** Den ursprungliga skaparen visas som skrivskyddad
+information och behålls efter sparandet. Spara aktiveras när innehållet
+ändras. Skaparen kan inte tilldelas om.
 
 ### COL-03: begär granskning av förbättringsförslag
 
@@ -1339,19 +1351,26 @@ avvisa förslaget innan granskning begärts.
 
 ### COL-04: lös förbättringsförslag
 
-**Steg:** Öppna ett granskningsbart förslag, ange lösningskommentar och lös.
-Försök därefter fatta ett nytt beslut om samma förslag.
+**Steg:** Öppna ett granskningsbart förslag och kontrollera att din inloggade
+identitet visas som skrivskyddad information under Granskad av. Välj Åtgärda,
+ange motivering och registrera åtgärden. Ladda om kravets detaljvy och
+kontrollera förslaget. Försök fatta ett nytt beslut om samma förslag.
 
-**Förväntat resultat:** Förslaget markeras som löst och kan inte lösas eller
+**Förväntat resultat:** Motivering krävs, men ingen namninmatning. Förslaget
+markeras som åtgärdat och visar samma inloggade person både efter sparandet
+och i förslagets historik efter omladdning. Förslaget kan inte lösas eller
 avvisas en gång till.
 
 ### COL-05: avvisa förbättringsförslag
 
-**Steg:** Öppna ett granskningsbart förslag och avvisa med motivering. Försök
-därefter fatta ett nytt beslut om samma förslag.
+**Steg:** Öppna ett granskningsbart förslag och kontrollera den skrivskyddade
+identiteten under Granskad av. Välj Avvisa och ange motivering utan att fylla
+i något namn. Spara och ladda om kravets detaljvy. Försök därefter fatta ett
+nytt beslut om samma förslag.
 
-**Förväntat resultat:** Förslaget får avvisad status, motiveringen sparas och
-förslaget kan inte lösas eller avvisas en gång till.
+**Förväntat resultat:** Förslaget får avvisad status. Motiveringen och samma
+inloggade person visas efter sparandet och i historiken efter omladdning.
+Förslaget kan inte lösas eller avvisas en gång till.
 
 ### COL-06: rapport för förslagshistorik innehåller förslag
 

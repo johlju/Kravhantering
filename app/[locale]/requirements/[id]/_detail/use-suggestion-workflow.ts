@@ -53,16 +53,15 @@ export interface UseSuggestionWorkflowResult {
   closeDialog: () => void
   editSuggestionTarget: SuggestionData | null
   getSuggestionStep: (suggestion: SuggestionData) => SuggestionStep
-  handleCreateSuggestion: (content: string, createdBy: string) => Promise<void>
+  handleCreateSuggestion: (content: string) => Promise<void>
   handleDeleteSuggestion: (
     suggestionId: number,
     event?: MouseEvent<HTMLButtonElement>,
   ) => Promise<void>
-  handleEditSuggestion: (content: string, createdBy: string) => Promise<void>
+  handleEditSuggestion: (content: string) => Promise<void>
   handleRecordResolution: (
     resolution: 1 | 2,
     motivation: string,
-    resolvedBy: string,
   ) => Promise<void>
   handleSuggestionRequestReview: (suggestionId: number) => Promise<void>
   handleSuggestionRevertToDraft: (
@@ -177,7 +176,7 @@ export function useSuggestionWorkflow({
   const resolutionTarget = dialog.mode === 'resolution' ? dialog.target : null
 
   const handleCreateSuggestion = useCallback(
-    async (content: string, createdBy: string) => {
+    async (content: string) => {
       if (!content || resolvedRequirementId == null) return
       setSuggestionSaving(true)
       try {
@@ -192,7 +191,6 @@ export function useSuggestionWorkflow({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               content,
-              createdBy: createdBy || null,
               requirementVersionId: versionId,
             }),
           },
@@ -216,7 +214,7 @@ export function useSuggestionWorkflow({
   )
 
   const handleEditSuggestion = useCallback(
-    async (content: string, _createdBy: string) => {
+    async (content: string) => {
       if (!editSuggestionTarget || !content) return
       setSuggestionSaving(true)
       try {
@@ -311,7 +309,7 @@ export function useSuggestionWorkflow({
   )
 
   const handleRecordResolution = useCallback(
-    async (resolution: 1 | 2, motivation: string, resolvedBy: string) => {
+    async (resolution: 1 | 2, motivation: string) => {
       if (!resolutionTarget) return
       setSuggestionSaving(true)
       try {
@@ -323,7 +321,6 @@ export function useSuggestionWorkflow({
             body: JSON.stringify({
               resolution,
               resolutionMotivation: motivation,
-              resolvedBy,
             }),
           },
           suggestionResolutionFailed,

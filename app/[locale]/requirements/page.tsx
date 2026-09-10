@@ -4,6 +4,7 @@ import {
   type AiRequirementGenerationAvailability,
   DEFAULT_AI_REQUIREMENT_GENERATION_AVAILABILITY,
 } from '@/lib/ai/generation-availability'
+import { getSession, isSignedIn } from '@/lib/auth/session'
 import {
   formatAiSettingsLoadError,
   getAiGenerationAvailability,
@@ -71,9 +72,11 @@ export default async function RequirementsPage() {
     }
   }
 
+  const session = await getSession()
   return (
     <RequirementsClient
       aiGenerationAvailability={aiGenerationAvailability}
+      currentActorName={isSignedIn(session) ? session.name : null}
       initialColumnDefaults={initialColumnDefaults}
     />
   )

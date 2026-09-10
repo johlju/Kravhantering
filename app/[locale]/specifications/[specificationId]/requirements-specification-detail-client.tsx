@@ -481,9 +481,11 @@ function hasSpecificationListFilters(filters: FilterValues): boolean {
 }
 
 export default function KravunderlagDetailClient({
+  currentActorName,
   initialData,
   specificationId,
 }: {
+  currentActorName?: string | null
   initialData: RequirementsSpecificationDetailInitialData
   specificationId: number
 }) {
@@ -3549,6 +3551,7 @@ export default function KravunderlagDetailClient({
                             />
                           ) : item?.specificationItemId != null ? (
                             <RequirementDetailClient
+                              currentActorName={currentActorName}
                               detailCache={libraryDetailCache}
                               detailPrefetchContext={
                                 SPECIFICATION_LEFT_LIBRARY_DETAIL_CONTEXT
@@ -3579,6 +3582,7 @@ export default function KravunderlagDetailClient({
                             />
                           ) : (
                             <RequirementDetailClient
+                              currentActorName={currentActorName}
                               detailCache={libraryDetailCache}
                               detailPrefetchContext={
                                 SPECIFICATION_LEFT_LIBRARY_DETAIL_CONTEXT
@@ -3964,6 +3968,7 @@ export default function KravunderlagDetailClient({
                       onVisibleColumnsChange={setRightVisibleCols}
                       renderExpanded={id => (
                         <RequirementDetailClient
+                          currentActorName={currentActorName}
                           detailCache={libraryDetailCache}
                           detailPrefetchContext={
                             SPECIFICATION_RIGHT_LIBRARY_DETAIL_CONTEXT

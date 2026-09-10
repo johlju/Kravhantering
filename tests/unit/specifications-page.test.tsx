@@ -10,6 +10,11 @@ const navigationMocks = vi.hoisted(() => ({
   }),
 }))
 
+vi.mock('@/lib/auth/session', () => ({
+  getSession: vi.fn(async () => ({ name: 'Signed-in actor' })),
+  isSignedIn: vi.fn(() => true),
+}))
+
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn(async () => (key: string) => key),
 }))
@@ -106,6 +111,7 @@ describe('specifications pages', () => {
       params: Promise.resolve({ locale: 'unsupported', specificationId: '8' }),
     })
 
+    expect(element.props.currentActorName).toBe('Signed-in actor')
     render(element)
     expect(
       screen.getByText('RequirementsSpecificationDetailClient mounted: 8 (1)'),
