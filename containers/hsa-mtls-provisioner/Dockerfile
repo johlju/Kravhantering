@@ -35,6 +35,7 @@ USER 0:0
 ENV HOME=/root
 
 RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
   microdnf --disablerepo='*' --enablerepo=ubi-10-baseos-rpms install -y \
     "ca-certificates-${CA_CERTIFICATES_VERSION}" \
     "openssl-${OPENSSL_VERSION}" \

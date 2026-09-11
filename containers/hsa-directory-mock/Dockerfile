@@ -17,6 +17,9 @@ WORKDIR /app
 COPY containers/hsa-directory-mock/package.json containers/hsa-directory-mock/package-lock.json containers/hsa-directory-mock/.npmrc ./
 RUN npm install --global "npm@$(node -p 'require("./package.json").packageManager.slice(4)')"
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+RUN --mount=type=bind,source=scripts/containers/copy-runtime-notices.mjs,target=/tmp/copy-runtime-notices.mjs \
+  --mount=type=bind,source=containers/node/npm-notices,target=/tmp/npm-notices \
+  node /tmp/copy-runtime-notices.mjs . . /tmp/npm-notices
 
 FROM ${UBI_RUNTIME_IMAGE}
 
@@ -44,12 +47,14 @@ ENV HOME=/home/node
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NPM_CONFIG_PREFIX=/usr/local
 RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
   sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV NODE_ENV=production
 WORKDIR /app/containers/hsa-directory-mock
 
 COPY --from=dependencies --chown=1000:1000 /app/node_modules ./node_modules
+COPY --from=dependencies --chown=1000:1000 /app/third-party-notices ./third-party-notices
 COPY --chown=1000:1000 containers/hsa-directory-mock/package.json ./
 COPY --chown=1000:1000 containers/hsa-directory-mock/fixtures ./fixtures
 COPY --chown=1000:1000 containers/hsa-directory-mock/src ./src

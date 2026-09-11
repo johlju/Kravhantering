@@ -47,6 +47,8 @@ ENV NODE_ENV=production
 
 COPY . .
 RUN npm run build
+RUN node scripts/containers/copy-runtime-notices.mjs \
+  .next/standalone . containers/node/npm-notices
 
 FROM ${UBI_BUILDER_IMAGE} AS db-job-dependencies
 
@@ -83,6 +85,9 @@ fs.writeFileSync('package-lock.json', `${JSON.stringify(packageLock, null, 2)}\n
 NODE
 npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
 EOF
+RUN --mount=type=bind,source=scripts/containers/copy-runtime-notices.mjs,target=/tmp/copy-runtime-notices.mjs \
+  --mount=type=bind,source=containers/node/npm-notices,target=/tmp/npm-notices \
+  node /tmp/copy-runtime-notices.mjs . . /tmp/npm-notices
 
 FROM ${UBI_RUNTIME_IMAGE} AS app-runtime
 
@@ -110,6 +115,7 @@ ENV HOME=/home/node
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NPM_CONFIG_PREFIX=/usr/local
 RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
   sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV HOSTNAME=0.0.0.0
@@ -154,6 +160,7 @@ ENV HOME=/home/node
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NPM_CONFIG_PREFIX=/usr/local
 RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
   sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -163,6 +170,7 @@ ENV KRAVHANTERING_DB_ADMIN_IMAGE=db-job
 WORKDIR /workspace
 
 COPY --from=db-job-dependencies --chown=1000:1000 /workspace/node_modules ./node_modules
+COPY --from=db-job-dependencies --chown=1000:1000 /workspace/third-party-notices ./third-party-notices
 COPY --chown=1000:1000 package.json package-lock.json ./
 COPY --chown=1000:1000 scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
 COPY --chown=1000:1000 scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs
@@ -206,6 +214,7 @@ ENV HOME=/home/node
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NPM_CONFIG_PREFIX=/usr/local
 RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
   sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -215,6 +224,7 @@ ENV KRAVHANTERING_DB_ADMIN_IMAGE=demo-seed
 WORKDIR /workspace
 
 COPY --from=db-job-dependencies --chown=1000:1000 /workspace/node_modules ./node_modules
+COPY --from=db-job-dependencies --chown=1000:1000 /workspace/third-party-notices ./third-party-notices
 COPY --chown=1000:1000 package.json package-lock.json ./
 COPY --chown=1000:1000 scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
 COPY --chown=1000:1000 scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs

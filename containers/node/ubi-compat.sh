@@ -21,6 +21,12 @@ chmod 0755 /home/node
 mkdir -p /usr/share/licenses/ubi
 cp "$(dirname "$0")/UBI-EULA.pdf" /usr/share/licenses/ubi/UBI-EULA.pdf
 chmod 0644 /usr/share/licenses/ubi/UBI-EULA.pdf
+mkdir -p /usr/share/licenses/kravhantering
+cp /tmp/kravhantering-LICENSE /usr/share/licenses/kravhantering/LICENSE
+chmod 0644 /usr/share/licenses/kravhantering/LICENSE
+mkdir -p /usr/share/licenses/nodejs-nodemon
+cp "$(dirname "$0")/nodejs-nodemon-LICENSE" /usr/share/licenses/nodejs-nodemon/LICENSE
+chmod 0644 /usr/share/licenses/nodejs-nodemon/LICENSE
 
 # Production cleanup jobs use this absolute executable path.
 mkdir -p /usr/local/bin
