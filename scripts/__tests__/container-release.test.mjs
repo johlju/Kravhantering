@@ -1043,6 +1043,7 @@ describe('trusted container release helpers', () => {
   })
 
   it.each([
+    'docs/development/trusted-container-publishing.md',
     'docs/operations/rhel10-production-single-node-self-contained-upgrade.md',
     'docs/operations/release-artifact-and-image-verification.md',
   ])('treats bundled guide %s as release-relevant', guide => {
@@ -2175,6 +2176,12 @@ describe('trusted container release helpers', () => {
         expect(
           fs.readFileSync(path.join(result.bundleRoot, verificationGuide)),
         ).toEqual(fs.readFileSync(path.join(REPO_ROOT, verificationGuide)))
+        const publishingGuide =
+          'docs/development/trusted-container-publishing.md'
+        expect(result.manifest.files).toContain(publishingGuide)
+        expect(
+          fs.readFileSync(path.join(result.bundleRoot, publishingGuide)),
+        ).toEqual(fs.readFileSync(path.join(REPO_ROOT, publishingGuide)))
         expect(result.files).toContain(
           'docs/operations/production-quadlet-containment.md',
         )

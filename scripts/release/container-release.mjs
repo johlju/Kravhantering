@@ -63,6 +63,7 @@ const RELEVANT_PATH_PREFIXES = [
   'package-lock.json',
   'package.json',
   'public/',
+  'docs/development/trusted-container-publishing.md',
   'docs/images/',
   'docs/operations/api-docs-edge-verification.md',
   'docs/operations/operator-upgrade-notes.md',
@@ -98,6 +99,10 @@ const RELEVANT_PATH_PREFIXES = [
 ]
 
 export const DEPLOYMENT_BUNDLE_STATIC_ENTRIES = [
+  {
+    source: 'docs/development/trusted-container-publishing.md',
+    target: 'docs/development/trusted-container-publishing.md',
+  },
   {
     source: 'docs/operations/release-artifact-and-image-verification.md',
     target: 'docs/operations/release-artifact-and-image-verification.md',

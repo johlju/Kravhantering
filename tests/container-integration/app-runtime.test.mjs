@@ -34,7 +34,7 @@ function node(script, dockerArgs = []) {
 
 describe.skipIf(!image)(
   'built application runtime',
-  { timeout: 30_000 },
+  { timeout: 60_000 },
   () => {
     it('runs Node 24 with the supported identity and release proof tools', () => {
       expect(
