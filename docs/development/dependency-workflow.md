@@ -174,10 +174,42 @@ the expected Dockerfile reference from the lock rather than storing its version.
 The HSA support Dockerfiles are shared by development and release builds. Their
 Node base references retain the production tag-and-digest identity in both
 contexts so local HSA support uses the same build inputs as release artifacts.
-The Node drift detector requires the app and every registered HSA support and
-topology Dockerfile to use one coordinated identity. Its detector-supported
-surface list must remain aligned with the dynamically validated maintenance
-registry.
+The Node drift detector discovers direct references and ARG defaults and
+requires every remaining Docker Official Node input, including the HSA topology
+helper, to use one coordinated immutable identity. Registered paths may shrink
+as workloads adopt UBI; newly introduced paths must have exactly one owner.
+
+## UBI Node Builder and Runtime Maintenance
+
+The `ubi-node-builder` and `ubi-node-runtime` units independently select public
+UBI 10 Node.js 24 inputs. Each unit's `selectedReference` in
+`.github/dependency-maintenance.json` is its immutable build selection. The
+registry records the evaluated digest before any Dockerfile adopts it, so
+maintenance remains active throughout incremental adoption.
+
+Update only the role named by the drift issue. Update its `selectedReference`
+and every discovered direct `FROM` reference and image ARG default together.
+The coverage check rejects ambiguous ownership, unresolved ARG references,
+and a role reference that differs from its selected digest. Keep remaining
+Docker Official Node and vendor image lanes registered, including the HSA
+topology helper. UBI inputs do not use the vendor `image.lock.json` format.
+
+The weekly Dependency Drift workflow and its manual unit choices query
+`registry.access.redhat.com` anonymously. Numeric UBI 10 version/revision tags
+advance within the selected Node 24 repository; source tags and other major
+versions are excluded. A selected `latest` channel stays on that channel and
+reports changed digests. Every selected reference includes a SHA-256 digest;
+`latest` alone is never a build or deployment identity. When the registry
+publishes an index, the selected digest identifies that index; detection also
+resolves the Linux AMD64 manifest and image ID.
+
+Use `resolve-dependency-drift` for reviewed updates and the existing issue
+lifecycle for target deduplication, deferrals, and fresh issues after unresolved
+closure or deferral expiry. Verify the exact replacement input through existing
+image and release checks, then deliver a new immutable project release through
+the normal publishing path. Installed releases do not follow moving base tags.
+The requirement is no-cost anonymous Node 24 update eligibility through at least
+April 2028; current anonymous access does not guarantee future availability.
 
 ## Rolling Development Tool Integrity
 

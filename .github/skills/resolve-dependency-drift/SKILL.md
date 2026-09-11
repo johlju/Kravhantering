@@ -34,7 +34,8 @@ disable-model-invocation: true
    - **Container image:** Resolve the requested upstream tag, multi-platform
      index when published, and Linux AMD64 platform manifest. For
      `devcontainer-base`, record the index digest as `manifestDigest` and the
-     AMD64 image config digest as `imageId`. For other image lanes, preserve
+     AMD64 image config digest as `imageId`. Apply the UBI policy below for
+     `ubi-node-builder` and `ubi-node-runtime`. For other image lanes, preserve
      their existing platform-manifest identity policy. Update every dynamically
      discovered synchronized surface without changing release-lane policy.
    - **Lychee toolchain:** Update both installer version constants, the CI
@@ -67,9 +68,10 @@ disable-model-invocation: true
   standalone development tools when their distribution integrity is verified
   or ADR 0045 records an explicit exception. Do not replace those channels with
   routine version pins.
-- Broad image tags such as `latest` are forbidden for externally sourced
-  service and base images. Repository-local build outputs do not require an
-  explicit Compose `image` or canonical image lock.
+- Keep externally sourced service and base images on their lane's explicit
+  identity policy. UBI permits `latest` only with its selected SHA-256 digest;
+  other lanes require a non-`latest` tag. Repository-local build outputs do
+  not require an explicit Compose `image` or canonical image lock.
 - Preserve each image lane's identity policy. Production and release
   references keep their required immutable identities. ADR 0045 development
   references backed by canonical image locks stay explicit, non-`latest`,
@@ -82,3 +84,28 @@ disable-model-invocation: true
 - Never approve all lifecycle scripts or update an image lock tag without its
   required immutable identities.
 - Do not leave research artifacts in the repository.
+
+## UBI Node Role Updates
+
+- Treat `ubi-node-builder` and `ubi-node-runtime` as independent inputs.
+- Read `selectedReference` and registered paths from the named unit in
+  `.github/dependency-maintenance.json`. Discover direct references and ARG
+  defaults; update every reference for that role and its selection together.
+- Preserve public `registry.access.redhat.com/ubi10/nodejs-24` and
+  `registry.access.redhat.com/ubi10/nodejs-24-minimal` repositories. Query tags
+  and manifests anonymously, without private Red Hat credentials.
+- Keep Node 24 and UBI 10. Resolve supported numeric version/revision tags or a
+  changed digest under the selected `latest` channel. Pin the returned index
+  digest when published, otherwise the manifest digest; verify the Linux AMD64
+  manifest and image ID. A moving tag alone cannot be selected.
+- Keep remaining Docker Official Node inputs, including the topology helper,
+  owned and synchronized during incremental adoption.
+- Verify exact replacement inputs through existing image, package, SBOM,
+  vulnerability, and production smoke checks. Escalate a demonstrated
+  worse-than-current result with comparable evidence and a recommendation;
+  distinguish baseline/environment failures and unavailable comparisons.
+- Preserve no-cost anonymous Node 24 update eligibility through at least April
+  2028 as a requirement; verify current access without promising future access.
+- Deliver updates as new immutable project releases through existing release
+  controls. Keep target-specific issues, reviewed deferrals, and fresh issues
+  after unresolved closure or expiry; closed issues stay closed.

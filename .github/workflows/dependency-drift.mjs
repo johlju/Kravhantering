@@ -7,6 +7,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   DEVCONTAINER_BASE_TAG_PATTERN,
+  discoverDockerfileInputs,
+  parseUbiNodeTag,
+  readUbiSelectedReference,
+  UBI_NODE_IMAGES,
   validateDependencyMaintenance,
 } from '../../scripts/dependency-maintenance.mjs'
 import { packageManagerVersion } from '../../scripts/install-repository-npm.mjs'
@@ -51,6 +55,31 @@ const LYCHEE_AUXILIARY_SURFACES = new Set([
 ])
 
 export const IMAGE_CONFIGS = {
+  ...Object.fromEntries(
+    Object.entries(UBI_NODE_IMAGES).map(([name, image]) => {
+      const registryRepository = image.slice(
+        'registry.access.redhat.com/'.length,
+      )
+      return [
+        name,
+        {
+          image,
+          name,
+          registryRepository,
+          indexDigest: true,
+          registryHost: 'registry.access.redhat.com',
+          listTags: () =>
+            fetchRegistryTags('registry.access.redhat.com', registryRepository),
+          parseTag: parseUbiNodeTag,
+          versionSortValue: version => [
+            version.major,
+            version.minor,
+            version.revision,
+          ],
+        },
+      ]
+    }),
+  ),
   'devcontainer-base': {
     image: 'mcr.microsoft.com/devcontainers/base',
     indexDigest: true,
@@ -464,6 +493,9 @@ export function selectAvailableVersion(config, tags, currentTag, options = {}) {
   if (!current) {
     throw new Error(`${config.name} tag "${currentTag}" is unsupported.`)
   }
+  // The selected latest channel changes through its immutable digest. Numeric
+  // UBI tags advance within the supported Node 24 / UBI 10 repository.
+  if (UBI_NODE_IMAGES[config.name] && currentTag === 'latest') return current
   let selected = current
   for (const tag of tags) {
     const candidate = config.parseTag(tag)
@@ -490,16 +522,23 @@ function imageStatesDiffer(current, available) {
 
 export function readNodeCurrent(config, root = process.cwd()) {
   const states = []
-  for (const dockerfilePath of config.paths) {
-    const source = fs.readFileSync(path.join(root, dockerfilePath), 'utf8')
-    for (const match of source.matchAll(
-      /^FROM node:(?<tag>[^@\s]+)@(?<digest>sha256:[a-f0-9]{64})(?:\s+AS\s+\S+)?$/gimu,
-    )) {
-      states.push({
-        manifestDigest: match.groups.digest,
-        tag: match.groups.tag,
-      })
+  for (const input of discoverDockerfileInputs(root).filter(
+    input => input.image === config.image,
+  )) {
+    if (!config.paths.includes(input.path)) {
+      throw new Error(
+        `Production Node input "${input.path}" is not owned by its maintenance unit.`,
+      )
     }
+    const match = input.reference.match(
+      /:(?<tag>[^@\s]+)@(?<digest>sha256:[a-f0-9]{64})$/u,
+    )
+    if (!match?.groups || !parseNodeTag(match.groups.tag)) {
+      throw new Error(
+        `Production Node input "${input.path}" must pin a supported tag and digest.`,
+      )
+    }
+    states.push({ manifestDigest: match.groups.digest, tag: match.groups.tag })
   }
   if (states.length === 0) {
     throw new Error('No production Node base image references were found.')
@@ -511,21 +550,6 @@ export function readNodeCurrent(config, root = process.cwd()) {
     throw new Error('Production Node base image references are not aligned.')
   }
   return { ...states[0], imageId: null }
-}
-
-function nodeDetectorConfig(config, unit) {
-  const registeredPaths = Array.isArray(unit.paths) ? unit.paths : []
-  const supportedPaths = config.paths
-  if (
-    registeredPaths.length !== supportedPaths.length ||
-    new Set(registeredPaths).size !== registeredPaths.length ||
-    registeredPaths.some(relativePath => !supportedPaths.includes(relativePath))
-  ) {
-    throw new Error(
-      'Production Node registry paths do not match the detector-supported surfaces.',
-    )
-  }
-  return { ...config, paths: registeredPaths }
 }
 
 function readLockCurrent(config, root) {
@@ -543,6 +567,23 @@ function readLockCurrent(config, root) {
   }
 }
 
+function readUbiCurrent(unit, root) {
+  const current = readUbiSelectedReference(unit)
+  for (const input of discoverDockerfileInputs(root).filter(
+    input => input.image === unit.image,
+  )) {
+    if (
+      !unit.paths?.includes(input.path) ||
+      input.reference !== unit.selectedReference
+    ) {
+      throw new Error(
+        `UBI unit "${unit.id}" references are unowned or not aligned in ${input.path}.`,
+      )
+    }
+  }
+  return current
+}
+
 export async function detectImageDrift(
   unit,
   root = process.cwd(),
@@ -553,9 +594,10 @@ export async function detectImageDrift(
   const listTags = dependencies.listTags ?? config.listTags
   const resolveIdentity =
     dependencies.resolveImageIdentity ?? resolveImageIdentity
-  const current =
-    config.name === 'node'
-      ? readNodeCurrent(nodeDetectorConfig(config, unit), root)
+  const current = UBI_NODE_IMAGES[config.name]
+    ? readUbiCurrent(unit, root)
+    : config.name === 'node'
+      ? readNodeCurrent({ ...config, paths: unit.paths ?? [] }, root)
       : readLockCurrent(config, root)
   const tags = await listTags()
   const sameLaneVersion = selectAvailableVersion(config, tags, current.tag, {
@@ -573,6 +615,9 @@ export async function detectImageDrift(
       drift: true,
       skill: unit.skill,
       unit: unit.id,
+      ...(UBI_NODE_IMAGES[unit.detector]
+        ? { paths: ['.github/dependency-maintenance.json', ...unit.paths] }
+        : {}),
     }
   }
 
@@ -590,6 +635,9 @@ export async function detectImageDrift(
     drift: imageStatesDiffer(current, available),
     skill: unit.skill,
     unit: unit.id,
+    ...(UBI_NODE_IMAGES[unit.detector]
+      ? { paths: ['.github/dependency-maintenance.json', ...unit.paths] }
+      : {}),
   }
 }
 

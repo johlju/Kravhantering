@@ -278,6 +278,100 @@ updates:
 })
 
 describe('dependency maintenance policy', () => {
+  it.each(['latest', '10.2-source', '11.0-1788245909', '10.2@bad:latest'])(
+    'rejects invalid immutable UBI selection %s',
+    tag => {
+      const root = fixture()
+      const registry = JSON.parse(
+        fs.readFileSync(
+          path.join(root, '.github/dependency-maintenance.json'),
+          'utf8',
+        ),
+      )
+      const unit = registry.units.find(unit => unit.id === 'ubi-node-builder')
+      unit.selectedReference = `${unit.image}:${tag}${tag === 'latest' ? '' : `@${digest('a')}`}`
+      expect(validateDependencyMaintenance(root, registry)).toContain(
+        'UBI unit "ubi-node-builder" must select its public Node 24 repository with a supported tag and sha256 digest.',
+      )
+    },
+  )
+
+  it('rejects missing, duplicate, or unowned UBI role inputs', () => {
+    const root = fixture()
+    const registry = JSON.parse(
+      fs.readFileSync(
+        path.join(root, '.github/dependency-maintenance.json'),
+        'utf8',
+      ),
+    )
+    const builder = registry.units.find(unit => unit.id === 'ubi-node-builder')
+    write(
+      root,
+      'containers/app/Dockerfile',
+      `FROM ${builder.selectedReference}\n`,
+    )
+    expect(
+      validateDependencyMaintenance(root, {
+        ...registry,
+        units: registry.units.filter(unit => unit !== builder),
+      }),
+    ).toContain(
+      `Docker input "containers/app/Dockerfile" (${builder.image}) routes to 0 maintenance lanes.`,
+    )
+    expect(
+      validateDependencyMaintenance(root, {
+        ...registry,
+        units: [...registry.units, { ...builder, id: 'duplicate-builder' }],
+      }),
+    ).toContain(
+      `Docker input "containers/app/Dockerfile" (${builder.image}) routes to 2 maintenance lanes.`,
+    )
+    write(
+      root,
+      'containers/new-service/Dockerfile',
+      `FROM ${builder.selectedReference}\n`,
+    )
+    expect(validateDependencyMaintenance(root)).toContain(
+      `Docker input "containers/new-service/Dockerfile" (${builder.image}) routes to 0 maintenance lanes.`,
+    )
+    builder.paths = []
+    expect(validateDependencyMaintenance(root, registry)).toContain(
+      'UBI unit "ubi-node-builder" must declare unique synchronized Dockerfile paths.',
+    )
+  })
+
+  it('owns immutable UBI roles before and during incremental adoption', () => {
+    const root = fixture()
+    const registry = JSON.parse(
+      fs.readFileSync(
+        path.join(root, '.github/dependency-maintenance.json'),
+        'utf8',
+      ),
+    )
+    const builder = registry.units.find(unit => unit.id === 'ubi-node-builder')
+    const runtime = registry.units.find(unit => unit.id === 'ubi-node-runtime')
+    expect(builder?.selectedReference).toMatch(
+      /nodejs-24:latest@sha256:[a-f0-9]{64}$/u,
+    )
+    expect(runtime?.selectedReference).toMatch(
+      /nodejs-24-minimal:latest@sha256:[a-f0-9]{64}$/u,
+    )
+    write(
+      root,
+      'containers/app/Dockerfile',
+      `ARG BUILDER=${builder.selectedReference}\nARG RUNTIME=${runtime.selectedReference}\nFROM $BUILDER AS build\nFROM $RUNTIME AS runtime\n`,
+    )
+    expect(validateDependencyMaintenance(root)).toEqual([])
+    write(
+      root,
+      'containers/app/Dockerfile',
+      `FROM ${builder.selectedReference} AS build\nFROM ${runtime.selectedReference.replace(/sha256:[a-f0-9]{64}/u, digest('a'))} AS runtime\n`,
+    )
+    expect(validateDependencyMaintenance(root)).toContain(
+      'Docker input "containers/app/Dockerfile" is not synchronized with "ubi-node-runtime" selectedReference.',
+    )
+  })
+
   it('accepts the repository registry and discovered coverage', () => {
     expect(validateDependencyMaintenance(fixture())).toEqual([])
   })
