@@ -59,6 +59,38 @@ These checks exercise the selected local image's identity, commands, native
 processing, standalone assets, filesystem containment, and startup rejection.
 They do not replace the exact-candidate SBOM, policy, or production smoke gates.
 
+## Database Job UBI Inputs
+
+The database dependency stage uses the same public UBI builder pin and npm
+policy. It installs only the locked `mssql`, `reflect-metadata`, and `typeorm`
+subset with development and optional packages omitted and install scripts
+disabled. The separate demo image reuses this dependency stage.
+
+The production `db-job` uses the minimal runtime pin and shared compatibility
+adaptation. Its default command remains `health`; migration, required seeds,
+runtime permission reconciliation, and provider-secret maintenance retain their
+existing CLI. Demo-only seed and clear commands remain restricted to the demo
+image. Compiled transient cleanup uses `/usr/local/bin/node`, supplied by the
+shared adaptation, so the existing scheduled service needs no command change.
+The supported identity remains UID/GID `1000:1000`, including numeric
+administrative overrides, read-only roots, and the existing temporary mount.
+SQL Server encryption and certificate verification settings remain unchanged.
+
+For focused local image checks:
+
+```bash
+npm run container:build:db-job
+KRAVHANTERING_DB_JOB_IMAGE=localhost/kravhantering/db-job:local \
+  npx vitest run tests/container-integration/db-job.test.mjs
+```
+
+These checks exercise identity, the database package subset, filesystem
+containment, the compiled cleanup command, and rejected administrative
+commands. Verify database connectivity, migration and permission outcomes with
+a disposable SQL Server database using the
+[SQL Server developer workflow](./sql-server-developer-workflow.md).
+The production smoke gate supplies the integrated deployment evidence.
+
 ## Candidate Verification
 
 Syft generates an SBOM directly from each candidate archive. Grype scans every

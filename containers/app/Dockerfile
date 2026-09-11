@@ -48,7 +48,13 @@ ENV NODE_ENV=production
 COPY . .
 RUN npm run build
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS db-job-dependencies
+FROM ${UBI_BUILDER_IMAGE} AS db-job-dependencies
+
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/root
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -104,10 +110,15 @@ USER 1000:1000
 EXPOSE 3000
 CMD ["node", "start-runtime.mjs"]
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS db-job
+FROM ${UBI_RUNTIME_IMAGE} AS db-job
 
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/home/node
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
+RUN --mount=type=bind,source=containers/node/ubi-compat.sh,target=/tmp/ubi-compat.sh \
+  sh /tmp/ubi-compat.sh
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -115,21 +126,21 @@ ENV KRAVHANTERING_DB_ADMIN_IMAGE=db-job
 
 WORKDIR /workspace
 
-COPY --from=db-job-dependencies --chown=node:node /workspace/node_modules ./node_modules
-COPY --chown=node:node package.json package-lock.json ./
-COPY --chown=node:node scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
-COPY --chown=node:node scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs
-COPY --chown=node:node scripts/ai-provider-secret-restore-cli.mjs ./scripts/ai-provider-secret-restore-cli.mjs
-COPY --chown=node:node lib/ai/provider-secret-crypto-core.mjs ./lib/ai/provider-secret-crypto-core.mjs
-COPY --chown=node:node lib/ai/provider-secret-keyring-core.mjs ./lib/ai/provider-secret-keyring-core.mjs
-COPY --from=transient-cleanup-build --chown=node:node /workspace/.build/transient-cleanup ./transient-cleanup
-COPY --chown=node:node typeorm/migrations ./typeorm/migrations
-COPY --chown=node:node typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs
-COPY --chown=node:node typeorm/seed-required.mjs ./typeorm/seed-required.mjs
-COPY --chown=node:node typeorm/ai-safety-seed-data.mjs ./typeorm/ai-safety-seed-data.mjs
-COPY --chown=node:node typeorm/seed-runner.mjs ./typeorm/seed-runner.mjs
+COPY --from=db-job-dependencies --chown=1000:1000 /workspace/node_modules ./node_modules
+COPY --chown=1000:1000 package.json package-lock.json ./
+COPY --chown=1000:1000 scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
+COPY --chown=1000:1000 scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs
+COPY --chown=1000:1000 scripts/ai-provider-secret-restore-cli.mjs ./scripts/ai-provider-secret-restore-cli.mjs
+COPY --chown=1000:1000 lib/ai/provider-secret-crypto-core.mjs ./lib/ai/provider-secret-crypto-core.mjs
+COPY --chown=1000:1000 lib/ai/provider-secret-keyring-core.mjs ./lib/ai/provider-secret-keyring-core.mjs
+COPY --from=transient-cleanup-build --chown=1000:1000 /workspace/.build/transient-cleanup ./transient-cleanup
+COPY --chown=1000:1000 typeorm/migrations ./typeorm/migrations
+COPY --chown=1000:1000 typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs
+COPY --chown=1000:1000 typeorm/seed-required.mjs ./typeorm/seed-required.mjs
+COPY --chown=1000:1000 typeorm/ai-safety-seed-data.mjs ./typeorm/ai-safety-seed-data.mjs
+COPY --chown=1000:1000 typeorm/seed-runner.mjs ./typeorm/seed-runner.mjs
 
-USER node
+USER 1000:1000
 ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]
 CMD ["health"]
 

@@ -126,43 +126,6 @@ describe('container image contract', () => {
     expect(publicPngFiles).toEqual(['logo-small.png'])
   })
 
-  it('keeps db-job to migrations and required seed code', () => {
-    const target = dockerfileTarget('db-job')
-
-    expect(target).toContain('COPY --from=db-job-dependencies')
-    expect(target).toContain('scripts/db-sqlserver-admin.mjs')
-    expect(target).toContain('scripts/ai-provider-secret-maintenance.mjs')
-    expect(target).toContain('scripts/ai-provider-secret-restore-cli.mjs')
-    expect(target).toContain('lib/ai/provider-secret-crypto-core.mjs')
-    expect(target).toContain('typeorm/migrations')
-    expect(target).toContain('typeorm/seed-required.mjs')
-    expect(target).toContain('typeorm/ai-safety-seed-data.mjs')
-    expect(target).toContain('typeorm/seed-runner.mjs')
-    expect(target).toContain('ENV KRAVHANTERING_DB_ADMIN_IMAGE=db-job')
-    expect(target).toContain('USER node')
-    expect(target).toContain(
-      'ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]',
-    )
-    expect(target).not.toContain('typeorm/seed.mjs')
-    expect(target).not.toContain('seed-dogfood')
-    expect(target).not.toContain('seed-archiving-retention-build')
-    expect(target).not.toContain('tests/')
-    expect(target).not.toContain('docs/')
-  })
-
-  it('installs only the database job dependency subset', () => {
-    const target = dockerfileTarget('db-job-dependencies')
-
-    expect(target).toContain(
-      "const dbJobDependencies = ['mssql', 'reflect-metadata', 'typeorm']",
-    )
-    expect(target).toContain(
-      'npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund',
-    )
-    expect(target).not.toContain('next')
-    expect(target).not.toContain('react')
-  })
-
   it('keeps demo-seed explicit and limited to demo seed code', () => {
     const target = dockerfileTarget('demo-seed')
 

@@ -17,6 +17,10 @@ mkdir -p /home/node
 chown 1000:1000 /home/node
 chmod 0755 /home/node
 
+# Production cleanup jobs use this absolute executable path.
+mkdir -p /usr/local/bin
+ln -s /usr/bin/node /usr/local/bin/node
+
 # Keep workload dependencies and inherited nodemon; remove the npm CLI payload.
 rm -rf /usr/lib/node_modules_24/npm
 rm -f /usr/bin/npm /usr/bin/npx /usr/bin/npm-24 /usr/bin/npx-24
