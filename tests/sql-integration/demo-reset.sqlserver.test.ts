@@ -8,6 +8,9 @@ describe('disposable demo reset', () => {
 
   it('clears seeded lifecycle records while retaining required data and active lifecycle enforcement', async () => {
     await seedDemoDatabase(appDb())
+    const retentionPolicies = await appDb().query(
+      'SELECT * FROM archiving_retention_policies ORDER BY id',
+    )
     expect(
       await appDb().query(
         'SELECT COUNT(*) AS count FROM rfi_question_suggestions WHERE is_review_requested = 1',
@@ -28,6 +31,11 @@ describe('disposable demo reset', () => {
     expect(
       await appDb().query('SELECT COUNT(*) AS count FROM requirement_statuses'),
     ).toEqual([{ count: 4 }])
+    expect(
+      await appDb().query(
+        'SELECT * FROM archiving_retention_policies ORDER BY id',
+      ),
+    ).toEqual(retentionPolicies)
 
     await seedDemoDatabase(appDb())
     await expect(
