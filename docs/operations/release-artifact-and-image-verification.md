@@ -25,6 +25,51 @@ entries as production image tags. Those entries may represent registry-pushed
 attestations or signature helper artifacts, not runnable `app-runtime` or
 `db-job` release images.
 
+## Verify And Retain Corresponding Sources
+
+Each UBI release provides `native-library-sources.tar` and
+`ubi-runtime-sources.oci.tar` alongside the binary downloads at no charge.
+Download these with `runtime-source-evidence.json`, `runtime-sources.sha256`,
+`runtime-sources.sigstore.json` and `runtime-sources.trusted-root.jsonl` from the
+same release. Keep them with any mirror or disconnected redistribution of
+that release. They are separate source downloads, not runtime installation
+inputs, and do not add demo-seed to standard production bundles.
+
+After setting the expected `REPOSITORY`, `SIGNER_WORKFLOW`, `SOURCE_COMMIT`
+and `SOURCE_REF` as described below, verify the three authenticated subjects:
+
+```bash
+sha256sum --check runtime-sources.sha256
+for file in native-library-sources.tar ubi-runtime-sources.oci.tar \
+  runtime-source-evidence.json; do
+  gh attestation verify "$file" \
+    --repo "$REPOSITORY" \
+    --signer-workflow "$SIGNER_WORKFLOW" \
+    --source-digest "$SOURCE_COMMIT" \
+    --source-ref "$SOURCE_REF" \
+    --predicate-type https://slsa.dev/provenance/v1 \
+    --bundle runtime-sources.sigstore.json \
+    --custom-trusted-root runtime-sources.trusted-root.jsonl
+ done
+```
+
+These commands work with the transferred verification material at a
+network-disconnected site. Trust the roots under the same organizational
+policy as deployment-archive verification. Check the source evidence's commit,
+release version and six candidate manifest digests against the authenticated
+release metadata and image provenance. Use locked image IDs separately to
+check runtime equivalence after image import. Never replace manifest-digest
+provenance verification with a runtime image-ID comparison.
+
+The native archive contains original component archives, registry crates,
+recipes, patches and source records. The UBI OCI source archive contains the
+original source-image manifest and RPM source layers, plus clearly generated
+transport metadata. Source archives need not be loaded into the runtime image
+store. Recipients retain the component licenses' modification and library
+replacement rights; see the packaged native notice for details. Red Hat's
+original EULA is retained unchanged as
+`/usr/share/licenses/ubi/UBI-EULA.pdf` in all six project images.
+
 ## Verify The Deployment Archive
 
 SHA-256 verification and provenance verification answer different questions:

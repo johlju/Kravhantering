@@ -52,13 +52,20 @@ forms for the statically combined native library, with its modifications and
 build scripts identified separately. The recipe is available at:
 https://github.com/lovell/sharp-libvips/tree/6e5971d333377743163edc3ad9e5d0b897abcbc9
 
-Published release documentation must give recipients clear directions to
-corresponding source alongside binary downloads and maintain source access
-under the selected distribution route. Disconnected recipients should receive
-those directions or the separately supplied source collection. Runtime
-installation does not download build sources or tools. The local verification
-record establishes current public retrieval, not completed source publication
-or a guarantee of future upstream hosting.
+The matching Kravhantering GitHub Release provides native-library-sources.tar,
+ubi-runtime-sources.oci.tar, runtime-source-evidence.json and
+runtime-sources.sha256 alongside binary downloads:
+https://github.com/viscalyx/Kravhantering/releases
+Select the release identified by the image's version and revision labels.
+The source evidence binds the archives to that run's six image manifest
+identities. The native archive includes original component and registry-crate
+archives, build recipes, patches and their hash-locked source records. The UBI
+archive retains the original source-image manifest and all source RPM layers.
+Both archives are separately downloadable at no charge. Retain these source
+assets with the binary release when mirroring or redistributing it, including
+the separately transferred source collection for disconnected recipients.
+Runtime installation does not download build sources or tools. See the release
+artifact verification guide for authenticated archive verification.
 
 The native source/notice collection conservatively includes auxiliary,
 build, test and other-platform code. Its 359-package Rust source lock is a

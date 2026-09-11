@@ -141,6 +141,55 @@ workflow does not push this evidence or any signature helper artifact to GHCR.
 It publishes the Sigstore bundle and current trusted-root material beside the
 archive instead.
 
+## Runtime Sources And Original Notices
+
+After the exact-candidate smoke succeeds, the same release workflow retrieves
+original component sources from the committed native notice manifest and the
+public digest-pinned UBI source image in
+`containers/node/runtime-source.lock.json`. Small original recipe, patch and
+observation payloads are retained by content hash under
+`containers/node/source-inputs`; their committed source records identify the
+upstream origin. Every retrieved or retained payload must match its checksum.
+The source image retains its original manifest, config and all source layers.
+
+The workflow probes the smoke service user's six exact imported image IDs
+with networking disabled and read-only roots. It checks each installed
+software RPM against a source RPM in the retained source image, preserves RPM
+license declarations, checks the original UBI PDF and project/nodemon licenses,
+and checks installed npm identities and supplemental notice/source metadata.
+Public signing-key RPM records are distinguished from software packages.
+A mismatch blocks image promotion. The original Red Hat EULA remains
+`/usr/share/licenses/ubi/UBI-EULA.pdf`; no extracted text is generated.
+
+`runtime-source-evidence.json` binds the two source archive hashes to that
+run's six image manifest digests, image IDs and installed package records.
+The archives and evidence receive release-workflow provenance attestations.
+Their checksums, Sigstore bundle and trusted roots accompany the release
+assets. A final anonymous download checks the published source bytes before
+the workflow succeeds. Retain these source assets while distributing the
+corresponding binary release, including mirrors and disconnected handoffs.
+Do not substitute temporary workflow-artifact retention for release access.
+
+Source archives are separate downloads and do not enlarge runtime images or
+the standard production deployment bundle. The first UBI source collection is
+about 1.64 GB and the native source collection about 202 MB; measure the actual
+release assets separately from compressed image-layer transfer. The native
+Rust collection is a conservative source superset; reconstruction limits in
+the packaged notice still apply. No exact binary reproducibility is claimed.
+When changing the runtime base or native dependency, refresh the source
+correspondence and original notices in the same maintenance change. A newer
+RPM without corresponding retained source fails release verification.
+
+Each preview and stable run builds and verifies its own candidates. Digest
+preservation applies within that run, not across preview and stable runs.
+For observed remediation, retain the affected artifact, advisory and fixed
+package, public fixed-base digest and availability timestamp, project image
+digest, and stable publication timestamp. Record unavailable timestamps as
+unknown. Detection does not establish public availability; preview publication
+does not establish stable delivery, and publication does not establish operator
+installation. Continue the existing maintenance and release policy without a
+new schedule, urgent-release route or automatic site upgrade.
+
 ## Reproducibility
 
 The workflow uses the Node version from `.nvmrc`, installs the exact npm
@@ -698,3 +747,27 @@ Do not add a registry-pushed `cosign sign` step to this flow unless the
 signatures are deliberately stored outside the runnable image packages. Cosign's
 default registry storage creates digest-derived signature tags that GHCR can
 display as recent package versions.
+
+## Manual Source Handoff Check
+
+For a release selected for operator handoff:
+
+1. Download the six source assets listed in the release notes anonymously.
+   Verify their checksums and attestations against that release's source commit
+   and ref. All three attested subjects must pass.
+2. Compare the source evidence's six manifest digests with the authenticated
+   release metadata, including the separate demo and HSA support identities.
+3. Transfer the source collection and complete published runtime images into a
+   separate image store without internet access. Verify offline attestations
+   and locked runtime image IDs. Confirm no UBI base or RPM fetch is required.
+4. Keep demo-seed outside the standard production bundle. Retain the source
+   collection with any redistributed binary images and record the actual host,
+   topology and scope exercised.
+5. On a disposable copy, change one source archive byte and confirm checksum
+   and provenance verification fail. Restore the original verified artifact
+   before any operator handoff.
+
+This operational case is separate from the application browser test manual.
+The automated source contract tests cover incomplete identities, source and
+notice mismatches, missing RPM correspondence and selected-base drift; the
+release workflow exercises retrieval, exact-image probes and publication.

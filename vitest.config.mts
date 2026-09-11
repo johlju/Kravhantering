@@ -82,6 +82,9 @@ export default defineConfig({
         // Cleanup artifact/filesystem orchestration; deterministic validation
         // lives in the covered cleanup-source and compatibility-contract helpers.
         'scripts/release/prepare-cleanup-source.mjs',
+        // Source retrieval/container/archive orchestration; validation is covered
+        // in runtime-source-contract.mjs.
+        'scripts/release/prepare-runtime-sources.mjs',
         'scripts/release/cleanup-compatibility.mjs',
         // Side-effect-only local Docker/systemd orchestration. Its deterministic
         // argument and artifact contract lives in the covered companion module.

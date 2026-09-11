@@ -388,6 +388,13 @@ jobs:
         if: always()
         run: scripts/containers/production-smoke.sh down
 
+      - name: Prepare original runtime sources and verify exact candidate notices
+        if: success()
+        run: |
+          node scripts/release/prepare-runtime-sources.mjs \
+            tmp/container-release-artifacts/metadata/release-metadata.json \
+            tmp/container-release-artifacts/sources
+
       - name: Log in to GHCR after validation gates
         id: ghcr-login
         if: success()
@@ -522,6 +529,37 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/container-release.yml" \
               --predicate-type https://spdx.dev/Document/v2.3
+          done
+
+      - name: Attest runtime source archives and candidate correspondence
+        id: runtime-source-attestation
+        if: success()
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            tmp/container-release-artifacts/sources/native-library-sources.tar
+            tmp/container-release-artifacts/sources/ubi-runtime-sources.oci.tar
+            tmp/container-release-artifacts/sources/runtime-source-evidence.json
+
+      - name: Verify runtime source attestations and retain offline trust material
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_BUNDLE_PATH: ${{ steps.runtime-source-attestation.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          source_dir=tmp/container-release-artifacts/sources
+          cp "${SOURCE_BUNDLE_PATH}" "${source_dir}/runtime-sources.sigstore.json"
+          gh attestation trusted-root > "${source_dir}/runtime-sources.trusted-root.jsonl"
+          for file in native-library-sources.tar ubi-runtime-sources.oci.tar runtime-source-evidence.json; do
+            gh attestation verify "${source_dir}/${file}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/container-release.yml" \
+              --source-digest "${GITHUB_SHA}" \
+              --source-ref "${GITHUB_REF}" \
+              --predicate-type https://slsa.dev/provenance/v1 \
+              --bundle "${source_dir}/runtime-sources.sigstore.json" \
+              --custom-trusted-root "${source_dir}/runtime-sources.trusted-root.jsonl"
           done
 
       - name: Write artifact hashes
@@ -723,6 +761,29 @@ jobs:
             --notes tmp/container-release-artifacts/release-notes.md \
             --attestation-url "${{ steps.deployment-archive-attestation.outputs.attestation-url }}"
 
+      - name: Append corresponding source directions
+        if: success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'
+        run: |
+          cat >> tmp/container-release-artifacts/release-notes.md <<'EOF'
+
+          ## Corresponding source and original notices
+
+          Download `native-library-sources.tar`, `ubi-runtime-sources.oci.tar`,
+          `runtime-source-evidence.json`, `runtime-sources.sha256`,
+          `runtime-sources.sigstore.json` and `runtime-sources.trusted-root.jsonl`
+          from this release's assets. These separately downloadable original
+          source collections are available at no charge alongside the images.
+          The authenticated source evidence binds both archives to this run's
+          six image manifest digests and installed package/source records.
+          Retain these source assets with the binary release when mirroring,
+          redistributing or preparing a disconnected handoff. Source archives
+          are separate from the standard runtime bundle; demo-seed stays opt-in.
+          Original Red Hat terms remain a PDF at
+          `/usr/share/licenses/ubi/UBI-EULA.pdf` in every project image.
+          See the source revision's release artifact verification guide for
+          checksum, signer, source-commit and offline verification commands.
+          EOF
+
       - name: Stage release artifacts
         if: always()
         run: |
@@ -806,6 +867,7 @@ jobs:
             container-test-support.lock.json \
             hashes.sha256 \
             public/build.json \
+            tmp/container-release-artifacts/sources/* \
             tmp/container-release-artifacts/metadata/release-metadata.json \
             tmp/container-release-artifacts/metadata/grype-db-status.json \
             tmp/container-release-artifacts/metadata/vulnerability-policy-decision.json \
@@ -826,6 +888,23 @@ jobs:
             tmp/container-release-artifacts/kravhantering-production-deploy-${RELEASE_VERSION}.tar.gz.sigstore.json \
             tmp/container-release-artifacts/kravhantering-production-deploy-${RELEASE_VERSION}.tar.gz.trusted-root.jsonl \
             --clobber
+
+      - name: Verify published corresponding source asset access
+        if: success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'
+        run: |
+          set -euo pipefail
+          source_dir=tmp/container-release-artifacts/sources
+          verify_dir="$(mktemp -d)"
+          for file in native-library-sources.tar ubi-runtime-sources.oci.tar runtime-source-evidence.json runtime-sources.sha256 runtime-sources.sigstore.json runtime-sources.trusted-root.jsonl; do
+            curl --fail --silent --show-error --location --retry 3 \
+              --output "${verify_dir}/${file}" \
+              "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG_NAME}/${file}"
+          done
+          (cd "${verify_dir}" && sha256sum --check "${GITHUB_WORKSPACE}/${source_dir}/runtime-sources.sha256")
+          for file in runtime-sources.sha256 runtime-sources.sigstore.json runtime-sources.trusted-root.jsonl; do
+            cmp "${source_dir}/${file}" "${verify_dir}/${file}"
+          done
+          rm -rf "${verify_dir}"
 
       - name: Archive stable operator upgrade notes
         if: success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true' && env.RELEASE_IS_STABLE == 'true'
@@ -931,6 +1010,9 @@ jobs:
             tmp/container-release-artifacts/reports/
             tmp/container-release-artifacts/sbom/
             tmp/container-release-artifacts/release-notes.md
+            tmp/container-release-artifacts/sources/*.json
+            tmp/container-release-artifacts/sources/*.jsonl
+            tmp/container-release-artifacts/sources/*.sha256
           if-no-files-found: warn
           retention-days: 30
 

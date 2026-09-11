@@ -61,3 +61,17 @@ that original MIT notice at `/usr/share/licenses/nodejs-nodemon/LICENSE`.
 `nodejs-nodemon-notice.json` records the exact public source-image layer, source
 RPM, bundled archive, original path and checksums used to recover it. Review
 that source correspondence with runtime-base updates. Nodemon remains installed.
+
+## Release source delivery
+
+The release workflow verifies the original PDF and notices against all six
+exact candidate image IDs and publishes corresponding native and UBI source
+archives. `runtime-source.lock.json` identifies the original public UBI source
+manifest. The workflow derives RPM correspondence from its original layers.
+Refresh the source manifest with runtime-base updates; installed RPMs without
+matching source fail publication. The small
+hash-addressed files in `source-inputs/` preserve original recipe, patch and
+metadata bytes identified by the native notice manifest, including mutable
+upstream observations. They are source inputs, not extracted EULA text.
+See [Trusted Container Publishing](../../docs/development/trusted-container-publishing.md#runtime-sources-and-original-notices)
+for the release evidence and retention contract.

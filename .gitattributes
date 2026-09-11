@@ -34,3 +34,6 @@
 containers/node/nodejs-nodemon-LICENSE -text -whitespace
 containers/node/npm-notices/files/** -text -whitespace
 containers/node/npm-notices/native/** -text -whitespace
+
+# Original hash-addressed source recipe and patch payloads.
+containers/node/source-inputs/* -text -diff
