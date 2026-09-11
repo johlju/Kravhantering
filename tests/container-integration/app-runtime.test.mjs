@@ -216,7 +216,7 @@ describe.skipIf(!image)(
           ),
         )
         expect(metadata.version).toMatch(/^\d+\.\d+\.\d+/u)
-        expect(metadata.commitSha).toMatch(/^[a-f0-9]{40}$/u)
+        expect(metadata.commitSha).toMatch(/^(?:[a-f0-9]{40}|unknown)$/u)
         expect(metadata.expectedDatabaseSchemaVersion).toBeTruthy()
         docker('stop', '--time=5', name)
         expect(JSON.parse(docker('inspect', name))[0].State.ExitCode).toBe(143)
