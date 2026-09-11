@@ -20,6 +20,24 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM ${UBI_RUNTIME_IMAGE}
 
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/hsa-directory-mock" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering HSA directory mock" \
+  description="Kravhantering HSA directory mock" \
+  io.k8s.display-name="Kravhantering HSA directory mock" \
+  io.k8s.description="Kravhantering HSA directory mock" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="8443:https" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
 USER 0:0
 ENTRYPOINT []
 ENV HOME=/home/node

@@ -17,6 +17,24 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94d710c26eac01f20528c2b
 
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/hsa-person-lookup-adapter" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering HSA person lookup adapter" \
+  description="Kravhantering HSA person lookup adapter" \
+  io.k8s.display-name="Kravhantering HSA person lookup adapter" \
+  io.k8s.description="Kravhantering HSA person lookup adapter" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="8443:https" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
 USER 0:0
 ENTRYPOINT []
 ENV HOME=/home/node

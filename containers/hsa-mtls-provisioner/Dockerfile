@@ -6,6 +6,24 @@ ARG HSA_TOOLCHAIN_BASE_DIGEST=sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94
 
 FROM ${HSA_TOOLCHAIN_BASE_IMAGE}:${HSA_TOOLCHAIN_BASE_TAG}@${HSA_TOOLCHAIN_BASE_DIGEST}
 
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/hsa-mtls-provisioner" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering HSA test-PKI provisioner" \
+  description="Kravhantering HSA test-PKI provisioner" \
+  io.k8s.display-name="Kravhantering HSA test-PKI provisioner" \
+  io.k8s.description="Kravhantering HSA test-PKI provisioner" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
 ARG HSA_TOOLCHAIN_BASE_IMAGE
 ARG HSA_TOOLCHAIN_BASE_TAG
 ARG HSA_TOOLCHAIN_BASE_DIGEST

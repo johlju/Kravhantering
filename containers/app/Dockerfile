@@ -86,6 +86,24 @@ EOF
 
 FROM ${UBI_RUNTIME_IMAGE} AS app-runtime
 
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/app-runtime" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering application runtime" \
+  description="Kravhantering application runtime" \
+  io.k8s.display-name="Kravhantering application runtime" \
+  io.k8s.description="Kravhantering application runtime" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="3000:http" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
 USER 0:0
 ENTRYPOINT []
 ENV HOME=/home/node
@@ -111,6 +129,24 @@ EXPOSE 3000
 CMD ["node", "start-runtime.mjs"]
 
 FROM ${UBI_RUNTIME_IMAGE} AS db-job
+
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/db-job" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering database administration jobs" \
+  description="Kravhantering database administration jobs" \
+  io.k8s.display-name="Kravhantering database administration jobs" \
+  io.k8s.description="Kravhantering database administration jobs" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
 
 USER 0:0
 ENTRYPOINT []
@@ -145,6 +181,24 @@ ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]
 CMD ["health"]
 
 FROM ${UBI_RUNTIME_IMAGE} AS demo-seed
+
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/demo-seed" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering optional demo seed jobs" \
+  description="Kravhantering optional demo seed jobs" \
+  io.k8s.display-name="Kravhantering optional demo seed jobs" \
+  io.k8s.description="Kravhantering optional demo seed jobs" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
 
 USER 0:0
 ENTRYPOINT []

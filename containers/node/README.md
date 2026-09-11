@@ -17,3 +17,9 @@ Builds use the committed document and need no documentation-site download.
 Exact candidate verification compares the installed document's checksum with
 this recorded upstream checksum. Using UBI does not imply Red Hat endorsement,
 certification, or support for Kravhantering.
+
+Final workload Dockerfiles label their images as Viscalyx/Kravhantering and
+describe the actual runtime. They clear inherited base-image build/version
+identity and obsolete S2I hints; release commands supply the authoritative OCI
+revision and version. OS/package provenance and the vendor license URL remain
+available separately. These identity labels do not claim certification.
