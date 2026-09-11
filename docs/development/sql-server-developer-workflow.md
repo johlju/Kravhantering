@@ -470,3 +470,27 @@ historical retention references and cascading deletion.
 It uses the dedicated disposable SQL integration database, separate from the
 application database. Apply migrations and required runtime permission
 reconciliation before running the updated application.
+
+## Verify Disposable Demo Reset
+
+Use only a disposable demo/test database and the migration identity. The
+explicitly confirmed demo clear removes non-required data, including seeded
+RFI suggestions that have entered review or been handled. Its transactional
+whole-table reset retains the RFI lifecycle trigger; ordinary application
+DELETE operations still reject those records. Required lookup data remains.
+
+For a manual CLI check, select the disposable database through the documented
+`DB_*` configuration, then:
+
+1. Run `npm run db:seed:demo` and confirm that the demo seed completes.
+2. Run `node scripts/db-sqlserver-admin.mjs demo:clear` and confirm rejection
+   requiring `--confirm-clear-non-required-data`.
+3. Run the same command with `--confirm-clear-non-required-data`; confirm the
+   reported non-required table count and a successful exit.
+4. Run `npm run db:seed:demo` again and confirm that the current demo fixtures
+   can be recreated.
+
+The same commands run through the opt-in demo-seed image entrypoint. The
+production `db-job` image rejects both demo seeding and demo clearing,
+including confirmed clearing. This check does not grant the application
+runtime identity administrative reset permissions.

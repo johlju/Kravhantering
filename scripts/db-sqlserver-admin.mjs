@@ -1814,8 +1814,14 @@ export async function resetDemoSqlServerData(executor, options = {}) {
   try {
     for (const table of tables) {
       assertSafeTableName(table)
-      await query(`DELETE FROM [${table}]`)
-      await reseedIdentityIfPresent(query, table)
+      if (table === 'rfi_question_suggestions') {
+        // Disposable whole-table reset retains the lifecycle trigger that
+        // protects reviewed suggestions from ordinary application DELETEs.
+        await query(`TRUNCATE TABLE [${table}]`)
+      } else {
+        await query(`DELETE FROM [${table}]`)
+        await reseedIdentityIfPresent(query, table)
+      }
     }
     if (startedTransaction && runner) {
       await runner.commitTransaction()
