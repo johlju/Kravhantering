@@ -238,12 +238,3 @@ Run the relevant checks after dependency changes. At minimum, run:
 ```sh
 npm run check
 ```
-
-Runtime-base changes also update `containers/node/runtime-source.lock.json`
-with the matching public source manifest; the workflow derives installed RPM
-correspondence from the original source layers.
-The release source check rejects a stale selected base, missing source RPM,
-changed source bytes or changed original notices. Native dependency changes
-refresh their source and notice records together. Follow
-[Runtime Sources And Original Notices](./trusted-container-publishing.md#runtime-sources-and-original-notices)
-for the automatically enforced release handoff.

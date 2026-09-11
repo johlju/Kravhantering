@@ -104,14 +104,6 @@ disable-model-invocation: true
   vulnerability, and production smoke checks. Escalate a demonstrated
   worse-than-current result with comparable evidence and a recommendation;
   distinguish baseline/environment failures and unavailable comparisons.
-- For a runtime update, refresh `containers/node/runtime-source.lock.json`
-  against the exact public source image. The release check derives source RPM
-  correspondence from its original layers and verifies every installed RPM.
-  Follow the source retention and verification contract in
-  `docs/development/trusted-container-publishing.md` under
-  `Runtime Sources And Original Notices`; complete the exact-candidate source
-  check before publication. Update native source records with native dependency
-  changes and retain original recipe/patch bytes whose upstream URLs can move.
 - Preserve no-cost anonymous Node 24 update eligibility through at least April
   2028 as a requirement; verify current access without promising future access.
 - Deliver updates as new immutable project releases through existing release

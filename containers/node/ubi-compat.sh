@@ -17,28 +17,21 @@ mkdir -p /home/node
 chown 1000:1000 /home/node
 chmod 0755 /home/node
 
-# Fetch original vendor notices at build time; install only verified bytes.
-notices=$(node -e '
-  const fs = require("node:fs");
-  const lock = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-  for (const { url, sha256, installedPath } of [lock.ubi, lock["nodejs-nodemon"]]) {
-    console.log([url, sha256, installedPath].join("\t"));
-  }
-' "$(dirname "$0")/runtime-notices.lock.json")
-printf '%s\n' "$notices" | while IFS="$(printf '\t')" read -r url checksum target; do
-  notice_file=$(mktemp)
-  trap 'rm -f "$notice_file"' 0 HUP INT TERM
-  curl --fail --silent --show-error --location --retry 3 \
-    --proto '=https' --proto-redir '=https' --output "$notice_file" "$url"
-  if ! printf '%s  %s\n' "$checksum" "$notice_file" | sha256sum --check --status; then
-    echo "UBI compatibility: notice checksum mismatch for $target." >&2
-    exit 1
-  fi
-  mkdir -p "$(dirname "$target")"
-  cp "$notice_file" "$target"
-  chmod 0644 "$target"
-  rm -f "$notice_file"
-done
+# Include Red Hat's original PDF, verified before installation.
+eula_file=$(mktemp)
+trap 'rm -f "$eula_file"' 0 HUP INT TERM
+curl --fail --silent --show-error --location --retry 3 \
+  --proto '=https' --proto-redir '=https' --output "$eula_file" \
+  'https://www.redhat.com/licenses/EULA_Red_Hat_Universal_Base_Image_English_20190422.pdf'
+if ! printf '%s  %s\n' \
+  'a07025b9f5b71a816febe6ac76f21c9f759c806fa0a66874af90a50c3293f1b6' \
+  "$eula_file" | sha256sum --check --status; then
+  echo 'UBI compatibility: original EULA checksum mismatch.' >&2
+  exit 1
+fi
+mkdir -p /usr/share/licenses/ubi
+cp "$eula_file" /usr/share/licenses/ubi/UBI-EULA.pdf
+chmod 0644 /usr/share/licenses/ubi/UBI-EULA.pdf
 mkdir -p /usr/share/licenses/kravhantering
 cp /tmp/kravhantering-LICENSE /usr/share/licenses/kravhantering/LICENSE
 chmod 0644 /usr/share/licenses/kravhantering/LICENSE

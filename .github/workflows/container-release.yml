@@ -388,13 +388,6 @@ jobs:
         if: always()
         run: scripts/containers/production-smoke.sh down
 
-      - name: Prepare original runtime sources and verify exact candidate notices
-        if: success()
-        run: |
-          node scripts/release/prepare-runtime-sources.mjs \
-            tmp/container-release-artifacts/metadata/release-metadata.json \
-            tmp/container-release-artifacts/sources
-
       - name: Log in to GHCR after validation gates
         id: ghcr-login
         if: success()
@@ -558,12 +551,6 @@ jobs:
             tmp/container-release-artifacts/sbom/hsa-mtls-provisioner.spdx.json \
             tmp/container-release-artifacts/sbom/hsa-person-lookup-adapter.spdx.json \
             tmp/container-release-artifacts/sbom/hsa-directory-mock.spdx.json || true
-          if [ -f tmp/container-release-artifacts/sources/native-library-sources.tar ] && \
-             [ -f tmp/container-release-artifacts/sources/ubi-runtime-sources.oci.tar ]; then
-            sha256sum \
-              tmp/container-release-artifacts/sources/native-library-sources.tar \
-              tmp/container-release-artifacts/sources/ubi-runtime-sources.oci.tar >> hashes.sha256
-          fi
 
       - name: Stage production deployment bundle
         if: success()
@@ -736,24 +723,6 @@ jobs:
             --notes tmp/container-release-artifacts/release-notes.md \
             --attestation-url "${{ steps.deployment-archive-attestation.outputs.attestation-url }}"
 
-      - name: Append corresponding source directions
-        if: success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'
-        run: |
-          cat >> tmp/container-release-artifacts/release-notes.md <<'EOF'
-
-          ## Corresponding source and original notices
-
-          Download `native-library-sources.tar` and `ubi-runtime-sources.oci.tar`
-          from this release's assets. These original source collections are
-          available at no charge alongside the images. Their checksums are in
-          `hashes.sha256` inside the authenticated deployment archive.
-          Retain these sources while redistributing the corresponding images.
-          They are separate from the runtime bundle; demo-seed stays opt-in.
-          Original Red Hat terms remain a PDF at
-          `/usr/share/licenses/ubi/UBI-EULA.pdf` in every project image.
-          See the release artifact verification guide for verification steps.
-          EOF
-
       - name: Stage release artifacts
         if: always()
         run: |
@@ -837,8 +806,6 @@ jobs:
             container-test-support.lock.json \
             hashes.sha256 \
             public/build.json \
-            tmp/container-release-artifacts/sources/native-library-sources.tar \
-            tmp/container-release-artifacts/sources/ubi-runtime-sources.oci.tar \
             tmp/container-release-artifacts/metadata/release-metadata.json \
             tmp/container-release-artifacts/metadata/grype-db-status.json \
             tmp/container-release-artifacts/metadata/vulnerability-policy-decision.json \
@@ -859,20 +826,6 @@ jobs:
             tmp/container-release-artifacts/kravhantering-production-deploy-${RELEASE_VERSION}.tar.gz.sigstore.json \
             tmp/container-release-artifacts/kravhantering-production-deploy-${RELEASE_VERSION}.tar.gz.trusted-root.jsonl \
             --clobber
-
-      - name: Verify published corresponding source asset access
-        if: success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true'
-        run: |
-          set -euo pipefail
-          source_dir=tmp/container-release-artifacts/sources
-          verify_dir="$(mktemp -d)"
-          for file in native-library-sources.tar ubi-runtime-sources.oci.tar; do
-            curl --fail --silent --show-error --location --retry 3 \
-              --output "${verify_dir}/${file}" \
-              "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG_NAME}/${file}"
-            cmp "${source_dir}/${file}" "${verify_dir}/${file}"
-          done
-          rm -rf "${verify_dir}"
 
       - name: Archive stable operator upgrade notes
         if: success() && env.RELEASE_CREATE_GITHUB_RELEASE == 'true' && env.RELEASE_IS_STABLE == 'true'
@@ -978,9 +931,6 @@ jobs:
             tmp/container-release-artifacts/reports/
             tmp/container-release-artifacts/sbom/
             tmp/container-release-artifacts/release-notes.md
-            tmp/container-release-artifacts/sources/*.json
-            tmp/container-release-artifacts/sources/*.jsonl
-            tmp/container-release-artifacts/sources/*.sha256
           if-no-files-found: warn
           retention-days: 30
 

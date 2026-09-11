@@ -14,9 +14,6 @@ WORKDIR /app
 COPY containers/hsa-person-lookup-adapter/package.json containers/hsa-person-lookup-adapter/package-lock.json containers/hsa-person-lookup-adapter/.npmrc ./
 RUN npm install --global "npm@$(node -p 'require("./package.json").packageManager.slice(4)')"
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
-RUN --mount=type=bind,source=scripts/containers/copy-runtime-notices.mjs,target=/tmp/copy-runtime-notices.mjs \
-  --mount=type=bind,source=containers/node/npm-notices,target=/tmp/npm-notices \
-  node /tmp/copy-runtime-notices.mjs . . /tmp/npm-notices
 
 FROM registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94d710c26eac01f20528c2b
 
@@ -51,7 +48,6 @@ ENV NODE_ENV=production
 WORKDIR /app/containers/hsa-person-lookup-adapter
 
 COPY --from=dependencies --chown=1000:1000 /app/node_modules ./node_modules
-COPY --from=dependencies --chown=1000:1000 /app/third-party-notices ./third-party-notices
 COPY --chown=1000:1000 containers/hsa-person-lookup-adapter/package.json ./
 COPY --chown=1000:1000 containers/hsa-person-lookup-adapter/src ./src
 COPY --chown=1000:1000 lib/hsa/strict-certificate-validation.mjs /app/lib/hsa/strict-certificate-validation.mjs

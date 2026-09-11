@@ -25,41 +25,6 @@ entries as production image tags. Those entries may represent registry-pushed
 attestations or signature helper artifacts, not runnable `app-runtime` or
 `db-job` release images.
 
-## Verify And Retain Corresponding Sources
-
-Each UBI release provides `native-library-sources.tar` and
-`ubi-runtime-sources.oci.tar` alongside the binary downloads at no charge.
-Keep these with any mirror or disconnected redistribution of that release.
-They are separate source downloads, not runtime installation inputs, and do
-not add demo-seed to standard production bundles.
-
-First authenticate and extract the deployment archive using the procedure
-below. Its `hashes.sha256` also identifies the source archives. With both
-source downloads in the current directory and `VERIFIED_BUNDLE` set to the
-extracted, authenticated deployment directory, verify them with:
-
-```bash
-for file in native-library-sources.tar ubi-runtime-sources.oci.tar; do
-  expected="$(awk -v name="tmp/container-release-artifacts/sources/$file" \
-    '$2 == name { print $1 }' "$VERIFIED_BUNDLE/hashes.sha256")"
-  printf '%s  %s\n' "$expected" "$file" | sha256sum --check - || exit 1
-done
-```
-
-A missing checksum or source file fails verification. This uses the existing
-deployment-archive trust material and works without internet access after
-transfer. Verify image provenance and locked runtime image IDs separately as
-described below.
-
-The native archive contains original component archives, registry crates,
-recipes, patches and source records. The UBI OCI source archive contains the
-original source-image manifest and RPM source layers, plus clearly generated
-transport metadata. Source archives need not be loaded into the runtime image
-store. Recipients retain the component licenses' modification and library
-replacement rights; see the packaged native notice for details. Red Hat's
-original EULA is retained unchanged as
-`/usr/share/licenses/ubi/UBI-EULA.pdf` in all six project images.
-
 ## Verify The Deployment Archive
 
 SHA-256 verification and provenance verification answer different questions:

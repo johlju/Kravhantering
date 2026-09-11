@@ -28,19 +28,6 @@ or before the downtime window for a disconnected planned upgrade with
 
 ![Disconnected Bundle Journey](../images/disconnected-release-bundle-journey.png)
 
-## Corresponding Source Handoff
-
-Download and authenticate the matching release's separate native and UBI source
-archives, candidate source evidence, checksums, Sigstore bundle and trusted
-roots using
-[Verify And Retain Corresponding Sources](./release-artifact-and-image-verification.md#verify-and-retain-corresponding-sources).
-Transfer and retain that source collection alongside the binary handoff. Keep
-it separate from the standard runtime image bundle and any optional demo-seed
-archive. The disconnected site imports complete published images; it neither
-fetches a UBI base nor installs RPMs or source-build tools. Existing install,
-release-transition and recovery procedures remain applicable without a
-UBI-specific migration step.
-
 ## Connected Export Host
 
 The connected export host only prepares transferable artifacts. Do not create

@@ -1,6 +1,0 @@
-{
-  "schemaVersion": 1,
-  "repository": "registry.access.redhat.com/ubi10/nodejs-24-minimal",
-  "manifestDigest": "sha256:931e4e1edf04b102d05eb0ba1656e82c5a8ace83f248c02d43d0a0da7710382c",
-  "runtimeBaseDigest": "sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94d710c26eac01f20528c2b"
-}
