@@ -1,7 +1,8 @@
 # Runtime npm notice research
 
 This report records exact package notice recovery for issue #1338. It covers
-24 npm packages in the candidate inventory; native libvips evidence is separate.
+24 application npm packages and one HSA package in the candidate inventory.
+Native libvips evidence is separate.
 It does not establish blanket redistribution clearance.
 
 ## Evidence and binding
@@ -18,8 +19,8 @@ Additional bindings use immutable source commits resolved from release tags,
 npm provenance, or explicit upstream publication metadata. Package versions
 and source scope are checked rather than inferred from the current branch.
 
-The recoverable set contains 17 package notice sets. Seven records retain
-explicit unresolved findings. A README or package metadata license identifier
+The application recovery set contains 17 package notice sets. Seven records
+retain explicit notice-recovery findings. A README or package metadata license identifier
 is declaration evidence; it is not represented as a recovered full license.
 
 ## Recovered package notices
@@ -86,7 +87,7 @@ Meta copyright headers.
 [JavaScript source](https://github.com/facebook/yoga/blob/042f5013152eb81c1552dec945b88f7b95ca350f/javascript/src/index.ts),
 [example license](https://github.com/facebook/yoga/blob/042f5013152eb81c1552dec945b88f7b95ca350f/LICENSE-examples).
 
-## Unresolved upstream findings
+## Original upstream notice-recovery findings
 
 An absent standalone license file does not establish absent licensing or a
 redistribution prohibition. npm documents the `license` field as the author’s
@@ -99,7 +100,8 @@ create an absent copyright attribution or resolve contradictory declarations.
 
 These findings distinguish unavailable original text from contradictory
 license declarations. No author name is converted into an invented copyright
-notice, and no generic license is substituted for an absent upstream file.
+notice. Canonical terms below are labeled supplements, never represented as
+recovered upstream files.
 
 ### dfa 1.2.0
 
@@ -196,3 +198,71 @@ retained without claiming clearance. The candidate and Debian baseline both
 contain these packages; absence of their general notices is not established
 as a UBI-specific regression. This report changes no package versions or
 runtime behavior, and requires no manual UI cases.
+
+## Canonical terms supplement
+
+The supplemental set also includes unmodified MIT and ISC standard examples
+from SPDX release `v3.28.0`, resolved to commit
+`c4a7237ec8f4654e867546f9f409749300f1bf4c`. Each file has its own source URL,
+SHA-256 hash and `canonical-terms` classification. The MIT example contains
+copyright placeholders; this version of the ISC example names the Internet
+Systems Consortium. Those example attributions are explicitly not claims
+about the npm packages. No placeholder is filled in and no package author
+is converted into a copyright holder.
+[MIT example](https://github.com/spdx/license-list-data/blob/c4a7237ec8f4654e867546f9f409749300f1bf4c/text/MIT.txt),
+[ISC example](https://github.com/spdx/license-list-data/blob/c4a7237ec8f4654e867546f9f409749300f1bf4c/text/ISC.txt).
+
+The MIT supplement accompanies `dfa`, `fontkit`, `brotli`, `media-engine`
+and `client-only`. The ISC supplement accompanies `hsl-to-rgb-for-reals`.
+Each record retains the exact published package metadata and available
+README, including the actual attribution in the `media-engine` README.
+The supplement therefore adds readable standard terms without claiming to
+recover a nonexistent upstream file or resolve absent attribution.
+The original declarations and their package bindings remain listed above.
+
+For `hsl-to-hex`, both canonical texts accompany the unmodified MIT package
+metadata and ISC README. The manifest preserves the contradiction and
+explicitly records that no license selection or dual-licensing assertion
+is made. Retaining both is an evidence and notice-preservation measure,
+not a claim that the author offers a choice between the licenses.
+
+Both standard licenses permit distribution, including distribution for a
+fee, subject to preserving copyright and permission notices. Their stated
+notice conditions can coexist: keeping both texts and all actual notices
+does not require removing or contradicting either notice. ISC refers to all
+copies; MIT refers to copies or substantial portions, so retaining both
+with every distributed copy meets the stricter stated scope. Neither text
+adds a source-disclosure, noncommercial-use or downstream same-license
+condition. These comparisons concern the text of the standard licenses.
+[MIT terms](https://opensource.org/license/mit),
+[ISC terms](https://opensource.org/license/isc).
+
+The resulting inference is narrow: no additional distribution restriction
+arises from those two standard texts solely because both notices are kept.
+The remaining difference for `hsl-to-hex` is its inconsistent license
+declarations, not an identified conflict between the two notice
+conditions. This preparation does not establish that an absent original
+copyright notice is known, that either declaration supersedes the other,
+or that unspecified third-party rights are cleared. The manifest retains
+the original recovery findings and the outstanding ambiguity separately
+from the supplied canonical terms.
+
+## HSA package supplement
+
+The HSA images additionally contain `saxes` version `6.0.0`. Its published
+npm metadata binds source commit
+`211fa0ebec9b628affc09219199639887174bfc3`. The original source `LICENSE` and
+`AUTHORS` are included unchanged. The license includes attribution for the
+parser and its predecessor, plus an explicitly historical notice for code
+no longer used. Preserving the whole original file does not imply that the
+historical code is in the current package. This record has no unresolved
+notice-recovery finding.
+[Published metadata](https://registry.npmjs.org/saxes/6.0.0),
+[original license](https://github.com/lddubeau/saxes/blob/211fa0ebec9b628affc09219199639887174bfc3/LICENSE),
+[original attribution](https://github.com/lddubeau/saxes/blob/211fa0ebec9b628affc09219199639887174bfc3/AUTHORS).
+
+The packaging disposition preserves original declarations, actual notices
+and clearly labeled canonical terms together. The `hsl-to-hex` contradiction
+remains an inventory fact, without selecting one declaration or asserting
+dual licensing. Original notice-recovery gaps remain recorded separately;
+they do not become an automatic packaging failure after this assessment.
