@@ -155,7 +155,6 @@ LABEL name="kravhantering/db-job" \
   com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
 
 USER 0:0
-ENTRYPOINT []
 ENV HOME=/home/node
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NPM_CONFIG_PREFIX=/usr/local
@@ -209,7 +208,6 @@ LABEL name="kravhantering/demo-seed" \
   com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
 
 USER 0:0
-ENTRYPOINT []
 ENV HOME=/home/node
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NPM_CONFIG_PREFIX=/usr/local
