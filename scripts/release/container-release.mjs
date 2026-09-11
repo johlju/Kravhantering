@@ -67,6 +67,7 @@ const RELEVANT_PATH_PREFIXES = [
   'docs/operations/api-docs-edge-verification.md',
   'docs/operations/operator-upgrade-notes.md',
   'docs/operations/production-quadlet-containment.md',
+  'docs/operations/release-artifact-and-image-verification.md',
   'docs/operations/rhel10-production-deploy.md',
   'docs/operations/rhel10-production-disconnected.md',
   'docs/operations/rhel10-production-uninstall.md',
@@ -97,6 +98,10 @@ const RELEVANT_PATH_PREFIXES = [
 ]
 
 export const DEPLOYMENT_BUNDLE_STATIC_ENTRIES = [
+  {
+    source: 'docs/operations/release-artifact-and-image-verification.md',
+    target: 'docs/operations/release-artifact-and-image-verification.md',
+  },
   {
     source: 'docs/operations/production-quadlet-containment.md',
     target: 'docs/operations/production-quadlet-containment.md',

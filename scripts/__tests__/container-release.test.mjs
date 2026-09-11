@@ -1042,11 +1042,12 @@ describe('trusted container release helpers', () => {
     ).toThrow('Move release documentation images under docs/')
   })
 
-  it('treats bundled single-node upgrade docs as release-relevant', () => {
+  it.each([
+    'docs/operations/rhel10-production-single-node-self-contained-upgrade.md',
+    'docs/operations/release-artifact-and-image-verification.md',
+  ])('treats bundled guide %s as release-relevant', guide => {
     const plan = createTestReleasePlan({
-      changedFiles: [
-        'docs/operations/rhel10-production-single-node-self-contained-upgrade.md',
-      ],
+      changedFiles: [guide],
       env: env(),
       gitVersion,
     })
@@ -2168,6 +2169,12 @@ describe('trusted container release helpers', () => {
         expect(result.files).toContain(
           'docs/operations/api-docs-edge-verification.md',
         )
+        const verificationGuide =
+          'docs/operations/release-artifact-and-image-verification.md'
+        expect(result.manifest.files).toContain(verificationGuide)
+        expect(
+          fs.readFileSync(path.join(result.bundleRoot, verificationGuide)),
+        ).toEqual(fs.readFileSync(path.join(REPO_ROOT, verificationGuide)))
         expect(result.files).toContain(
           'docs/operations/production-quadlet-containment.md',
         )
