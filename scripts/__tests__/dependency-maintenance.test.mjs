@@ -124,8 +124,22 @@ describe('dependency maintenance discovery', () => {
           ),
         },
         {
-          image: 'docker.io/library/node',
+          image: 'registry.access.redhat.com/ubi10/nodejs-24',
           path: 'containers/app/Dockerfile',
+          reference: expect.stringMatching(
+            /^registry\.access\.redhat\.com\/ubi10\/nodejs-24:latest@sha256:[a-f0-9]{64}$/u,
+          ),
+        },
+        {
+          image: 'registry.access.redhat.com/ubi10/nodejs-24-minimal',
+          path: 'containers/app/Dockerfile',
+          reference: expect.stringMatching(
+            /^registry\.access\.redhat\.com\/ubi10\/nodejs-24-minimal:latest@sha256:[a-f0-9]{64}$/u,
+          ),
+        },
+        {
+          image: 'docker.io/library/node',
+          path: 'containers/hsa-mtls-topology/Dockerfile',
           reference: expect.stringMatching(
             /^node:(?!latest@)[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[a-f0-9]{64}$/u,
           ),
