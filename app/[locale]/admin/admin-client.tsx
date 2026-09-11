@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { type HelpContent, useHelpContent } from '@/components/HelpPanel'
+import ListWorkspace from '@/components/ListWorkspace'
 import { useRouter } from '@/i18n/routing'
 import { devMarker } from '@/lib/developer-mode-markers'
 import AdminLazyPanel from './admin-lazy-panel'
@@ -324,8 +325,8 @@ export default function AdminClient({
     : null
 
   return (
-    <div className="section-padding px-4 sm:px-6 lg:px-8">
-      <div className="container-custom space-y-6">
+    <div className="section-padding">
+      <ListWorkspace className="space-y-6" context="admin">
         <section className="overflow-hidden rounded-4xl border border-secondary-200/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(238,242,255,0.82))] p-6 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.55)] backdrop-blur-md dark:border-secondary-700/60 dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.92),rgba(30,41,59,0.86))]">
           <div className="space-y-4">
             <div className="space-y-2 xl:flex xl:flex-row xl:items-center xl:justify-between xl:gap-6">
@@ -340,11 +341,12 @@ export default function AdminClient({
               aria-label={ta('title')}
               className="flex max-w-full flex-wrap items-center gap-1 rounded-3xl border border-secondary-200/80 bg-white/80 p-1 dark:border-secondary-700/70 dark:bg-secondary-900/70"
               role="tablist"
-              {...devMarker({
-                name: 'navigation',
-                priority: 320,
-                value: 'admin center tabs',
-              })}
+              {...(process.env.NODE_ENV !== 'production' &&
+                devMarker({
+                  name: 'navigation',
+                  priority: 320,
+                  value: 'admin center tabs',
+                }))}
             >
               {authorizedTabs.map(tab => {
                 const label = adminTabLabel(tab.id, ta)
@@ -364,12 +366,13 @@ export default function AdminClient({
                     role="tab"
                     tabIndex={activeTab === tab.id ? 0 : -1}
                     type="button"
-                    {...devMarker({
-                      context: 'admin center',
-                      name: 'edge tab',
-                      priority: 360,
-                      value: ADMIN_TAB_DEVELOPER_MODE_VALUES[tab.id],
-                    })}
+                    {...(process.env.NODE_ENV !== 'production' &&
+                      devMarker({
+                        context: 'admin center',
+                        name: 'edge tab',
+                        priority: 360,
+                        value: ADMIN_TAB_DEVELOPER_MODE_VALUES[tab.id],
+                      }))}
                   >
                     <tab.icon aria-hidden="true" className="h-4 w-4" />
                     {label}
@@ -384,12 +387,13 @@ export default function AdminClient({
           <div
             className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
             role="status"
-            {...devMarker({
-              context: 'admin center',
-              name: 'tab fallback notice',
-              priority: 350,
-              value: fallbackReason,
-            })}
+            {...(process.env.NODE_ENV !== 'production' &&
+              devMarker({
+                context: 'admin center',
+                name: 'tab fallback notice',
+                priority: 350,
+                value: fallbackReason,
+              }))}
           >
             {ta(
               fallbackReason === 'unauthorized'
@@ -409,7 +413,7 @@ export default function AdminClient({
             {panel}
           </AdminLazyPanel>
         ) : null}
-      </div>
+      </ListWorkspace>
     </div>
   )
 }
