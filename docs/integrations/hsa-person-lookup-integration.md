@@ -43,6 +43,13 @@ exposes the app-facing REST contract with strict mTLS on
 `hsa-person-lookup-adapter:8443`. Kong
 exposes only `/hsa/person-records/lookup` and routes it to the adapter.
 
+The adapter uses the public, digest-pinned UBI 10 Node.js 24 builder and minimal
+runtime with the shared Node compatibility adaptation. Its UID/GID remains
+`1000:1000`, with the same strict ingress and SOAP identity checks, read-only
+role bundle and separate HSA integration-support lock. See the
+[adapter image contract](../../containers/hsa-person-lookup-adapter/README.md)
+for complete-image verification; this base change adds no production service.
+
 Use `npm run devcontainer:kong:status` from the workspace to run Kong's
 container-local health command. Use
 `npm run devcontainer:hsa-mock:status` to check the mock and adapter directly,
