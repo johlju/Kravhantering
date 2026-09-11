@@ -29,3 +29,8 @@
 *.ttf binary
 *.eot binary
 *.pdf binary
+
+# Retain upstream notice bytes and whitespace; recorded SHA-256 verifies them.
+containers/node/nodejs-nodemon-LICENSE -text -whitespace
+containers/node/npm-notices/files/** -text -whitespace
+containers/node/npm-notices/native/** -text -whitespace
