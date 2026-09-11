@@ -156,12 +156,46 @@ records both excepted and unexcepted fixable High or Critical findings.
 
 Classification happens independently for every observation before
 aggregation. Public observations are limited to version-guarded Debian DSA or
-CVE evidence for `deb` packages and GitHub GHSA evidence for `npm` packages.
+CVE evidence for `deb` packages, GitHub GHSA evidence for `npm` packages, and
+the reviewed UBI 10 RPM contract below.
 The namespace, match type, identifier, and exact canonical source must agree.
 Public URLs are reconstructed from the validated identifier without fetching
 advisory content. Generic URLs, aliases, CPE matches, unknown authorities,
 malformed producer or database metadata, and public-looking siblings do not
 qualify.
+
+UBI RPM reporting requires Grype 0.110.0 exact direct or indirect matches
+from `rpm-matcher`, namespace `redhat:distro:redhat:10`, and Red Hat distro
+search evidence for major version 10. The distro search may include a minor
+version. Package names and installed, searched, and fixed RPM versions must
+pass the reviewed bounded syntax: an optional numeric epoch followed by
+version and release, including RPM separators and pre/post-release markers.
+Direct evidence must match the installed package; the scanner's explicit zero
+epoch is accepted only for an installed version without an epoch and without
+contradictory RPM epoch metadata. Indirect evidence must exactly match a
+declared source package and its version. Found CVE and suggested fixed version
+must agree with the observation.
+
+The CVE identifier must match its exact
+`https://access.redhat.com/security/cve/<CVE>` data source. Only RHSA identities
+with an exact `https://access.redhat.com/errata/<RHSA>` link from that
+observation's fix advisories replace the CVE link. Otherwise the validated
+CVE link is used. Query strings, fragments, alternate hosts, credentials,
+encoded paths, mismatched identifiers, and generic scanner URLs cannot become
+public advisory links. A valid-looking RHSA cannot make an unverified CVE
+source eligible. No advisory content is fetched during classification.
+
+The RPM fixture uses synthetic identities and versions with the reviewed
+[pinned Grype RPM matcher](https://github.com/anchore/grype/blob/v0.110.0/grype/matcher/rpm/matcher.go),
+[match evidence serializer](https://github.com/anchore/grype/blob/v0.110.0/grype/matcher/internal/result/provider.go),
+[Red Hat advisory mapping](https://github.com/anchore/grype/blob/v0.110.0/grype/db/v6/build/transformers/os/testdata/rhel-8.json),
+and [RPM version syntax](https://rpm.org/docs/6.0.x/manual/spec.html).
+It is not evidence of an actual release vulnerability. Other RPM namespaces,
+unknown shapes, and contradictory evidence remain confidential. This affects
+public eligibility only: all fixable High/Critical findings still enter the
+unchanged full Grype policy and reviewed-exception gate, including confidential
+observations. Their content, existence, and count cannot change public tracker
+output.
 
 ### Identity, Current State, And Journal
 
