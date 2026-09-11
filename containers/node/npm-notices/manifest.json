@@ -13661,7 +13661,7 @@
           "winapi-x86_64-pc-windows-gnu@0.4.0"
         ],
         "declarationSupplement": "Original Cargo.toml declarations/authors retained alongside clearly identified canonical full license terms; no copyright is invented. selectors original MPL2 source notice is retained. These omissions do not by themselves demonstrate absence of a license grant.",
-        "sourceAvailability": "All 28 versioned top-level sources and 356 registry crates publicly fetched; every crate SHA256 equals upstream Cargo.lock checksum. Three workspace package sources reside in librsvg archive. Captured source availability is not a future availability guarantee.",
+        "sourceAvailability": "All 28 versioned top-level sources and 350 registry crates publicly fetched; every crate SHA256 equals upstream Cargo.lock checksum. Nine workspace package sources reside in librsvg archive. Captured source availability is not a future availability guarantee.",
         "replacementFacts": "sharp-linux-x64-0.35.4.node has DT_NEEDED libvips-cpp.so.8.18.6 and relative RPATH to this package lib directory. ELF evidence shows ordinary shared-library linkage. Recipient can replace it in a derived image while retaining interface/SONAME compatibility; no alternative build is claimed tested.",
         "releaseHandoff": [
           "Convey full GPL3/LGPL3 and component notices with the binary.",

@@ -27,7 +27,7 @@ library is embedded inside the exact libvips source archive; its original MIT
 notice is retained. GLib's embedded database helper notices are retained too.
 
 The SVG library's source archive contains a Cargo lock with 359 packages.
-Three workspace packages reside in that archive. All 356 registry source
+Nine workspace packages reside in that archive. All 350 registry source
 archives are recovered and their SHA-256 hashes match the upstream lock.
 This is a conservative **source superset**, including development and other
 platform dependencies, not an assertion that every crate is linked into the
