@@ -321,6 +321,18 @@ transaction. Any failure rolls back both changes, preventing orphan person
 rows and partial assignments. Removing an assignment does not require new
 evidence; every newly added identity does.
 
+## Provisioner build inputs
+
+The test-PKI provisioner uses the public, digest-pinned UBI 10 Node.js 24
+minimal runtime with signed public OpenSSL and CA RPMs. Its independent
+[toolchain lock and maintenance procedure](../../containers/hsa-mtls-provisioner/README.md#toolchain-maintenance)
+verify selected inputs and installed binary, RPM identity, version, and source
+evidence during the build. It runs as `0:0` to preserve role ownership and
+requires the existing issuer tmpfs and persistent generation mounts. Operators
+consume the complete release image; disconnected sites need no UBI or RPM
+repository access. The base change does not alter the certificate commands or
+rotation order.
+
 ## Rotation and rollback
 
 Repository-owned topologies rotate one trust domain at a time. Stop clients

@@ -1,4 +1,4 @@
-const LOCK_SCHEMA_VERSION = 1
+const LOCK_SCHEMA_VERSION = 2
 const SELECTION_FIELDS = [
   'baseImage',
   'baseTag',
@@ -19,6 +19,7 @@ function mismatch(message) {
  * @param {{
  *   lock: Record<string, unknown>,
  *   observed: {
+ *     packages: Record<string, string>[],
  *     caCertificatesPackageVersion: string,
  *     nodeVersion: string,
  *     opensslPackageVersion: string,
@@ -44,10 +45,21 @@ export function verifyToolchainLock({ lock, observed, selection }) {
     mismatch('lock field opensslVersion is invalid')
   }
 
+  if (
+    typeof lock.installedNodeVersion !== 'string' ||
+    !/^24\.\d+\.\d+$/u.test(lock.installedNodeVersion)
+  ) {
+    mismatch('lock field installedNodeVersion is invalid')
+  }
+
   const observedNodeMajor = /^(\d+)(?:\.|$)/u.exec(observed.nodeVersion)?.[1]
   if (observedNodeMajor !== lock.nodeVersion) {
     mismatch('installed Node major differs from the lock')
   }
+  if (observed.nodeVersion !== lock.installedNodeVersion) {
+    mismatch('installed Node version differs from the lock')
+  }
+  verifyPackages(lock, observed.packages)
   if (observed.opensslPackageVersion !== lock.opensslPackageVersion) {
     mismatch('installed OpenSSL package differs from the lock')
   }
@@ -58,5 +70,45 @@ export function verifyToolchainLock({ lock, observed, selection }) {
     observed.caCertificatesPackageVersion !== lock.caCertificatesPackageVersion
   ) {
     mismatch('installed CA certificates package differs from the lock')
+  }
+}
+
+function verifyPackages(lock, observed) {
+  const names = ['openssl', 'openssl-libs', 'ca-certificates']
+  const fields = [
+    'name',
+    'epoch',
+    'version',
+    'architecture',
+    'sourceRpm',
+    'vendor',
+  ]
+  if (!Array.isArray(lock.packages) || lock.packages.length !== names.length) {
+    mismatch('lock RPM package records are invalid')
+  }
+  if (!Array.isArray(observed) || observed.length !== names.length) {
+    mismatch('installed RPM package evidence is missing or ambiguous')
+  }
+  for (const name of names) {
+    const expected = lock.packages.filter(entry => entry?.name === name)
+    if (expected.length !== 1) mismatch('lock RPM package identity is invalid')
+    const actual = observed.filter(entry => entry?.name === name)
+    if (actual.length !== 1)
+      mismatch(`installed RPM ${name} identity differs from the lock`)
+    for (const field of fields) {
+      if (typeof expected[0][field] !== 'string' || !expected[0][field]) {
+        mismatch(`lock RPM ${name} ${field} is invalid`)
+      }
+      if (actual[0][field] !== expected[0][field]) {
+        mismatch(`installed RPM ${name} ${field} differs from the lock`)
+      }
+    }
+    const selectedVersion =
+      name === 'ca-certificates'
+        ? lock.caCertificatesPackageVersion
+        : lock.opensslPackageVersion
+    if (expected[0].version !== selectedVersion) {
+      mismatch(`lock RPM ${name} version differs from selected package version`)
+    }
   }
 }

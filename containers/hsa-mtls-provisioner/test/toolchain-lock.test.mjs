@@ -5,22 +5,50 @@ import { verifyToolchainLock } from '../toolchain/toolchain-lock.mjs'
 
 const lock = Object.freeze({
   baseDigest:
-    'sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600',
-  baseImage: 'docker.io/library/node',
-  baseTag: '24-trixie-slim',
-  caCertificatesPackageVersion: '20250419',
+    'sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94d710c26eac01f20528c2b',
+  baseImage: 'registry.access.redhat.com/ubi10/nodejs-24-minimal',
+  baseTag: 'latest',
+  caCertificatesPackageVersion: '2025.2.80_v9.0.305-102.el10_1',
   nodeVersion: '24',
-  opensslPackageVersion: '3.5.7-1~deb13u2',
-  opensslVersion: '3.5.7',
-  schemaVersion: 1,
+  installedNodeVersion: '24.19.0',
+  packages: [
+    {
+      name: 'openssl',
+      epoch: '1',
+      version: '3.5.5-6.el10_2',
+      architecture: 'x86_64',
+      sourceRpm: 'openssl-3.5.5-6.el10_2.src.rpm',
+      vendor: 'Red Hat, Inc.',
+    },
+    {
+      name: 'openssl-libs',
+      epoch: '1',
+      version: '3.5.5-6.el10_2',
+      architecture: 'x86_64',
+      sourceRpm: 'openssl-3.5.5-6.el10_2.src.rpm',
+      vendor: 'Red Hat, Inc.',
+    },
+    {
+      name: 'ca-certificates',
+      epoch: '0',
+      version: '2025.2.80_v9.0.305-102.el10_1',
+      architecture: 'noarch',
+      sourceRpm: 'ca-certificates-2025.2.80_v9.0.305-102.el10_1.src.rpm',
+      vendor: 'Red Hat, Inc.',
+    },
+  ],
+  opensslPackageVersion: '3.5.5-6.el10_2',
+  opensslVersion: '3.5.5',
+  schemaVersion: 2,
 })
 
 function validInput() {
   return {
-    lock: { ...lock },
+    lock: structuredClone(lock),
     observed: {
+      packages: structuredClone(lock.packages),
       caCertificatesPackageVersion: lock.caCertificatesPackageVersion,
-      nodeVersion: '24.7.0',
+      nodeVersion: '24.19.0',
       opensslPackageVersion: lock.opensslPackageVersion,
       opensslVersion: lock.opensslVersion,
     },
@@ -38,6 +66,39 @@ function validInput() {
 describe('HSA provisioner toolchain lock', () => {
   it('accepts selected inputs and installed versions matching the lock', () => {
     assert.doesNotThrow(() => verifyToolchainLock(validInput()))
+  })
+
+  it('rejects missing or mismatched installed RPM evidence', () => {
+    for (const field of [
+      'name',
+      'epoch',
+      'version',
+      'architecture',
+      'sourceRpm',
+      'vendor',
+    ]) {
+      for (const value of [undefined, '', 'wrong-source']) {
+        const input = validInput()
+        input.observed.packages[0][field] = value
+        assert.throws(() => verifyToolchainLock(input), /installed RPM/u)
+      }
+    }
+    for (const packages of [
+      undefined,
+      [],
+      [lock.packages[0]],
+      [...lock.packages, lock.packages[0]],
+    ]) {
+      const input = validInput()
+      input.observed.packages = packages
+      assert.throws(() => verifyToolchainLock(input), /installed RPM/u)
+    }
+  })
+
+  it('rejects exact Node version drift within the selected major', () => {
+    const input = validInput()
+    input.observed.nodeVersion = '24.18.0'
+    assert.throws(() => verifyToolchainLock(input), /installed Node version/u)
   })
 
   it('rejects every selected build input when it drifts', () => {
@@ -60,7 +121,7 @@ describe('HSA provisioner toolchain lock', () => {
 
   it('rejects invalid lock schemas and fields', () => {
     const unsupported = validInput()
-    unsupported.lock.schemaVersion = 2
+    unsupported.lock.schemaVersion = 3
     assert.throws(
       () => verifyToolchainLock(unsupported),
       /unsupported schema version/u,
@@ -81,6 +142,45 @@ describe('HSA provisioner toolchain lock', () => {
         /lock field opensslVersion is invalid/u,
       )
     }
+  })
+
+  it('rejects incomplete or contradictory independent RPM and Node locks', () => {
+    for (const packages of [
+      undefined,
+      [],
+      [...lock.packages, lock.packages[0]],
+      [lock.packages[0], lock.packages[0], lock.packages[2]],
+    ]) {
+      const input = validInput()
+      input.lock.packages = packages
+      assert.throws(() => verifyToolchainLock(input), /lock RPM/u)
+    }
+    for (const field of [
+      'epoch',
+      'version',
+      'architecture',
+      'sourceRpm',
+      'vendor',
+    ]) {
+      const input = validInput()
+      delete input.lock.packages[0][field]
+      assert.throws(() => verifyToolchainLock(input), /lock RPM/u)
+    }
+    for (const value of [undefined, '', '25.0.0']) {
+      const input = validInput()
+      input.lock.installedNodeVersion = value
+      assert.throws(
+        () => verifyToolchainLock(input),
+        /installedNodeVersion is invalid/u,
+      )
+    }
+    const contradictory = validInput()
+    contradictory.lock.packages[0].version = '3.5.6-1.el10'
+    contradictory.observed.packages[0].version = '3.5.6-1.el10'
+    assert.throws(
+      () => verifyToolchainLock(contradictory),
+      /lock RPM openssl version differs/u,
+    )
   })
 
   it('rejects drift in each version observed inside the image', () => {

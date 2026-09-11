@@ -34,7 +34,6 @@ async function issueClient({
   eku = 'clientAuth',
   keyUsage = 'digitalSignature',
   name,
-  signature = '-sha256',
   subject = '/CN=kravhantering-app',
 }) {
   const key = path.join(fixtureDir, `${name}.key`)
@@ -73,7 +72,7 @@ async function issueClient({
     `0x${randomUUID().replaceAll('-', '')}`,
     '-days',
     '7',
-    signature,
+    '-sha256',
     '-extfile',
     extensions,
     '-out',
@@ -182,10 +181,14 @@ describe('certificate material validation', () => {
       },
       {
         category: 'SIGNATURE_ALGORITHM_INVALID',
-        material: await issueClient({
-          name: 'sha1-signature',
-          signature: '-sha1',
-        }),
+        // Public test-only material keeps rejection coverage when the host's
+        // crypto policy itself refuses to create SHA-1 signatures.
+        caPath: path.join(packageDir, 'test/fixtures/sha1/ca.crt'),
+        material: {
+          certificate: path.join(packageDir, 'test/fixtures/sha1/client.crt'),
+          key: path.join(packageDir, 'test/fixtures/sha1/client.key'),
+        },
+        now: new Date('2026-09-12T00:00:00Z'),
         name: 'a non-profile signature',
       },
     ]
@@ -194,12 +197,12 @@ describe('certificate material validation', () => {
       await t.test(`rejects ${fixture.name}`, async () => {
         await assert.rejects(
           validateCertificateMaterial({
-            caPath: caCertificate,
+            caPath: fixture.caPath ?? caCertificate,
             certificatePath: fixture.material.certificate,
             keyPath: fixture.material.key,
             kind: 'client',
             leaf: profile.trustDomains['app-to-kong'].client,
-            now: new Date(),
+            now: fixture.now ?? new Date(),
             profile,
           }),
           error => error.category === fixture.category,
