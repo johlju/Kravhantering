@@ -1,6 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS dependencies
+ARG UBI_BUILDER_IMAGE=registry.access.redhat.com/ubi10/nodejs-24:latest@sha256:5295d1fd8e46aebad1e9da107c62bc4a5cfe8bca5fd1175a7b0a523fa977866a
+ARG UBI_RUNTIME_IMAGE=registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94d710c26eac01f20528c2b
+
+FROM ${UBI_BUILDER_IMAGE} AS dependencies
+
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/root
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
 
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /workspace
@@ -69,10 +78,15 @@ NODE
 npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
 EOF
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS app-runtime
+FROM ${UBI_RUNTIME_IMAGE} AS app-runtime
 
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/home/node
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
+RUN --mount=type=bind,source=containers/node/ubi-compat.sh,target=/tmp/ubi-compat.sh \
+  sh /tmp/ubi-compat.sh
 
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -81,12 +95,12 @@ ENV PORT=3000
 
 WORKDIR /app
 
-COPY --from=app-build --chown=node:node /workspace/.next/standalone ./
-COPY --from=app-build --chown=node:node /workspace/.next/static ./.next/static
-COPY --from=app-build --chown=node:node /workspace/public ./public
-COPY --chown=node:node containers/app/start-runtime.mjs ./start-runtime.mjs
+COPY --from=app-build --chown=1000:1000 /workspace/.next/standalone ./
+COPY --from=app-build --chown=1000:1000 /workspace/.next/static ./.next/static
+COPY --from=app-build --chown=1000:1000 /workspace/public ./public
+COPY --chown=1000:1000 containers/app/start-runtime.mjs ./start-runtime.mjs
 
-USER node
+USER 1000:1000
 EXPOSE 3000
 CMD ["node", "start-runtime.mjs"]
 

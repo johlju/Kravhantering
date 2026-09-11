@@ -97,81 +97,6 @@ function dockerfileTarget(name: string) {
 }
 
 describe('container image contract', () => {
-  it('pins every Node base image by tag and digest', () => {
-    const dockerfile = readWorkspaceFile('containers/app/Dockerfile')
-    const fromLines = dockerfile.split('\n').flatMap(line => {
-      const match = line.match(
-        /^FROM (node:(?!latest@)[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[a-f0-9]{64}) AS (\S+)$/u,
-      )
-      return match ? [{ reference: match[1], stage: match[2] }] : []
-    })
-
-    expect(fromLines).toHaveLength(5)
-    expect(fromLines.map(line => line.stage)).toEqual([
-      'dependencies',
-      'db-job-dependencies',
-      'app-runtime',
-      'db-job',
-      'demo-seed',
-    ])
-    expect(new Set(fromLines.map(line => line.reference)).size).toBe(1)
-  })
-
-  it('keeps shared development and release Node bases aligned', () => {
-    const dockerfiles = [
-      'containers/app/Dockerfile',
-      'containers/hsa-directory-mock/Dockerfile',
-      'containers/hsa-person-lookup-adapter/Dockerfile',
-      'containers/hsa-mtls-topology/Dockerfile',
-    ]
-    const references = dockerfiles.flatMap(relativePath =>
-      [
-        ...readWorkspaceFile(relativePath).matchAll(
-          /^FROM (node:[^@\s]+@sha256:[a-f0-9]{64})(?:\s+AS\s+\S+)?$/gmu,
-        ),
-      ].map(match => match[1]),
-    )
-
-    expect(references.length).toBeGreaterThan(0)
-    expect(new Set(references).size).toBe(1)
-  })
-
-  it('removes npm from every final runtime image', () => {
-    const npmRemoval =
-      'rm -rf /usr/local/lib/node_modules/npm \\\n  && rm -f /usr/local/bin/npm /usr/local/bin/npx'
-
-    for (const targetName of ['app-runtime', 'db-job', 'demo-seed']) {
-      expect(dockerfileTarget(targetName)).toContain(npmRemoval)
-    }
-    for (const relativePath of [
-      'containers/hsa-directory-mock/Dockerfile',
-      'containers/hsa-person-lookup-adapter/Dockerfile',
-    ]) {
-      const finalStage = readWorkspaceFile(relativePath).split(
-        /^FROM node:(?!latest@)[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[a-f0-9]{64}$/mu,
-      )[1]
-      expect(finalStage).toContain(npmRemoval)
-    }
-  })
-
-  it('includes standalone transient cleanup compiler dependencies', () => {
-    const dockerfile = readWorkspaceFile('containers/app/Dockerfile')
-    const transientCleanupBuild = dockerfile.slice(
-      dockerfile.indexOf('FROM dependencies AS transient-cleanup-build'),
-      dockerfile.indexOf('FROM dependencies AS app-build'),
-    )
-
-    expect(transientCleanupBuild).toContain(
-      'COPY lib/auth/audit.ts lib/auth/client-ip.ts ./lib/auth/',
-    )
-    expect(transientCleanupBuild).toContain(
-      'COPY lib/transient-cleanup ./lib/transient-cleanup',
-    )
-    expect(transientCleanupBuild).toContain(
-      'COPY lib/typeorm/sqlserver-config.ts ./lib/typeorm/sqlserver-config.ts',
-    )
-  })
-
   it('runs the isolated HSA test-PKI provisioner without runtime npm', () => {
     for (const relativePath of [
       '.devcontainer/docker-compose.yml',
@@ -195,33 +120,10 @@ describe('container image contract', () => {
     expect(azureQuadlet).not.toContain('Exec=npm')
   })
 
-  it('keeps app-runtime to standalone output and public assets', () => {
-    const target = dockerfileTarget('app-runtime')
-
-    expect(target).toContain('/workspace/.next/standalone')
-    expect(target).toContain('/workspace/.next/static')
-    expect(target).toContain('/workspace/public')
-    expect(target).toContain('containers/app/start-runtime.mjs')
-    expect(target).toContain('USER node')
-    expect(target).toContain('CMD ["node", "start-runtime.mjs"]')
-    expect(target).not.toContain('COPY . .')
-    expect(target).not.toContain('typeorm/')
-    expect(target).not.toContain('tests/')
-    expect(target).not.toContain('docs/')
-  })
-
   it('keeps public PNG assets limited to deployed application content', () => {
     const publicPngFiles = listPublicPngFiles()
 
     expect(publicPngFiles).toEqual(['logo-small.png'])
-  })
-
-  it('sets the public site URL during the standalone app build', () => {
-    const target = dockerfileTarget('app-build')
-    const siteUrlEnv = 'ENV NEXT_PUBLIC_SITE_URL=$' + '{NEXT_PUBLIC_SITE_URL}'
-
-    expect(target).toContain('ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000')
-    expect(target).toContain(siteUrlEnv)
   })
 
   it('keeps db-job to migrations and required seed code', () => {

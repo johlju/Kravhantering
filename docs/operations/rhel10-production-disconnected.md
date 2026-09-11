@@ -14,6 +14,13 @@ the downtime window for a disconnected planned upgrade with
 The connected export host prepares one app-node disconnected bundle per
 release. Use the same bundle on every disconnected app node for that release.
 
+The application image uses UBI 10 Node.js 24. Export the complete published
+application image with the release bundle. Disconnected hosts import and verify
+that image; they do not download a UBI base or install RPM packages. Runtime
+commands, configuration, UID/GID `1000:1000`, certificate mounts, and writable
+mount boundaries remain the same. Follow the release's package and transfer-size
+evidence when preparing storage and transfer capacity.
+
 ![Disconnected Bundle Journey](../images/disconnected-release-bundle-journey.png)
 
 ## Connected Export Host

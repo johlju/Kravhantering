@@ -23,6 +23,44 @@ Buildx metadata and the OCI layout must agree on the candidate manifest digest.
 Release metadata also records every platform manifest represented by an OCI
 index.
 
+## Application UBI Inputs
+
+The application dependency, application build, and transient-cleanup compiler
+stages use the public UBI 10 Node.js 24 builder. The application runtime uses
+the public UBI 10 Node.js 24 minimal image. Both roles have independent immutable
+pins in `containers/app/Dockerfile`, maintained by the `ubi-node-builder` and
+`ubi-node-runtime` dependency lanes. Public builds require no Red Hat account,
+subscription, credentials, or private package source.
+
+The builder installs the npm version selected by `packageManager` before
+`npm ci`. The application keeps the locked glibc native packages and Next.js
+standalone tracing. The shared `containers/node/ubi-compat.sh` adaptation creates
+the supported `node` identity at UID/GID `1000:1000` and removes the runtime npm
+CLI. Inherited nodemon remains present. Consumers declare workload packages
+separately and explicitly set their command, entrypoint, home, path, and user.
+The builder resets the S2I npm prefix to `/usr/local`; runtime command execution
+uses system paths and bypasses the inherited S2I entrypoint.
+
+The application keeps port 3000, its authentication startup checks, private CA
+and client-key mounts, read-only root, and existing writable mounts. Numeric
+administrative user overrides remain supported. This does not introduce a new
+arbitrary-UID OpenShift contract. Existing production smoke remains the
+functional acceptance gate.
+
+For focused local image checks, build the application image and run:
+
+```bash
+npm run container:build:app-runtime
+KRAVHANTERING_APP_RUNTIME_IMAGE=localhost/kravhantering/app-runtime:local \
+  npx vitest run tests/container-integration/app-runtime.test.mjs
+```
+
+These checks exercise the selected local image's identity, commands, native
+processing, standalone assets, filesystem containment, and startup rejection.
+They do not replace the exact-candidate SBOM, policy, or production smoke gates.
+
+## Candidate Verification
+
 Syft generates an SBOM directly from each candidate archive. Grype scans every
 SBOM with an updated vulnerability database, and the committed exception policy
 evaluates the complete reports. The release smoke job stages the real production
