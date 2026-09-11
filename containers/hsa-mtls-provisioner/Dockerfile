@@ -16,14 +16,13 @@ ARG CA_CERTIFICATES_VERSION=2025.2.80_v9.0.305-102.el10_1
 USER 0:0
 ENV HOME=/root
 
-COPY containers/node/ubi-compat.sh /tmp/ubi-compat.sh
-RUN microdnf --disablerepo='*' --enablerepo=ubi-10-baseos-rpms install -y \
+RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  microdnf --disablerepo='*' --enablerepo=ubi-10-baseos-rpms install -y \
     "ca-certificates-${CA_CERTIFICATES_VERSION}" \
     "openssl-${OPENSSL_VERSION}" \
     "openssl-libs-${OPENSSL_VERSION}" \
   && microdnf clean all \
-  && sh /tmp/ubi-compat.sh \
-  && rm /tmp/ubi-compat.sh
+  && sh /tmp/ubi-compat/ubi-compat.sh
 
 COPY containers/hsa-mtls-provisioner/toolchain.lock.json /tmp/toolchain.lock.json
 COPY containers/hsa-mtls-provisioner/toolchain /tmp/toolchain-verifier

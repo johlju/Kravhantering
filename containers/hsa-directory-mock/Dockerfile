@@ -25,8 +25,8 @@ ENTRYPOINT []
 ENV HOME=/home/node
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NPM_CONFIG_PREFIX=/usr/local
-RUN --mount=type=bind,source=containers/node/ubi-compat.sh,target=/tmp/ubi-compat.sh \
-  sh /tmp/ubi-compat.sh
+RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV NODE_ENV=production
 WORKDIR /app/containers/hsa-directory-mock

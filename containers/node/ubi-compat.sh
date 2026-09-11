@@ -17,6 +17,11 @@ mkdir -p /home/node
 chown 1000:1000 /home/node
 chmod 0755 /home/node
 
+# Derived images must carry the unmodified vendor EULA alongside component notices.
+mkdir -p /usr/share/licenses/ubi
+cp "$(dirname "$0")/UBI-EULA.pdf" /usr/share/licenses/ubi/UBI-EULA.pdf
+chmod 0644 /usr/share/licenses/ubi/UBI-EULA.pdf
+
 # Production cleanup jobs use this absolute executable path.
 mkdir -p /usr/local/bin
 ln -s /usr/bin/node /usr/local/bin/node
