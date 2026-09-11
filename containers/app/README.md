@@ -57,11 +57,23 @@ separate runtime contract.
 the optional demo seed modules and defaults to `seed:demo`. It also owns
 `demo:clear --confirm-clear-non-required-data` so destructive demo-data
 operations stay behind the same opt-in image boundary. Use it only for
-disposable demonstration and test environments.
+disposable demonstration and test environments. Its final stage uses the
+pinned public UBI 10 Node.js 24 minimal runtime, the shared Node compatibility
+adaptation, and the UBI database dependency output. It preserves UID/GID
+`1000:1000`, supports an explicit administrative user override, and runs with
+a read-only root and a writable `/tmp`. SQL Server CA files remain read-only
+mounts selected with `NODE_EXTRA_CA_CERTS`.
 
-The Node base image is pinned directly in the Dockerfile with both tag and
-digest. Update the tag and digest together in a pull request, then rebuild the
-targets locally.
+The separately published demo-seed artifact has its own release metadata. It
+is excluded from standard production image locks, configuration templates,
+deployment flows, and disconnected deployment bundles. Obtain it explicitly
+for the disposable environment; do not substitute it for `db-job`.
+
+The UBI builder and minimal runtime are independent maintenance roles, pinned
+by tag and digest in the Dockerfile's ARG defaults. Update each role through
+the dependency maintenance workflow and rebuild every target that consumes it.
+The shared adaptation clears inherited S2I startup behavior and retains direct
+Node commands; neither the database nor demo runtime needs npm at startup.
 
 ## Docker Tooling
 

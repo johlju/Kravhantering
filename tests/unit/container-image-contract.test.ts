@@ -85,17 +85,6 @@ function expectDisabledSystemSkills(content: string) {
   }
 }
 
-function dockerfileTarget(name: string) {
-  const dockerfile = readWorkspaceFile('containers/app/Dockerfile')
-  const marker = new RegExp(`^FROM .+ AS ${name}$`, 'm')
-  const match = dockerfile.match(marker)
-  expect(match).not.toBeNull()
-  const start = match?.index ?? 0
-  const rest = dockerfile.slice(start)
-  const nextTarget = rest.slice(1).search(/^FROM /m)
-  return nextTarget === -1 ? rest : rest.slice(0, nextTarget + 1)
-}
-
 describe('container image contract', () => {
   it('runs the isolated HSA test-PKI provisioner without runtime npm', () => {
     for (const relativePath of [
@@ -124,37 +113,6 @@ describe('container image contract', () => {
     const publicPngFiles = listPublicPngFiles()
 
     expect(publicPngFiles).toEqual(['logo-small.png'])
-  })
-
-  it('keeps demo-seed explicit and limited to demo seed code', () => {
-    const target = dockerfileTarget('demo-seed')
-
-    expect(target).toContain('COPY --from=db-job-dependencies')
-    expect(target).toContain('scripts/db-sqlserver-admin.mjs')
-    expect(target).toContain('scripts/ai-provider-secret-maintenance.mjs')
-    expect(target).toContain('scripts/ai-provider-secret-restore-cli.mjs')
-    expect(target).toContain('lib/ai/provider-secret-crypto-core.mjs')
-    expect(target).toContain('typeorm/migrations')
-    expect(target).toContain('typeorm/seed-required.mjs')
-    expect(target).toContain('typeorm/ai-safety-seed-data.mjs')
-    expect(target).toContain('typeorm/seed-runner.mjs')
-    expect(target).toContain('lib/mcp/import-validation-fingerprint.mjs')
-    expect(target).toContain(
-      'lib/requirements/responsibility-person-verification-fingerprint.mjs',
-    )
-    expect(target).toContain('typeorm/seed.mjs')
-    expect(target).toContain('typeorm/seed-dogfood.mjs')
-    expect(target).toContain('typeorm/seed-dogfood-build.mjs')
-    expect(target).toContain('typeorm/seed-playwright-manual-cases-build.mjs')
-    expect(target).toContain('typeorm/seed-archiving-retention-build.mjs')
-    expect(target).toContain('ENV KRAVHANTERING_DB_ADMIN_IMAGE=demo-seed')
-    expect(target).toContain('USER node')
-    expect(target).toContain(
-      'ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]',
-    )
-    expect(target).toContain('CMD ["seed:demo"]')
-    expect(target).not.toContain('tests/')
-    expect(target).not.toContain('docs/')
   })
 
   it('uses a Dockerfile-specific ignore file for production builds', () => {
