@@ -69,20 +69,7 @@ function download(url, target, expected) {
 
 const inputs = nativeSourceInputs(manifest)
 for (const input of inputs) {
-  const retained = path.join(
-    root,
-    'containers/node/source-inputs',
-    input.sha256,
-  )
-  const target = path.join(native, input.path)
-  if (fs.existsSync(retained)) {
-    if (sha256(fs.readFileSync(retained)) !== input.sha256)
-      throw new Error('Retained source checksum mismatch')
-    fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.copyFileSync(retained, target)
-  } else {
-    download(input.sourceUrl, target, input.sha256)
-  }
+  download(input.sourceUrl, path.join(native, input.path), input.sha256)
 }
 writeJson(path.join(native, 'SOURCE-INPUTS.json'), inputs)
 writeJson(path.join(native, 'NOTICE-MANIFEST.json'), manifest)

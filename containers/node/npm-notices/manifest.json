@@ -13633,12 +13633,6 @@
             "status": "retrieved"
           },
           {
-            "path": "additional-sources/libultrahdr-383-metadata.json",
-            "sourceUrl": "https://api.github.com/repos/google/libultrahdr/pulls/383",
-            "sha256": "c7b0be6c4068e090b1647160a7264f1ea86855a9e3fffddbe8f5d8e8a9554b47",
-            "status": "retrieved"
-          },
-          {
             "path": "native/additional-sources/MPL-2.0.txt",
             "sourceUrl": "https://www.mozilla.org/media/MPL/2.0/index.txt",
             "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04",

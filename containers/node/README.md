@@ -73,9 +73,9 @@ exact candidate image IDs and publishes corresponding native and UBI source
 archives. `runtime-source.lock.json` identifies the original public UBI source
 manifest. The workflow derives RPM correspondence from its original layers.
 Refresh the source manifest with runtime-base updates; installed RPMs without
-matching source fail publication. The small
-hash-addressed files in `source-inputs/` preserve original recipe, patch and
-metadata bytes identified by the native notice manifest, including mutable
-upstream observations. They are source inputs, not extracted EULA text.
+matching source fail publication. Native recipe and patch records identify original download URLs and hashes.
+The release retrieves and verifies those inputs into temporary storage, then
+includes them with the published source archives. Downloaded third-party
+material is not stored in Git.
 See [Trusted Container Publishing](../../docs/development/trusted-container-publishing.md#runtime-sources-and-original-notices)
 for the release evidence and retention contract.

@@ -146,10 +146,10 @@ archive instead.
 After the exact-candidate smoke succeeds, the same release workflow retrieves
 original component sources from the committed native notice manifest and the
 public digest-pinned UBI source image in
-`containers/node/runtime-source.lock.json`. Small original recipe, patch and
-observation payloads are retained by content hash under
-`containers/node/source-inputs`; their committed source records identify the
-upstream origin. Every retrieved or retained payload must match its checksum.
+`containers/node/runtime-source.lock.json`. Original recipes and patches are
+retrieved from their recorded upstream URLs into temporary storage. Every
+retrieved payload must match its checksum; no third-party payload is stored
+in Git. The published source archives retain those inputs with the release.
 The source image retains its original manifest, config and all source layers.
 
 The workflow probes the smoke service user's six exact imported image IDs
