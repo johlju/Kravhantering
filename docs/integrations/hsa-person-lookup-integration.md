@@ -23,6 +23,12 @@ person as a local `Kravansvarsperson` row and creates or updates the assignment.
 
 ## Devcontainer and Release Test Support
 
+The HSA directory mock uses a public, digest-pinned UBI 10 Node.js 24 builder
+and minimal runtime. It retains UID/GID `1000:1000`, strict mTLS and its
+read-only role-specific certificate bundle. Use complete release images for
+disconnected test hosts; they need no Red Hat account or runtime RPM download.
+The base-image change requires no HSA configuration or certificate migration.
+
 The devcontainer includes Kong Gateway as the internal `kong` service for
 API-management verification, an `hsa-person-lookup-adapter`, and an HSA
 directory mock as `hsa-directory-mock`. Kong runs DB-less with

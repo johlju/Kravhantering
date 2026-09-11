@@ -221,6 +221,27 @@ npm run test:hsa-mock
 
 ## Release Test Support
 
+The dependency stage uses the public UBI 10 Node.js 24 builder and the runtime
+uses its minimal counterpart, each pinned by digest in the Dockerfile. The
+runtime shares the repository UBI compatibility adaptation and runs directly
+as UID/GID `1000:1000`, with a read-only root and its role-specific certificate
+bundle mounted read-only. It generates no runtime certificates. Building needs
+no Red Hat account or subscription; npm dependencies retain the locked graph
+and repository npm version policy.
+
+To exercise an already loaded image through the container contract tests:
+
+```sh
+KRAVHANTERING_HSA_MOCK_IMAGE=localhost/kravhantering/hsa-directory-mock:local \
+  npx vitest run tests/container-integration/hsa-directory-mock.test.mjs
+```
+
+These tests use disposable containers and a role-specific volume, verify SOAP
+fixtures and rejected clients, and compare direct PID 1 shutdown with an
+explicit Docker init supervisor. Without a supervisor, the current mock
+requires forced termination after the stop timeout; the supervised probe exits
+on SIGTERM. The image switch does not change deployment process supervision.
+
 The container release workflow publishes this mock as
 `ghcr.io/<owner>/kravhantering-hsa-directory-mock` with the same release tags
 as `app-runtime` and `db-job`. The generated
