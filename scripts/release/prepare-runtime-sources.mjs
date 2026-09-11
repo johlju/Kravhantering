@@ -138,18 +138,20 @@ writeJson(path.join(ubi, 'index.json'), {
 })
 writeJson(path.join(ubi, 'SOURCE-LOCK.json'), lock)
 
-const originals = {
-  '/usr/share/licenses/ubi/UBI-EULA.pdf': 'containers/node/UBI-EULA.pdf',
-  '/usr/share/licenses/kravhantering/LICENSE': 'LICENSE',
-  '/usr/share/licenses/nodejs-nodemon/LICENSE':
-    'containers/node/nodejs-nodemon-LICENSE',
-}
-const files = Object.fromEntries(
-  Object.entries(originals).map(([installed, local]) => [
-    installed,
-    sha256(fs.readFileSync(path.join(root, local))),
-  ]),
+const noticeLock = readJson(
+  path.join(root, 'containers/node/runtime-notices.lock.json'),
 )
+const files = {
+  ...Object.fromEntries(
+    Object.values(noticeLock).map(({ installedPath, sha256 }) => [
+      installedPath,
+      sha256,
+    ]),
+  ),
+  '/usr/share/licenses/kravhantering/LICENSE': sha256(
+    fs.readFileSync(path.join(root, 'LICENSE')),
+  ),
+}
 const probe = `
 const { execFileSync } = require('node:child_process');
 const queryRpms = () => execFileSync('rpm', ['-qa', '--qf', '%{NAME}\\t%{EPOCHNUM}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\t%{SOURCERPM}\\t%{LICENSE}\\n'], { encoding: 'utf8' });

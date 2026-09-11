@@ -8,6 +8,6 @@
   "sourceArchive": "nodemon-v3.1.14-bundled.tar.gz",
   "sourceArchiveSha256": "7215b3d37df960e9e6363cbe3fd86ef7c077b54dcae72de6d455e63a1f42dd89",
   "originalPath": "package/LICENSE",
-  "noticeSha256": "0fa6b5d2902f7ac42db390dfd2cb3b4ce82ed45cb5ad5dea41c11d1d67e0934d",
-  "noticePath": "nodejs-nodemon-LICENSE"
+  "upstreamRevision": "cfebe2feb2054a13fa6b9c493c1cd826ffccf167",
+  "noticeLock": "runtime-notices.lock.json#nodejs-nodemon"
 }

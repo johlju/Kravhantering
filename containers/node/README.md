@@ -4,19 +4,19 @@
 runtime images. Each consumer mounts this directory during its build; workload
 packages, commands and final users remain declared by that workload.
 
-`UBI-EULA.pdf` is the unmodified
-[Red Hat Universal Base Image EULA](https://www.redhat.com/licenses/EULA_Red_Hat_Universal_Base_Image_English_20190422.pdf),
-retrieved on 2026-09-11. Its SHA-256 is
-`a07025b9f5b71a816febe6ac76f21c9f759c806fa0a66874af90a50c3293f1b6`.
-The helper installs it as `/usr/share/licenses/ubi/UBI-EULA.pdf`, readable by
-all supported runtime users. It supplements the inherited component notices;
-it does not replace their licenses or the project's MIT license. Keep this
-vendor document unmodified when updating the shared packaging.
+The helper downloads the unmodified
+[Red Hat Universal Base Image EULA](https://www.redhat.com/licenses/EULA_Red_Hat_Universal_Base_Image_English_20190422.pdf)
+during each uncached runtime build and verifies its SHA-256 against
+`runtime-notices.lock.json` before installing it as
+`/usr/share/licenses/ubi/UBI-EULA.pdf`, readable by all supported runtime users.
+The PDF remains in its original format; builds do not extract its text or
+store a copy in Git. It supplements inherited component notices and the
+project's MIT license.
 
-Builds use the committed document and need no documentation-site download.
-Exact candidate verification compares the installed document's checksum with
-this recorded upstream checksum. Using UBI does not imply Red Hat endorsement,
-certification, or support for Kravhantering.
+The existing release build needs HTTPS access to the locked notice URLs. A
+failed download or checksum mismatch fails that build. Exact candidate
+verification compares installed notices with the same lock. Using UBI does
+not imply Red Hat endorsement, certification, or support for Kravhantering.
 
 Final workload Dockerfiles label their images as Viscalyx/Kravhantering and
 describe the actual runtime. They clear inherited base-image build/version
@@ -57,10 +57,14 @@ acknowledgement, source-access and replacement handoff at
 
 The inherited `nodejs-nodemon` RPM includes its bundled dependency notices but
 omits nodemon's top-level license from installation. The shared helper restores
-that original MIT notice at `/usr/share/licenses/nodejs-nodemon/LICENSE`.
-`nodejs-nodemon-notice.json` records the exact public source-image layer, source
-RPM, bundled archive, original path and checksums used to recover it. Review
-that source correspondence with runtime-base updates. Nodemon remains installed.
+that original MIT notice at `/usr/share/licenses/nodejs-nodemon/LICENSE` by
+fetching its immutable upstream revision and verifying the checksum in
+`runtime-notices.lock.json`. The downloaded bytes match the original license
+in the source RPM; no license payload is stored in Git.
+`nodejs-nodemon-notice.json` records the corresponding public source-image
+layer, source RPM, bundled archive and original path. Review that source
+correspondence and the notice lock with runtime-base updates. Nodemon remains
+installed.
 
 ## Release source delivery
 

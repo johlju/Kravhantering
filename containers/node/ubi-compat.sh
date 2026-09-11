@@ -17,16 +17,31 @@ mkdir -p /home/node
 chown 1000:1000 /home/node
 chmod 0755 /home/node
 
-# Derived images must carry the unmodified vendor EULA alongside component notices.
-mkdir -p /usr/share/licenses/ubi
-cp "$(dirname "$0")/UBI-EULA.pdf" /usr/share/licenses/ubi/UBI-EULA.pdf
-chmod 0644 /usr/share/licenses/ubi/UBI-EULA.pdf
+# Fetch original vendor notices at build time; install only verified bytes.
+notices=$(node -e '
+  const fs = require("node:fs");
+  const lock = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  for (const { url, sha256, installedPath } of [lock.ubi, lock["nodejs-nodemon"]]) {
+    console.log([url, sha256, installedPath].join("\t"));
+  }
+' "$(dirname "$0")/runtime-notices.lock.json")
+printf '%s\n' "$notices" | while IFS="$(printf '\t')" read -r url checksum target; do
+  notice_file=$(mktemp)
+  trap 'rm -f "$notice_file"' 0 HUP INT TERM
+  curl --fail --silent --show-error --location --retry 3 \
+    --proto '=https' --proto-redir '=https' --output "$notice_file" "$url"
+  if ! printf '%s  %s\n' "$checksum" "$notice_file" | sha256sum --check --status; then
+    echo "UBI compatibility: notice checksum mismatch for $target." >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$target")"
+  cp "$notice_file" "$target"
+  chmod 0644 "$target"
+  rm -f "$notice_file"
+done
 mkdir -p /usr/share/licenses/kravhantering
 cp /tmp/kravhantering-LICENSE /usr/share/licenses/kravhantering/LICENSE
 chmod 0644 /usr/share/licenses/kravhantering/LICENSE
-mkdir -p /usr/share/licenses/nodejs-nodemon
-cp "$(dirname "$0")/nodejs-nodemon-LICENSE" /usr/share/licenses/nodejs-nodemon/LICENSE
-chmod 0644 /usr/share/licenses/nodejs-nodemon/LICENSE
 
 # Production cleanup jobs use this absolute executable path.
 mkdir -p /usr/local/bin
