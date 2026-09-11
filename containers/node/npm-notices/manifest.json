@@ -9083,7 +9083,7 @@
         },
         {
           "path": "native/README.txt",
-          "sha256": "4084305e90af077d37ec7ad77d750afb1f577a2800aedf2370ac1a1eaa5f087e",
+          "sha256": "b42a1d4221069bde0bff94e72fcbefb6a157ed63b4e79e8c39ea4fbd9a17628b",
           "sourceUrl": "https://github.com/viscalyx/Kravhantering",
           "scope": "Project-authored native library-use, acknowledgement, replacement and source-access handoff; distinct from upstream component terms",
           "kind": "distribution-handoff"

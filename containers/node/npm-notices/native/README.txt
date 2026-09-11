@@ -53,12 +53,11 @@ build scripts identified separately. The recipe is available at:
 https://github.com/lovell/sharp-libvips/tree/6e5971d333377743163edc3ad9e5d0b897abcbc9
 
 The matching Kravhantering GitHub Release provides native-library-sources.tar,
-ubi-runtime-sources.oci.tar, runtime-source-evidence.json and
-runtime-sources.sha256 alongside binary downloads:
+ubi-runtime-sources.oci.tar alongside binary downloads:
 https://github.com/viscalyx/Kravhantering/releases
 Select the release identified by the image's version and revision labels.
-The source evidence binds the archives to that run's six image manifest
-identities. The native archive includes original component and registry-crate
+Their checksums are included in the authenticated deployment archive's
+hashes.sha256. The native archive includes original component and registry-crate
 archives, build recipes, patches and their hash-locked source records. The UBI
 archive retains the original source-image manifest and all source RPM layers.
 Both archives are separately downloadable at no charge. Retain these source

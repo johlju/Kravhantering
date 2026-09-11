@@ -29,37 +29,27 @@ attestations or signature helper artifacts, not runnable `app-runtime` or
 
 Each UBI release provides `native-library-sources.tar` and
 `ubi-runtime-sources.oci.tar` alongside the binary downloads at no charge.
-Download these with `runtime-source-evidence.json`, `runtime-sources.sha256`,
-`runtime-sources.sigstore.json` and `runtime-sources.trusted-root.jsonl` from the
-same release. Keep them with any mirror or disconnected redistribution of
-that release. They are separate source downloads, not runtime installation
-inputs, and do not add demo-seed to standard production bundles.
+Keep these with any mirror or disconnected redistribution of that release.
+They are separate source downloads, not runtime installation inputs, and do
+not add demo-seed to standard production bundles.
 
-After setting the expected `REPOSITORY`, `SIGNER_WORKFLOW`, `SOURCE_COMMIT`
-and `SOURCE_REF` as described below, verify the three authenticated subjects:
+First authenticate and extract the deployment archive using the procedure
+below. Its `hashes.sha256` also identifies the source archives. With both
+source downloads in the current directory and `VERIFIED_BUNDLE` set to the
+extracted, authenticated deployment directory, verify them with:
 
 ```bash
-sha256sum --check runtime-sources.sha256
-for file in native-library-sources.tar ubi-runtime-sources.oci.tar \
-  runtime-source-evidence.json; do
-  gh attestation verify "$file" \
-    --repo "$REPOSITORY" \
-    --signer-workflow "$SIGNER_WORKFLOW" \
-    --source-digest "$SOURCE_COMMIT" \
-    --source-ref "$SOURCE_REF" \
-    --predicate-type https://slsa.dev/provenance/v1 \
-    --bundle runtime-sources.sigstore.json \
-    --custom-trusted-root runtime-sources.trusted-root.jsonl
- done
+for file in native-library-sources.tar ubi-runtime-sources.oci.tar; do
+  expected="$(awk -v name="tmp/container-release-artifacts/sources/$file" \
+    '$2 == name { print $1 }' "$VERIFIED_BUNDLE/hashes.sha256")"
+  printf '%s  %s\n' "$expected" "$file" | sha256sum --check - || exit 1
+done
 ```
 
-These commands work with the transferred verification material at a
-network-disconnected site. Trust the roots under the same organizational
-policy as deployment-archive verification. Check the source evidence's commit,
-release version and six candidate manifest digests against the authenticated
-release metadata and image provenance. Use locked image IDs separately to
-check runtime equivalence after image import. Never replace manifest-digest
-provenance verification with a runtime image-ID comparison.
+A missing checksum or source file fails verification. This uses the existing
+deployment-archive trust material and works without internet access after
+transfer. Verify image provenance and locked runtime image IDs separately as
+described below.
 
 The native archive contains original component archives, registry crates,
 recipes, patches and source records. The UBI OCI source archive contains the

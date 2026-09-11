@@ -247,18 +247,4 @@ writeJson(path.join(output, 'runtime-source-evidence.json'), {
   qualification:
     'Original source superset and notices; no exact binary reproducibility, future upstream availability or platform certification claim. Source transfer bytes are separate from runtime image transfer.',
 })
-fs.writeFileSync(
-  path.join(output, 'runtime-sources.sha256'),
-  [
-    ...archives,
-    {
-      name: 'runtime-source-evidence.json',
-      sha256: sha256(
-        fs.readFileSync(path.join(output, 'runtime-source-evidence.json')),
-      ),
-    },
-  ]
-    .map(entry => `${entry.sha256}  ${entry.name}\n`)
-    .join(''),
-)
 fs.rmSync(work, { recursive: true })

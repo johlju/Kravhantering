@@ -161,14 +161,14 @@ Public signing-key RPM records are distinguished from software packages.
 A mismatch blocks image promotion. The original Red Hat EULA remains
 `/usr/share/licenses/ubi/UBI-EULA.pdf`; no extracted text is generated.
 
-`runtime-source-evidence.json` binds the two source archive hashes to that
-run's six image manifest digests, image IDs and installed package records.
-The archives and evidence receive release-workflow provenance attestations.
-Their checksums, Sigstore bundle and trusted roots accompany the release
-assets. A final anonymous download checks the published source bytes before
-the workflow succeeds. Retain these source assets while distributing the
-corresponding binary release, including mirrors and disconnected handoffs.
-Do not substitute temporary workflow-artifact retention for release access.
+The two source archive checksums are included in `hashes.sha256` inside the
+existing attested deployment archive. Source delivery uses that verification
+path; no separate source signatures or trust bundles are published. A final
+anonymous download checks the published source bytes before the workflow
+succeeds. Retain these sources while distributing the corresponding binary
+release, including mirrors and disconnected handoffs. Temporary workflow
+artifact retention does not provide the required release access. Detailed
+candidate/source observations remain internal workflow evidence.
 
 Source archives are separate downloads and do not enlarge runtime images or
 the standard production deployment bundle. The first UBI source collection is
@@ -752,20 +752,16 @@ display as recent package versions.
 
 For a release selected for operator handoff:
 
-1. Download the six source assets listed in the release notes anonymously.
-   Verify their checksums and attestations against that release's source commit
-   and ref. All three attested subjects must pass.
-2. Compare the source evidence's six manifest digests with the authenticated
-   release metadata, including the separate demo and HSA support identities.
-3. Transfer the source collection and complete published runtime images into a
-   separate image store without internet access. Verify offline attestations
-   and locked runtime image IDs. Confirm no UBI base or RPM fetch is required.
-4. Keep demo-seed outside the standard production bundle. Retain the source
-   collection with any redistributed binary images and record the actual host,
+1. Download both source archives listed in the release notes anonymously.
+   Authenticate the deployment archive and verify the source files against its
+   `hashes.sha256` using the release artifact verification guide.
+2. Transfer the source collection and complete published runtime images into a
+   separate image store without internet access. Use the existing deployment
+   archive verification and locked runtime image-ID checks. Confirm no upstream
+   UBI base or RPM fetch is required during installation.
+3. Keep demo-seed outside the standard production bundle. Retain the source
+   collection with redistributed binary images and record the actual host,
    topology and scope exercised.
-5. On a disposable copy, change one source archive byte and confirm checksum
-   and provenance verification fail. Restore the original verified artifact
-   before any operator handoff.
 
 This operational case is separate from the application browser test manual.
 The automated source contract tests cover incomplete identities, source and
