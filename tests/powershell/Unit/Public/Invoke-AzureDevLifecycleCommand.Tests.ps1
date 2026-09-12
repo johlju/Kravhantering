@@ -769,6 +769,172 @@ Describe 'Invoke-AzureDevLifecycleCommand' -Tag 'Unit' {
     }
   }
 
+  Context 'When state reads are unavailable during an upward transition' {
+    BeforeDiscovery {
+      $unavailableCases = @(
+        @{ InitialState = 'deallocated'; Action = 'start-requested'; Mutations = 1 },
+        @{ InitialState = 'starting'; Action = 'joined-start'; Mutations = 0 }
+      )
+    }
+
+    BeforeEach {
+      $script:mockStates =
+        [System.Collections.Generic.Queue[System.String]]::new()
+      $script:now = [System.Int64]0
+      Mock Get-AzureDevLifecycleState -MockWith {
+        if ($script:mockStates.Count -gt 0) {
+          return $script:mockStates.Dequeue()
+        }
+        return 'unavailable'
+      }
+      Mock Complete-AzureDevLifecycleAttempt -MockWith {
+        if ($null -ne $Failure) {
+          throw $Failure
+        }
+        return $LifecycleResult
+      }
+    }
+
+    It 'Should recover <Action> without another mutation' `
+      -ForEach $unavailableCases {
+      @($InitialState, 'unavailable', 'unavailable', 'starting', 'running') |
+        ForEach-Object { $script:mockStates.Enqueue($_) }
+      $timing = & $script:newLifecycleTiming
+
+      $result = Invoke-AzureDevLifecycleCommand `
+        -CommandName start `
+        -RepositoryRoot $TestDrive `
+        -Timing $timing
+
+      $result.Result | Should-Be 'running'
+      $result.ObservedState | Should-Be 'running'
+      $result.Action | Should-Be $Action
+      $script:now | Should-Be 20000
+      Should-Invoke Get-AzureDevLifecycleState -Exactly -Times 5 -Scope It
+      Should-Invoke Invoke-AzCli -Exactly -Times $Mutations -Scope It
+      Should-Invoke Complete-AzureDevLifecycleAttempt `
+        -Exactly -Times 1 -Scope It
+    }
+
+    It 'Should time out <Action> on the original running deadline' `
+      -ForEach $unavailableCases {
+      $script:mockStates.Enqueue($InitialState)
+      $timing = & $script:newLifecycleTiming `
+        -RunningDeadlineMilliseconds 20000
+
+      {
+        Invoke-AzureDevLifecycleCommand `
+          -CommandName start `
+          -RepositoryRoot $TestDrive `
+          -Timing $timing
+      } | Should-Throw -ExceptionMessage '*did not reach running within*'
+
+      $script:now | Should-Be 20000
+      Should-Invoke Get-AzureDevLifecycleState -Exactly -Times 4 -Scope It
+      Should-Invoke Invoke-AzCli -Exactly -Times $Mutations -Scope It
+      Should-Invoke Complete-AzureDevLifecycleAttempt `
+        -Exactly -Times 1 -Scope It `
+        -ParameterFilter {
+          $Failure.TargetObject.Phase -ceq 'running-wait' -and
+          $Failure.TargetObject.ObservedState -ceq 'unavailable' -and
+          $Failure.TargetObject.Action -ceq $Action -and
+          $Failure.TargetObject.MutationAccepted -eq ($Mutations -eq 1) -and
+          $Record.elapsedMilliseconds -eq 20000
+        }
+    }
+  }
+
+  Context 'When an unavailable read consumes the remaining running budget' {
+    BeforeDiscovery {
+      $mockDeadlineCases = @(
+        @{ DeadlineMilliseconds = 600000 },
+        @{ DeadlineMilliseconds = 600500 }
+      )
+    }
+
+    BeforeEach {
+      $script:mockStateReads = 0
+      $script:now = [System.Int64]0
+      Mock Get-AzureDevLifecycleState -MockWith {
+        $script:mockStateReads++
+        if ($script:mockStateReads -eq 1) {
+          return 'starting'
+        }
+        $script:now += $TimeoutSeconds * 1000
+        return 'unavailable'
+      }
+      Mock Complete-AzureDevLifecycleAttempt -MockWith { throw $Failure }
+    }
+
+    It 'Should finish within the <DeadlineMilliseconds> millisecond deadline' `
+      -ForEach $mockDeadlineCases {
+      $timing = & $script:newLifecycleTiming `
+        -PollIntervalMilliseconds 599000 `
+        -RunningDeadlineMilliseconds $DeadlineMilliseconds
+
+      {
+        Invoke-AzureDevLifecycleCommand `
+          -CommandName start `
+          -RepositoryRoot $TestDrive `
+          -Timing $timing
+      } | Should-Throw -ExceptionMessage '*did not reach running within*'
+
+      $script:now | Should-Be $DeadlineMilliseconds
+      Should-Invoke Get-AzureDevLifecycleState -Exactly -Times 2 -Scope It
+      Should-Invoke Get-AzureDevLifecycleState -Exactly -Times 1 -Scope It `
+        -ParameterFilter { $TimeoutSeconds -eq 1 }
+      Should-NotInvoke Invoke-AzCli -Scope It
+      Should-Invoke Complete-AzureDevLifecycleAttempt `
+        -Exactly -Times 1 -Scope It `
+        -ParameterFilter {
+          $Failure.TargetObject.Phase -ceq 'running-wait' -and
+          $Failure.TargetObject.ObservedState -ceq 'unavailable' -and
+          $Record.elapsedMilliseconds -eq $DeadlineMilliseconds
+        }
+    }
+  }
+
+  Context 'When the running read budget is exhausted after polling' {
+    BeforeDiscovery {
+      $mockRemainingCases = @(
+        @{ RemainingMilliseconds = 0 },
+        @{ RemainingMilliseconds = 500 }
+      )
+    }
+
+    BeforeEach {
+      $script:now = [System.Int64]0
+      Mock Get-AzureDevLifecycleState -MockWith { return 'starting' }
+      Mock Write-AzureDevLifecycleProgress
+      Mock Write-AzureDevLifecycleProgress -ParameterFilter {
+        $Event -ceq 'heartbeat'
+      } -MockWith {
+        $script:now = [System.Math]::Max(
+          $script:now,
+          600000 - $RemainingMilliseconds
+        )
+      }
+      Mock Complete-AzureDevLifecycleAttempt -MockWith { throw $Failure }
+    }
+
+    It 'Should skip a read with <RemainingMilliseconds> milliseconds left' `
+      -ForEach $mockRemainingCases {
+      $timing = & $script:newLifecycleTiming `
+        -PollIntervalMilliseconds 599000
+
+      {
+        Invoke-AzureDevLifecycleCommand `
+          -CommandName start `
+          -RepositoryRoot $TestDrive `
+          -Timing $timing
+      } | Should-Throw -ExceptionMessage '*did not reach running within*'
+
+      $script:now | Should-Be 600000
+      Should-Invoke Get-AzureDevLifecycleState -Exactly -Times 1 -Scope It
+      Should-NotInvoke Invoke-AzCli -Scope It
+    }
+  }
+
   Context 'When an upward transition is externally reversed' {
     BeforeDiscovery {
       $interferenceCases = @(
