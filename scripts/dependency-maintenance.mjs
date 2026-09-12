@@ -29,7 +29,59 @@ const DEPENDABOT_KIND_ECOSYSTEMS = {
   'github-actions': 'github-actions',
   'npm-package': 'npm',
 }
+export const UBI_NODE_IMAGES = {
+  'ubi-node-builder': 'registry.access.redhat.com/ubi10/nodejs-24',
+  'ubi-node-runtime': 'registry.access.redhat.com/ubi10/nodejs-24-minimal',
+}
+
+export function parseUbiNodeTag(tag) {
+  if (tag === 'latest') return { major: 10, minor: -1, revision: 0, tag }
+  const match = String(tag).match(
+    /^10\.(?<minor>0|[1-9]\d*)(?:-(?<revision>[1-9]\d*))?$/u,
+  )
+  if (!match?.groups) return null
+  return {
+    major: 10,
+    minor: Number(match.groups.minor),
+    revision: Number(match.groups.revision ?? 0),
+    tag,
+  }
+}
+
+export function readUbiSelectedReference(unit) {
+  const image = UBI_NODE_IMAGES[unit.detector]
+  const reference = String(unit.selectedReference ?? '')
+  const match = reference.match(
+    /:(?<tag>[^:@/]+)@(?<digest>sha256:[a-f0-9]{64})$/u,
+  )
+  if (
+    unit.image !== image ||
+    normalizeImageRepository(reference) !== image ||
+    !match?.groups ||
+    !parseUbiNodeTag(match.groups.tag) ||
+    reference !== `${image}:${match.groups.tag}@${match.groups.digest}`
+  ) {
+    throw new Error(
+      `UBI unit "${unit.id}" must select its public Node 24 repository with a supported tag and sha256 digest.`,
+    )
+  }
+  return {
+    imageId: null,
+    manifestDigest: match.groups.digest,
+    tag: match.groups.tag,
+  }
+}
+
 const ISSUE_DETECTOR_CONTRACTS = {
+  ...Object.fromEntries(
+    Object.keys(UBI_NODE_IMAGES).map(detector => [
+      detector,
+      {
+        kind: 'dockerfile-image',
+        skill: DEPENDENCY_DRIFT_SKILL,
+      },
+    ]),
+  ),
   'devcontainer-base': {
     kind: 'image-lock',
     skill: DEPENDENCY_DRIFT_SKILL,
@@ -525,6 +577,22 @@ function validateRegistryShape(root, registry) {
           `Issue unit "${unit.id}" does not match the "${unit.detector}" detector contract.`,
         )
       }
+      if (UBI_NODE_IMAGES[unit.detector]) {
+        try {
+          readUbiSelectedReference(unit)
+        } catch (error) {
+          errors.push(error.message)
+        }
+        if (
+          !Array.isArray(unit.paths) ||
+          !unit.paths.length ||
+          new Set(unit.paths).size !== unit.paths.length
+        ) {
+          errors.push(
+            `UBI unit "${unit.id}" must declare unique synchronized Dockerfile paths.`,
+          )
+        }
+      }
       if (unit.kind === 'release-toolchain') {
         if (
           !unit.repository ||
@@ -705,6 +773,14 @@ function validateImageCoverage(root, registry) {
       )
     }
     const [unit] = matches
+    if (
+      UBI_NODE_IMAGES[unit.detector] &&
+      input.reference !== unit.selectedReference
+    ) {
+      errors.push(
+        `Docker input "${input.path}" is not synchronized with "${unit.id}" selectedReference.`,
+      )
+    }
     if (
       unit?.kind === 'image-lock' &&
       input.path.startsWith('.devcontainer/')

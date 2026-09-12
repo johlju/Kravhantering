@@ -7,10 +7,41 @@ receive a CA signing key.
 The source-of-truth profile is
 `containers/hsa-mtls/certificate-profile.json`. The independently pinned build
 toolchain is recorded in `toolchain.lock.json`. Every image build verifies the
-selected base image, tag, digest, Node major, and Debian package versions plus
-the Node, OpenSSL, and CA certificate versions installed inside the image. A
-selection or installed-version mismatch fails the build. Package tests cover
+selected UBI 10 Node.js 24 minimal base image, tag, digest, Node major, and
+public RPM versions. It checks the exact installed Node and OpenSSL binary
+versions and queries RPM for the name, epoch, version-release, architecture,
+source RPM, and vendor of `openssl`, `openssl-libs`, and `ca-certificates`.
+Missing evidence or any selected-input, installed-version, identity, or source
+mismatch fails the build. Package tests cover
 the same verifier contract without inspecting Dockerfile or workflow source.
+
+## Toolchain maintenance
+
+The digest-pinned runtime and additional packages are available anonymously.
+The build enables only the public `ubi-10-baseos-rpms` repository, with Red Hat
+signature verification, for the declared OpenSSL and CA RPMs. Installed RPM
+headers supply source-package and vendor evidence; the immutable base and
+restricted signed repository supply the build provenance. No subscription,
+private registry credentials, or package downloads at deployment are required.
+
+For an approved runtime or package update, synchronize the Dockerfile base
+arguments and RPM versions with `toolchain.lock.json`. Independently inspect
+the selected image and installed RPM headers; do not regenerate expected
+values from verifier output. Record exact Node and OpenSSL binary versions,
+RPM identities, source RPMs, and vendor in the lock. Keep the shared
+`containers/node/ubi-compat.sh` adaptation and the provisioner's `0:0` runtime
+identity. `HOME=/root` and the explicit Node CLI entrypoint override inherited
+S2I defaults. The shared adaptation removes the npm CLI and retains inherited
+nodemon; certificate commands need neither npm nor package installation.
+
+Run `npm run test:hsa-provisioner`, build the complete `linux/amd64` image,
+and retain its toolchain verification event, SBOM, vulnerability-policy result,
+and certificate lifecycle evidence. Follow the existing dependency-maintenance
+and release verification workflow before publishing a new immutable image.
+Operators receive the complete release image, including its RPMs and notices;
+disconnected installations import and verify that image without resolving UBI
+or RPM inputs. Certificate commands, mounts, role ownership, and renewal policy
+remain the storage and lifecycle contracts below.
 
 ## Storage contract
 

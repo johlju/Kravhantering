@@ -1,6 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS dependencies
+FROM registry.access.redhat.com/ubi10/nodejs-24:latest@sha256:5295d1fd8e46aebad1e9da107c62bc4a5cfe8bca5fd1175a7b0a523fa977866a AS dependencies
+
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/root
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
 
 ENV NODE_ENV=production
 WORKDIR /app
@@ -9,19 +15,43 @@ COPY containers/hsa-person-lookup-adapter/package.json containers/hsa-person-loo
 RUN npm install --global "npm@$(node -p 'require("./package.json").packageManager.slice(4)')"
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600
+FROM registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94d710c26eac01f20528c2b
 
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/hsa-person-lookup-adapter" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering HSA person lookup adapter" \
+  description="Kravhantering HSA person lookup adapter" \
+  io.k8s.display-name="Kravhantering HSA person lookup adapter" \
+  io.k8s.description="Kravhantering HSA person lookup adapter" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="8443:https" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/home/node
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
+RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
+  sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV NODE_ENV=production
 WORKDIR /app/containers/hsa-person-lookup-adapter
 
-COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
-COPY --chown=node:node containers/hsa-person-lookup-adapter/package.json ./
-COPY --chown=node:node containers/hsa-person-lookup-adapter/src ./src
-COPY --chown=node:node lib/hsa/strict-certificate-validation.mjs /app/lib/hsa/strict-certificate-validation.mjs
+COPY --from=dependencies --chown=1000:1000 /app/node_modules ./node_modules
+COPY --chown=1000:1000 containers/hsa-person-lookup-adapter/package.json ./
+COPY --chown=1000:1000 containers/hsa-person-lookup-adapter/src ./src
+COPY --chown=1000:1000 lib/hsa/strict-certificate-validation.mjs /app/lib/hsa/strict-certificate-validation.mjs
 
-USER node
+USER 1000:1000
 EXPOSE 8443
 CMD ["node", "src/strict-server.mjs"]

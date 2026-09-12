@@ -24,6 +24,7 @@ import {
   readLycheeCurrent,
   readNodeCurrent,
   renderIssueBody,
+  resolveImageIdentity,
   selectAvailableVersion,
 } from '../../.github/workflows/dependency-drift.mjs'
 
@@ -141,6 +142,25 @@ afterEach(() => {
 })
 
 describe('dependency drift selection', () => {
+  it('selects supported UBI 10 revisions while retaining Node 24 and digest refresh channels', () => {
+    const config = IMAGE_CONFIGS['ubi-node-builder']
+    const tags = [
+      'latest',
+      '10.1',
+      '10.2-1788245909',
+      '10.2-source',
+      '10.3-1789000000-source',
+      '11.0-1789000000',
+    ]
+    expect(selectAvailableVersion(config, tags, '10.1').tag).toBe(
+      '10.2-1788245909',
+    )
+    expect(selectAvailableVersion(config, tags, 'latest').tag).toBe('latest')
+    expect(() => selectAvailableVersion(config, tags, '24')).toThrow(
+      'unsupported',
+    )
+  })
+
   it('parses workflow input', () => {
     expect(parseArgs([], {})).toEqual({ unit: 'all' })
     expect(parseArgs([], { DEPENDENCY_DRIFT_UNIT: 'npm' })).toEqual({
@@ -266,6 +286,295 @@ describe('dependency drift selection', () => {
 })
 
 describe('drift detection', () => {
+  it.each([
+    [() => [new Response('registry unavailable', { status: 503 })], '503'],
+    [() => [new Response('', { status: 401 })], '401'],
+    [
+      () => [
+        new Response('', {
+          status: 401,
+          headers: { 'www-authenticate': 'Basic realm=""' },
+        }),
+      ],
+      '401',
+    ],
+    [
+      () => [
+        new Response('', {
+          status: 401,
+          headers: {
+            'www-authenticate':
+              'Bearer realm="https://registry.access.redhat.com/token"',
+          },
+        }),
+        new Response('', { status: 403 }),
+      ],
+      '401',
+    ],
+    [
+      () => [new Response(JSON.stringify({ config: { digest: digest('a') } }))],
+      'manifest digest did not resolve',
+    ],
+    [
+      () => [
+        new Response(
+          JSON.stringify({
+            manifests: [
+              {
+                digest: digest('b'),
+                platform: { os: 'linux', architecture: 'amd64' },
+              },
+            ],
+          }),
+          { headers: { 'docker-content-digest': digest('a') } },
+        ),
+        new Response('{}'),
+      ],
+      'platform manifest has no config',
+    ],
+  ])(
+    'fails closed when a public registry cannot supply an immutable usable image',
+    async (responses, message) => {
+      const replies = responses()
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        replies.shift(),
+      )
+      await expect(
+        resolveImageIdentity(IMAGE_CONFIGS['ubi-node-runtime'], 'latest'),
+      ).rejects.toThrow(message)
+    },
+  )
+
+  it('keeps the Docker Official Node platform identity when an index is published', async () => {
+    const replies = [
+      new Response(
+        JSON.stringify({
+          manifests: [
+            {
+              digest: digest('b'),
+              platform: { os: 'linux', architecture: 'amd64' },
+            },
+          ],
+        }),
+        { headers: { 'docker-content-digest': digest('a') } },
+      ),
+      new Response(JSON.stringify({ config: { digest: digest('c') } })),
+    ]
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      replies.shift(),
+    )
+    expect(
+      await resolveImageIdentity(IMAGE_CONFIGS.node, '24-trixie-slim'),
+    ).toEqual({ manifestDigest: digest('b'), imageId: digest('c') })
+  })
+
+  it.each([
+    'FROM node:24-trixie-slim\n',
+    `FROM node:25-trixie-slim@${digest('a')}\n`,
+  ])('requires supported immutable Node inputs', source => {
+    const root = temporaryDirectory()
+    write(root, 'Dockerfile', source)
+    expect(() =>
+      readNodeCurrent({ ...IMAGE_CONFIGS.node, paths: ['Dockerfile'] }, root),
+    ).toThrow('must pin a supported tag and digest')
+    expect(() =>
+      readNodeCurrent({ ...IMAGE_CONFIGS.node, paths: [] }, root),
+    ).toThrow('not owned')
+  })
+
+  it('fails when no Docker Official Node input remains for an active detector', () => {
+    expect(() =>
+      readNodeCurrent(IMAGE_CONFIGS.node, temporaryDirectory()),
+    ).toThrow('No production Node')
+  })
+
+  it('resolves the public UBI index identity and AMD64 image through an anonymous challenge', async () => {
+    const config = IMAGE_CONFIGS['ubi-node-runtime']
+    const replies = [
+      new Response('', {
+        status: 401,
+        headers: {
+          'www-authenticate':
+            'Bearer realm="https://registry.access.redhat.com/token",service="registry",scope="repository:ubi10/nodejs-24-minimal:pull"',
+        },
+      }),
+      new Response(JSON.stringify({ access_token: 'anonymous-token' })),
+      new Response(
+        JSON.stringify({
+          manifests: [
+            {
+              digest: digest('d'),
+              platform: { os: 'linux', architecture: 'arm64' },
+            },
+            {
+              digest: digest('b'),
+              platform: { os: 'linux', architecture: 'amd64' },
+            },
+          ],
+        }),
+        { headers: { 'docker-content-digest': digest('a') } },
+      ),
+      new Response(JSON.stringify({ config: { digest: digest('c') } }), {
+        headers: { 'docker-content-digest': digest('b') },
+      }),
+    ]
+    const requests = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      requests.push({
+        url: String(url),
+        authorization: options?.headers?.Authorization,
+      })
+      return replies.shift()
+    })
+    expect(await resolveImageIdentity(config, 'latest')).toEqual({
+      manifestDigest: digest('a'),
+      imageId: digest('c'),
+    })
+    expect(requests).toEqual([
+      {
+        url: 'https://registry.access.redhat.com/v2/ubi10/nodejs-24-minimal/manifests/latest',
+        authorization: undefined,
+      },
+      {
+        url: 'https://registry.access.redhat.com/token?service=registry&scope=repository%3Aubi10%2Fnodejs-24-minimal%3Apull',
+        authorization: undefined,
+      },
+      {
+        url: 'https://registry.access.redhat.com/v2/ubi10/nodejs-24-minimal/manifests/latest',
+        authorization: 'Bearer anonymous-token',
+      },
+      {
+        url: `https://registry.access.redhat.com/v2/ubi10/nodejs-24-minimal/manifests/${digest('b')}`,
+        authorization: undefined,
+      },
+    ])
+  })
+
+  it.each([
+    [{ manifests: [] }, 'does not include linux/amd64'],
+    [{ manifests: [{ digest: digest('a') }] }, 'does not include linux/amd64'],
+    [{}, 'manifest has no config'],
+    [{ config: { digest: 'invalid' } }, 'did not resolve to a sha256 digest'],
+  ])('rejects unusable public UBI identities', async (manifest, message) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(manifest), {
+        headers: { 'docker-content-digest': digest('a') },
+      }),
+    )
+    await expect(
+      resolveImageIdentity(IMAGE_CONFIGS['ubi-node-builder'], 'latest'),
+    ).rejects.toThrow(message)
+  })
+
+  it('detects supported numeric UBI revision updates from synchronized ARG inputs', async () => {
+    const root = temporaryDirectory()
+    const image = 'registry.access.redhat.com/ubi10/nodejs-24'
+    const unit = {
+      id: 'ubi-node-builder',
+      detector: 'ubi-node-builder',
+      image,
+      paths: ['containers/app/Dockerfile'],
+      selectedReference: `${image}:10.1@${digest('a')}`,
+      skill: 'resolve-dependency-drift',
+    }
+    write(
+      root,
+      unit.paths[0],
+      `ARG BASE=${unit.selectedReference}\nFROM $BASE AS build\n`,
+    )
+    const replies = [
+      new Response(JSON.stringify({ tags: ['latest', '10.1', null] }), {
+        headers: {
+          link: '</v2/ubi10/nodejs-24/tags/list?last=10.1>; rel="next"',
+        },
+      }),
+      new Response(
+        JSON.stringify({ tags: ['10.2-1788245909', '10.2-source'] }),
+      ),
+      new Response(JSON.stringify({ config: { digest: digest('c') } }), {
+        headers: { 'docker-content-digest': digest('b') },
+      }),
+    ]
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      replies.shift(),
+    )
+    expect(await detectImageDrift(unit, root)).toMatchObject({
+      drift: true,
+      current: { tag: '10.1', manifestDigest: digest('a') },
+      available: { tag: '10.2-1788245909', manifestDigest: digest('b') },
+    })
+    write(root, unit.paths[0], `FROM ${image}:10.1@${digest('d')}\n`)
+    await expect(detectImageDrift(unit, root)).rejects.toThrow('not aligned')
+    write(root, unit.paths[0], `FROM ${unit.selectedReference}\n`)
+    write(
+      root,
+      'containers/unowned/Dockerfile',
+      `FROM ${unit.selectedReference}\n`,
+    )
+    await expect(detectImageDrift(unit, root)).rejects.toThrow('unowned')
+  })
+
+  it('detects independent UBI role digest drift anonymously before adoption', async () => {
+    const root = temporaryDirectory()
+    const units = ['builder', 'runtime'].map(role => ({
+      id: `ubi-node-${role}`,
+      detector: `ubi-node-${role}`,
+      kind: 'dockerfile-image',
+      image: `registry.access.redhat.com/ubi10/nodejs-24${role === 'runtime' ? '-minimal' : ''}`,
+      selectedReference: `registry.access.redhat.com/ubi10/nodejs-24${role === 'runtime' ? '-minimal' : ''}:latest@${digest('a')}`,
+      paths: ['containers/app/Dockerfile'],
+      skill: 'resolve-dependency-drift',
+    }))
+    const requests = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      requests.push({
+        url: String(url),
+        authorization: options?.headers?.Authorization,
+      })
+      if (String(url).includes('/tags/list'))
+        return new Response(
+          JSON.stringify({
+            tags: ['latest', '10.2-1788245909', '10.2-source'],
+          }),
+        )
+      return new Response(JSON.stringify({ config: { digest: digest('c') } }), {
+        headers: {
+          'docker-content-digest': String(url).includes('minimal')
+            ? digest('a')
+            : digest('b'),
+        },
+      })
+    })
+    const results = await detectUnits(units, root)
+    expect(results.map(result => [result.unit, result.drift])).toEqual([
+      ['ubi-node-builder', true],
+      ['ubi-node-runtime', false],
+    ])
+    expect(results[0].available).toEqual({
+      tag: 'latest',
+      manifestDigest: digest('b'),
+      imageId: digest('c'),
+    })
+    expect(requests).toEqual([
+      {
+        url: 'https://registry.access.redhat.com/v2/ubi10/nodejs-24/tags/list?n=1000',
+        authorization: undefined,
+      },
+      {
+        url: 'https://registry.access.redhat.com/v2/ubi10/nodejs-24/manifests/latest',
+        authorization: undefined,
+      },
+      {
+        url: 'https://registry.access.redhat.com/v2/ubi10/nodejs-24-minimal/tags/list?n=1000',
+        authorization: undefined,
+      },
+      {
+        url: 'https://registry.access.redhat.com/v2/ubi10/nodejs-24-minimal/manifests/latest',
+        authorization: undefined,
+      },
+    ])
+  })
+
   it('detects same-tag manifest drift for the devcontainer base image', async () => {
     const root = temporaryDirectory()
     const config = IMAGE_CONFIGS['devcontainer-base']
@@ -363,27 +672,36 @@ describe('drift detection', () => {
     expect(result.available.manifestDigest).toBe(digest('b'))
   })
 
-  it('rejects production Node registry paths unsupported by the detector', async () => {
+  it('keeps remaining Node references discoverable through ARGs during incremental adoption', async () => {
     const root = temporaryDirectory()
-
-    await expect(
-      detectImageDrift(
-        {
-          detector: 'node',
-          id: 'production-node',
-          paths: IMAGE_CONFIGS.node.paths.slice(0, -1),
-          skill: 'resolve-dependency-drift',
-        },
-        root,
-        {
-          listTags: async () => ['24-trixie-slim'],
-          resolveImageIdentity: async () => ({
-            imageId: digest('c'),
-            manifestDigest: digest('b'),
-          }),
-        },
-      ),
-    ).rejects.toThrow('registry paths do not match')
+    const paths = ['containers/hsa-mtls-topology/Dockerfile']
+    write(
+      root,
+      paths[0],
+      `ARG NODE_IMAGE=node:24-trixie-slim@${digest('a')}\nFROM $NODE_IMAGE AS runtime\n`,
+    )
+    const result = await detectImageDrift(
+      {
+        detector: 'node',
+        id: 'production-node',
+        paths,
+        skill: 'resolve-dependency-drift',
+      },
+      root,
+      {
+        listTags: async () => ['24-trixie-slim'],
+        resolveImageIdentity: async () => ({
+          imageId: digest('c'),
+          manifestDigest: digest('b'),
+        }),
+      },
+    )
+    expect(result.current).toEqual({
+      imageId: null,
+      manifestDigest: digest('a'),
+      tag: '24-trixie-slim',
+    })
+    expect(result.drift).toBe(true)
   })
 
   it('reports same-lane image maintenance before a newer major', async () => {
@@ -675,6 +993,65 @@ describe('drift detection', () => {
 })
 
 describe('issue contract', () => {
+  it('reconciles UBI roles independently with target deduplication and fresh issues after closure or expiry', () => {
+    const now = new Date('2026-09-11T12:00:00Z')
+    const builder = {
+      ...drift('ubi-node-builder'),
+      paths: [
+        '.github/dependency-maintenance.json',
+        'containers/app/Dockerfile',
+      ],
+    }
+    builder.current.tag = 'latest'
+    builder.available.tag = 'latest'
+    const runtime = { ...builder, unit: 'ubi-node-runtime' }
+    const issues = [
+      detectorIssue(builder, 1),
+      detectorIssue(builder, 2),
+      detectorIssue(runtime, 3, 'CLOSED'),
+    ]
+    const actions = planIssueActions([builder, runtime], issues, {}, now)
+    expect(
+      actions.map(({ type, unit, issue }) => ({ type, unit, issue })),
+    ).toEqual([
+      { type: 'close', unit: 'ubi-node-builder', issue: 2 },
+      { type: 'create', unit: 'ubi-node-runtime', issue: undefined },
+    ])
+    expect(actions[1].body).toContain('`resolve-dependency-drift`')
+    expect(actions[1].body).toContain('`containers/app/Dockerfile`')
+    const registry = {
+      deferrals: [
+        {
+          unit: builder.unit,
+          available: 'latest',
+          expiresOn: '2026-09-12',
+          rationale: 'Reviewed compatibility investigation',
+        },
+      ],
+    }
+    expect(
+      planIssueActions([builder], [issues[0]], registry, now)[0],
+    ).toMatchObject({ type: 'close', reason: 'not planned' })
+    expect(
+      planIssueActions(
+        [builder],
+        [{ ...issues[0], state: 'CLOSED' }],
+        registry,
+        new Date('2026-09-13T12:00:00Z'),
+      )[0],
+    ).toMatchObject({ type: 'create', unit: builder.unit })
+    const newTarget = {
+      ...builder,
+      available: { ...builder.available, manifestDigest: digest('f') },
+    }
+    expect(
+      planIssueActions([newTarget], [issues[0]], {}, now)[0],
+    ).toMatchObject({
+      type: 'create',
+      supersedes: [{ issue: 1, url: issues[0].url }],
+    })
+  })
+
   const now = new Date('2026-07-27T12:34:56.000Z')
   const registry = { deferrals: [] }
 

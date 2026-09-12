@@ -170,11 +170,12 @@ blocks scanning, so a disappeared newer release cannot make an older terminal
 identity eligible again.
 
 Public tracking has one automation-owned `security` issue per exact image role
-and published release tag. Only closed, version-guarded Debian and GitHub npm
-authority classifications enter the issue. Its body and verified continuation
-bank contain the complete current public state; immutable journals record
-material changes. A clean monitored identity closes as completed and can
-reopen on recurrence. An identity that leaves the forward-only window receives
+and published release tag. Only closed, version-guarded Debian, GitHub npm,
+and reviewed UBI 10 RPM authority classifications enter the issue. Its body
+and verified continuation bank contain the complete current public state;
+immutable journals record material changes. A clean monitored identity closes
+as completed and can reopen on recurrence. An identity that leaves the
+forward-only window receives
 `monitoring-ended`, preserves its last trusted state, and is never rescanned.
 Last-known affected content is not proof of a fix, and last-known clean content
 is not proof of current safety.
@@ -191,6 +192,18 @@ step-scoped advisory token are available, with no public fallback. Public
 issues cannot reveal confidential identifiers, package facts, URLs, counts, or
 existence. The normal token has exactly attestation, content, and package read
 plus issue write access.
+
+UBI RPM observations require matching package/version evidence from the pinned
+Grype exact RPM matcher, the `redhat:distro:redhat:10` namespace and matching
+Red Hat 10 distro search, reviewed RPM names and epoch/version/release syntax,
+and an exact canonical Red Hat CVE data source. Validated RHSA fix-advisory
+identities may supply canonical Red Hat errata links. Arbitrary scanner URLs,
+unreviewed namespaces, and mismatched evidence remain confidential; their
+content, existence, and count cannot alter public output. The
+[reviewed RPM reporting contract](../development/trusted-container-publishing.md#trusted-input-and-public-classification)
+describes the evidence boundary. Confidential classification does not bypass
+the full Grype release gate or change exception policy, schedules, supported
+release windows, or issue/advisory lifecycle.
 
 Restricted selection, attestation, SBOM, scanner database, unfiltered scan,
 classification, policy, reconciliation-plan, tracker, and error evidence is

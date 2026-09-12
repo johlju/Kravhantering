@@ -14,6 +14,20 @@ the downtime window for a disconnected planned upgrade with
 The connected export host prepares one app-node disconnected bundle per
 release. Use the same bundle on every disconnected app node for that release.
 
+The application image uses UBI 10 Node.js 24. Export the complete published
+application image with the release bundle. Disconnected hosts import and verify
+that image; they do not download a UBI base or install RPM packages. Runtime
+commands, configuration, UID/GID `1000:1000`, certificate mounts, and writable
+mount boundaries remain the same. Follow the release's package and transfer-size
+evidence when preparing storage and transfer capacity.
+
+The `db-job` image also uses UBI 10 Node.js 24. Export and verify the complete
+released database-job image through the existing bundle workflow. Its default
+health command, administrative commands, required seeds, and scheduled
+transient cleanup retain their existing configuration and mounts. Database jobs
+keep UID/GID `1000:1000` and supported administrative user overrides. No Red Hat
+credentials or RPM downloads are needed on disconnected database-job hosts.
+
 ![Disconnected Bundle Journey](../images/disconnected-release-bundle-journey.png)
 
 ## Connected Export Host

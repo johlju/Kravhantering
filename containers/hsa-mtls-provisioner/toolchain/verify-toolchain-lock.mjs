@@ -9,10 +9,23 @@ function requiredEnvironment(name) {
   return value
 }
 
-function installedPackageVersion(name) {
-  return execFileSync('dpkg-query', ['-W', '-f=$' + '{Version}', name], {
-    encoding: 'utf8',
-  }).trim()
+function installedPackage(name) {
+  const output = execFileSync(
+    'rpm',
+    [
+      '-q',
+      '--qf',
+      '%{NAME}\t%{EPOCHNUM}\t%{VERSION}-%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\t%{VENDOR}\n',
+      name,
+    ],
+    { encoding: 'utf8' },
+  ).trim()
+  const fields = output.split('\t')
+  if (fields.length !== 6 || output.includes('\n')) {
+    throw new Error(`Installed RPM ${name} evidence is unreadable`)
+  }
+  const [identity, epoch, version, architecture, sourceRpm, vendor] = fields
+  return { name: identity, epoch, version, architecture, sourceRpm, vendor }
 }
 
 function installedOpenSslVersion() {
@@ -25,10 +38,14 @@ function installedOpenSslVersion() {
 const lockPath = process.argv[2]
 if (!lockPath) throw new Error('Toolchain lock path is required')
 const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
+const packages = ['openssl', 'openssl-libs', 'ca-certificates'].map(
+  installedPackage,
+)
 const observed = {
-  caCertificatesPackageVersion: installedPackageVersion('ca-certificates'),
+  packages,
+  caCertificatesPackageVersion: packages[2].version,
   nodeVersion: process.versions.node,
-  opensslPackageVersion: installedPackageVersion('openssl'),
+  opensslPackageVersion: packages[0].version,
   opensslVersion: installedOpenSslVersion(),
 }
 const selection = {

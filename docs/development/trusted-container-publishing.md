@@ -23,6 +23,80 @@ Buildx metadata and the OCI layout must agree on the candidate manifest digest.
 Release metadata also records every platform manifest represented by an OCI
 index.
 
+## Application UBI Inputs
+
+The application dependency, application build, and transient-cleanup compiler
+stages use the public UBI 10 Node.js 24 builder. The application runtime uses
+the public UBI 10 Node.js 24 minimal image. Both roles have independent immutable
+pins in `containers/app/Dockerfile`, maintained by the `ubi-node-builder` and
+`ubi-node-runtime` dependency lanes. Public builds require no Red Hat account,
+subscription, credentials, or private package source.
+
+See [shared UBI runtime packaging](../../containers/node/README.md) for the
+complete image scope, build network access, and retained license files. Build
+and test hosts must meet the UBI 10 CPU requirements documented there.
+
+The builder installs the npm version selected by `packageManager` before
+`npm ci`. The application keeps the locked glibc native packages and Next.js
+standalone tracing. The shared `containers/node/ubi-compat.sh` adaptation creates
+the supported `node` identity at UID/GID `1000:1000` and removes the runtime npm
+CLI. Inherited nodemon remains present. Consumers declare workload packages
+separately and explicitly set their command, entrypoint, home, path, and user.
+The builder resets the S2I npm prefix to `/usr/local`; runtime command execution
+uses system paths and bypasses the inherited S2I entrypoint.
+
+The application keeps port 3000, its authentication startup checks, private CA
+and client-key mounts, read-only root, and existing writable mounts. Numeric
+administrative user overrides remain supported. This does not introduce a new
+arbitrary-UID OpenShift contract. Existing production smoke remains the
+functional acceptance gate.
+
+For focused local image checks, build the application image and run:
+
+```bash
+npm run container:build:app-runtime
+KRAVHANTERING_APP_RUNTIME_IMAGE=localhost/kravhantering/app-runtime:local \
+  npx vitest run tests/container-integration/app-runtime.test.mjs
+```
+
+These checks exercise the selected local image's identity, commands, native
+processing, standalone assets, filesystem containment, and startup rejection.
+They do not replace the exact-candidate SBOM, policy, or production smoke gates.
+
+## Database Job UBI Inputs
+
+The database dependency stage uses the same public UBI builder pin and npm
+policy. It installs only the locked `mssql`, `reflect-metadata`, and `typeorm`
+subset with development and optional packages omitted and install scripts
+disabled. The separate demo image reuses this dependency stage.
+
+The production `db-job` uses the minimal runtime pin and shared compatibility
+adaptation. Its default command remains `health`; migration, required seeds,
+runtime permission reconciliation, and provider-secret maintenance retain their
+existing CLI. Demo-only seed and clear commands remain restricted to the demo
+image. Compiled transient cleanup uses `/usr/local/bin/node`, supplied by the
+shared adaptation, so the existing scheduled service needs no command change.
+The supported identity remains UID/GID `1000:1000`, including numeric
+administrative overrides, read-only roots, and the existing temporary mount.
+SQL Server encryption and certificate verification settings remain unchanged.
+
+For focused local image checks:
+
+```bash
+npm run container:build:db-job
+KRAVHANTERING_DB_JOB_IMAGE=localhost/kravhantering/db-job:local \
+  npx vitest run tests/container-integration/db-job.test.mjs
+```
+
+These checks exercise identity, the database package subset, filesystem
+containment, the compiled cleanup command, and rejected administrative
+commands. Verify database connectivity, migration and permission outcomes with
+a disposable SQL Server database using the
+[SQL Server developer workflow](./sql-server-developer-workflow.md).
+The production smoke gate supplies the integrated deployment evidence.
+
+## Candidate Verification
+
 Syft generates an SBOM directly from each candidate archive. Grype scans every
 SBOM with an updated vulnerability database, and the committed exception policy
 evaluates the complete reports. The release smoke job stages the real production
@@ -70,6 +144,18 @@ bundle, and trusted roots. The
 workflow does not push this evidence or any signature helper artifact to GHCR.
 It publishes the Sigstore bundle and current trusted-root material beside the
 archive instead.
+
+## Release Identity And Remediation Evidence
+
+Each preview and stable run builds and verifies its own candidates. Digest
+preservation applies within that run, not across preview and stable runs.
+For observed remediation, retain the affected artifact, advisory and fixed
+package, public fixed-base digest and availability timestamp, project image
+digest, and stable publication timestamp. Record unavailable timestamps as
+unknown. Detection does not establish public availability; preview publication
+does not establish stable delivery, and publication does not establish operator
+installation. Continue the existing maintenance and release policy without a
+new schedule, urgent-release route or automatic site upgrade.
 
 ## Reproducibility
 
@@ -156,12 +242,46 @@ records both excepted and unexcepted fixable High or Critical findings.
 
 Classification happens independently for every observation before
 aggregation. Public observations are limited to version-guarded Debian DSA or
-CVE evidence for `deb` packages and GitHub GHSA evidence for `npm` packages.
+CVE evidence for `deb` packages, GitHub GHSA evidence for `npm` packages, and
+the reviewed UBI 10 RPM contract below.
 The namespace, match type, identifier, and exact canonical source must agree.
 Public URLs are reconstructed from the validated identifier without fetching
 advisory content. Generic URLs, aliases, CPE matches, unknown authorities,
 malformed producer or database metadata, and public-looking siblings do not
 qualify.
+
+UBI RPM reporting requires Grype 0.110.0 exact direct or indirect matches
+from `rpm-matcher`, namespace `redhat:distro:redhat:10`, and Red Hat distro
+search evidence for major version 10. The distro search may include a minor
+version. Package names and installed, searched, and fixed RPM versions must
+pass the reviewed bounded syntax: an optional numeric epoch followed by
+version and release, including RPM separators and pre/post-release markers.
+Direct evidence must match the installed package; the scanner's explicit zero
+epoch is accepted only for an installed version without an epoch and without
+contradictory RPM epoch metadata. Indirect evidence must exactly match a
+declared source package and its version. Found CVE and suggested fixed version
+must agree with the observation.
+
+The CVE identifier must match its exact
+`https://access.redhat.com/security/cve/<CVE>` data source. Only RHSA identities
+with an exact `https://access.redhat.com/errata/<RHSA>` link from that
+observation's fix advisories replace the CVE link. Otherwise the validated
+CVE link is used. Query strings, fragments, alternate hosts, credentials,
+encoded paths, mismatched identifiers, and generic scanner URLs cannot become
+public advisory links. A valid-looking RHSA cannot make an unverified CVE
+source eligible. No advisory content is fetched during classification.
+
+The RPM fixture uses synthetic identities and versions with the reviewed
+[pinned Grype RPM matcher](https://github.com/anchore/grype/blob/v0.110.0/grype/matcher/rpm/matcher.go),
+[match evidence serializer](https://github.com/anchore/grype/blob/v0.110.0/grype/matcher/internal/result/provider.go),
+[Red Hat advisory mapping](https://github.com/anchore/grype/blob/v0.110.0/grype/db/v6/build/transformers/os/testdata/rhel-8.json),
+and [RPM version syntax](https://rpm.org/docs/6.0.x/manual/spec.html).
+It is not evidence of an actual release vulnerability. Other RPM namespaces,
+unknown shapes, and contradictory evidence remain confidential. This affects
+public eligibility only: all fixable High/Critical findings still enter the
+unchanged full Grype policy and reviewed-exception gate, including confidential
+observations. Their content, existence, and count cannot change public tracker
+output.
 
 ### Identity, Current State, And Journal
 
@@ -239,11 +359,12 @@ attempt, so normal GitHub failed-run status and notifications remain the alert.
 
 ## Dependency Drift Detection
 
-`.github/workflows/dependency-drift.yml` checks the npm toolchain,
-production Node base image, nginx, SQL Server, Keycloak, and Kong weekly from
-`main`. A manual run can select one maintenance unit or all units. Every image
-scan checks both newer supported tags and immutable identity drift for the
-current tag.
+`.github/workflows/dependency-drift.yml` checks the npm and Lychee toolchains,
+devcontainer base, remaining Docker Official Node input, independent UBI Node
+builder and runtime roles, nginx, SQL Server, Keycloak, and Kong weekly from
+`main`. A manual run can select one maintenance unit or all units. Image scans
+follow each lane's supported-tag and immutable-identity policy; a selected UBI
+`latest` channel reports digest drift within that channel.
 
 The workflow completes registry validation and all selected remote detection
 before changing any issue. A failure leaves existing detector-owned issues
@@ -267,8 +388,12 @@ workflow builds and publishes
 `container-hsa-integration-support.lock.json` together with the provisioner;
 the mock is recorded in
 `container-test-support.lock.json`. All three images get SBOM and provenance
-attestations. Their npm dependencies use native Dependabot lanes, while their
-shared production Node base image uses coordinated drift detection.
+attestations. Their npm dependencies use native Dependabot lanes. The adapter
+and mock consume both UBI Node roles; the provisioner consumes the minimal
+runtime role and records its RPM toolchain separately. The Docker Official Node
+lane continues to maintain the local HSA topology helper. Follow
+[UBI Node maintenance](dependency-workflow.md#ubi-node-builder-and-runtime-maintenance)
+to update one role and all of its consumers together.
 
 Detector-created issues carry `automation:dependency-drift`, `dependencies`,
 and `ready-for-agent`. A stable hidden marker owns deduplication. A successful

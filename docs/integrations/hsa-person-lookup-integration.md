@@ -23,6 +23,12 @@ person as a local `Kravansvarsperson` row and creates or updates the assignment.
 
 ## Devcontainer and Release Test Support
 
+The HSA directory mock uses a public, digest-pinned UBI 10 Node.js 24 builder
+and minimal runtime. It retains UID/GID `1000:1000`, strict mTLS and its
+read-only role-specific certificate bundle. Use complete release images for
+disconnected test hosts; they need no Red Hat account or runtime RPM download.
+The base-image change requires no HSA configuration or certificate migration.
+
 The devcontainer includes Kong Gateway as the internal `kong` service for
 API-management verification, an `hsa-person-lookup-adapter`, and an HSA
 directory mock as `hsa-directory-mock`. Kong runs DB-less with
@@ -36,6 +42,13 @@ The HSA directory mock is also internal-only. It exposes SOAP
 exposes the app-facing REST contract with strict mTLS on
 `hsa-person-lookup-adapter:8443`. Kong
 exposes only `/hsa/person-records/lookup` and routes it to the adapter.
+
+The adapter uses the public, digest-pinned UBI 10 Node.js 24 builder and minimal
+runtime with the shared Node compatibility adaptation. Its UID/GID remains
+`1000:1000`, with the same strict ingress and SOAP identity checks, read-only
+role bundle and separate HSA integration-support lock. See the
+[adapter image contract](../../containers/hsa-person-lookup-adapter/README.md)
+for complete-image verification; this base change adds no production service.
 
 Use `npm run devcontainer:kong:status` from the workspace to run Kong's
 container-local health command. Use
@@ -314,6 +327,18 @@ persistence: it validates the signed evidence, then upserts
 transaction. Any failure rolls back both changes, preventing orphan person
 rows and partial assignments. Removing an assignment does not require new
 evidence; every newly added identity does.
+
+## Provisioner build inputs
+
+The test-PKI provisioner uses the public, digest-pinned UBI 10 Node.js 24
+minimal runtime with signed public OpenSSL and CA RPMs. Its independent
+[toolchain lock and maintenance procedure](../../containers/hsa-mtls-provisioner/README.md#toolchain-maintenance)
+verify selected inputs and installed binary, RPM identity, version, and source
+evidence during the build. It runs as `0:0` to preserve role ownership and
+requires the existing issuer tmpfs and persistent generation mounts. Operators
+consume the complete release image; disconnected sites need no UBI or RPM
+repository access. The base change does not alter the certificate commands or
+rotation order.
 
 ## Rotation and rollback
 

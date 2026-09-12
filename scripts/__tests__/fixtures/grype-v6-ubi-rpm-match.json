@@ -1,0 +1,37 @@
+{
+  "artifact": {
+    "name": "openssl-libs",
+    "type": "rpm",
+    "version": "1:3.5.1-4.el10_0",
+    "upstreams": []
+  },
+  "matchDetails": [
+    {
+      "type": "exact-direct-match",
+      "matcher": "rpm-matcher",
+      "searchedBy": {
+        "distro": { "type": "redhat", "version": "10.0" },
+        "namespace": "redhat:distro:redhat:10",
+        "package": { "name": "openssl-libs", "version": "1:3.5.1-4.el10_0" }
+      },
+      "found": {
+        "vulnerabilityID": "CVE-2026-12345",
+        "versionConstraint": "< 1:3.5.1-5.el10_0 (rpm)"
+      },
+      "fix": { "suggestedVersion": "1:3.5.1-5.el10_0" }
+    }
+  ],
+  "vulnerability": {
+    "id": "CVE-2026-12345",
+    "namespace": "redhat:distro:redhat:10",
+    "severity": "High",
+    "dataSource": "https://access.redhat.com/security/cve/CVE-2026-12345",
+    "advisories": [
+      {
+        "id": "RHSA-2026:12345",
+        "link": "https://access.redhat.com/errata/RHSA-2026:12345"
+      }
+    ],
+    "fix": { "state": "fixed", "versions": ["1:3.5.1-5.el10_0"] }
+  }
+}

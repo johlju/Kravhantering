@@ -30,13 +30,13 @@ disable-model-invocation: true
    - **npm toolchain:** Treat root `package.json` as canonical. Adopt one exact
      reviewed npm version across every dynamically discovered install path.
      Preserve pinned script approvals, explicit denials, fail-closed lifecycle
-     policy, and even-LTS Node compatibility.
+     policy, and LTS Node compatibility.
    - **Container image:** Resolve the requested upstream tag, multi-platform
      index when published, and Linux AMD64 platform manifest. For
      `devcontainer-base`, record the index digest as `manifestDigest` and the
      AMD64 image config digest as `imageId`. For other image lanes, preserve
-     their existing platform-manifest identity policy. Update every dynamically
-     discovered synchronized surface without changing release-lane policy.
+     their existing identity policy. Update every dynamically discovered
+     synchronized surface without changing release-lane policy.
    - **Lychee toolchain:** Update both installer version constants, the CI
      `lycheeVersion`, and both AMD64 and ARM64 asset checksums together. Keep
      the action compatible and pinned to a full commit SHA with its release-tag
@@ -67,9 +67,10 @@ disable-model-invocation: true
   standalone development tools when their distribution integrity is verified
   or ADR 0045 records an explicit exception. Do not replace those channels with
   routine version pins.
-- Broad image tags such as `latest` are forbidden for externally sourced
-  service and base images. Repository-local build outputs do not require an
-  explicit Compose `image` or canonical image lock.
+- Keep externally sourced service and base images on their lane's explicit
+  identity policy. UBI permits `latest` only with its selected SHA-256 digest;
+  other lanes require a non-`latest` tag. Repository-local build outputs do
+  not require an explicit Compose `image` or canonical image lock.
 - Preserve each image lane's identity policy. Production and release
   references keep their required immutable identities. ADR 0045 development
   references backed by canonical image locks stay explicit, non-`latest`,

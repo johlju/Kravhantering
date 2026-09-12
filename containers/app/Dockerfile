@@ -1,6 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS dependencies
+ARG UBI_BUILDER_IMAGE=registry.access.redhat.com/ubi10/nodejs-24:latest@sha256:5295d1fd8e46aebad1e9da107c62bc4a5cfe8bca5fd1175a7b0a523fa977866a
+ARG UBI_RUNTIME_IMAGE=registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:f0e6f6fa5bd82741bdf9b304341c94bbac4268a7f94d710c26eac01f20528c2b
+
+FROM ${UBI_BUILDER_IMAGE} AS dependencies
+
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/root
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
 
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /workspace
@@ -39,7 +48,13 @@ ENV NODE_ENV=production
 COPY . .
 RUN npm run build
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS db-job-dependencies
+FROM ${UBI_BUILDER_IMAGE} AS db-job-dependencies
+
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/root
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -69,10 +84,34 @@ NODE
 npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
 EOF
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS app-runtime
+FROM ${UBI_RUNTIME_IMAGE} AS app-runtime
 
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/app-runtime" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering application runtime" \
+  description="Kravhantering application runtime" \
+  io.k8s.display-name="Kravhantering application runtime" \
+  io.k8s.description="Kravhantering application runtime" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="3000:http" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
+USER 0:0
+ENTRYPOINT []
+ENV HOME=/home/node
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
+RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
+  sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -81,19 +120,42 @@ ENV PORT=3000
 
 WORKDIR /app
 
-COPY --from=app-build --chown=node:node /workspace/.next/standalone ./
-COPY --from=app-build --chown=node:node /workspace/.next/static ./.next/static
-COPY --from=app-build --chown=node:node /workspace/public ./public
-COPY --chown=node:node containers/app/start-runtime.mjs ./start-runtime.mjs
+COPY --from=app-build --chown=1000:1000 /workspace/.next/standalone ./
+COPY --from=app-build --chown=1000:1000 /workspace/.next/static ./.next/static
+COPY --from=app-build --chown=1000:1000 /workspace/public ./public
+COPY --chown=1000:1000 containers/app/start-runtime.mjs ./start-runtime.mjs
 
-USER node
+USER 1000:1000
 EXPOSE 3000
 CMD ["node", "start-runtime.mjs"]
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS db-job
+FROM ${UBI_RUNTIME_IMAGE} AS db-job
 
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/db-job" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering database administration jobs" \
+  description="Kravhantering database administration jobs" \
+  io.k8s.display-name="Kravhantering database administration jobs" \
+  io.k8s.description="Kravhantering database administration jobs" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
+USER 0:0
+ENV HOME=/home/node
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
+RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
+  sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -101,28 +163,51 @@ ENV KRAVHANTERING_DB_ADMIN_IMAGE=db-job
 
 WORKDIR /workspace
 
-COPY --from=db-job-dependencies --chown=node:node /workspace/node_modules ./node_modules
-COPY --chown=node:node package.json package-lock.json ./
-COPY --chown=node:node scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
-COPY --chown=node:node scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs
-COPY --chown=node:node scripts/ai-provider-secret-restore-cli.mjs ./scripts/ai-provider-secret-restore-cli.mjs
-COPY --chown=node:node lib/ai/provider-secret-crypto-core.mjs ./lib/ai/provider-secret-crypto-core.mjs
-COPY --chown=node:node lib/ai/provider-secret-keyring-core.mjs ./lib/ai/provider-secret-keyring-core.mjs
-COPY --from=transient-cleanup-build --chown=node:node /workspace/.build/transient-cleanup ./transient-cleanup
-COPY --chown=node:node typeorm/migrations ./typeorm/migrations
-COPY --chown=node:node typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs
-COPY --chown=node:node typeorm/seed-required.mjs ./typeorm/seed-required.mjs
-COPY --chown=node:node typeorm/ai-safety-seed-data.mjs ./typeorm/ai-safety-seed-data.mjs
-COPY --chown=node:node typeorm/seed-runner.mjs ./typeorm/seed-runner.mjs
+COPY --from=db-job-dependencies --chown=1000:1000 /workspace/node_modules ./node_modules
+COPY --chown=1000:1000 package.json package-lock.json ./
+COPY --chown=1000:1000 scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
+COPY --chown=1000:1000 scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs
+COPY --chown=1000:1000 scripts/ai-provider-secret-restore-cli.mjs ./scripts/ai-provider-secret-restore-cli.mjs
+COPY --chown=1000:1000 lib/ai/provider-secret-crypto-core.mjs ./lib/ai/provider-secret-crypto-core.mjs
+COPY --chown=1000:1000 lib/ai/provider-secret-keyring-core.mjs ./lib/ai/provider-secret-keyring-core.mjs
+COPY --from=transient-cleanup-build --chown=1000:1000 /workspace/.build/transient-cleanup ./transient-cleanup
+COPY --chown=1000:1000 typeorm/migrations ./typeorm/migrations
+COPY --chown=1000:1000 typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs
+COPY --chown=1000:1000 typeorm/seed-required.mjs ./typeorm/seed-required.mjs
+COPY --chown=1000:1000 typeorm/ai-safety-seed-data.mjs ./typeorm/ai-safety-seed-data.mjs
+COPY --chown=1000:1000 typeorm/seed-runner.mjs ./typeorm/seed-runner.mjs
 
-USER node
+USER 1000:1000
 ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]
 CMD ["health"]
 
-FROM node:24-trixie-slim@sha256:a747ad80c8a161b650d79a6da9c422005b91148b18b8d2c669eb5a0b7c07e600 AS demo-seed
+FROM ${UBI_RUNTIME_IMAGE} AS demo-seed
 
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+# Final-image identity; base component provenance and notices remain inherited.
+LABEL name="kravhantering/demo-seed" \
+  vendor="Viscalyx" \
+  maintainer="https://github.com/viscalyx/Kravhantering" \
+  url="https://github.com/viscalyx/Kravhantering" \
+  help="https://github.com/viscalyx/Kravhantering/tree/main/containers" \
+  summary="Kravhantering optional demo seed jobs" \
+  description="Kravhantering optional demo seed jobs" \
+  io.k8s.display-name="Kravhantering optional demo seed jobs" \
+  io.k8s.description="Kravhantering optional demo seed jobs" \
+  version="" release="" build-date="" vcs-ref="" vcs-type="" \
+  org.opencontainers.image.created="" \
+  org.opencontainers.image.revision="" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="nodejs,runtime" \
+  io.openshift.s2i.scripts-url="" io.s2i.scripts-url="" \
+  com.redhat.deployments-dir="" com.redhat.dev-mode="" com.redhat.dev-mode.port=""
+
+USER 0:0
+ENV HOME=/home/node
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NPM_CONFIG_PREFIX=/usr/local
+RUN --mount=type=bind,source=containers/node,target=/tmp/ubi-compat \
+  --mount=type=bind,source=LICENSE,target=/tmp/kravhantering-LICENSE \
+  sh /tmp/ubi-compat/ubi-compat.sh
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -130,26 +215,26 @@ ENV KRAVHANTERING_DB_ADMIN_IMAGE=demo-seed
 
 WORKDIR /workspace
 
-COPY --from=db-job-dependencies --chown=node:node /workspace/node_modules ./node_modules
-COPY --chown=node:node package.json package-lock.json ./
-COPY --chown=node:node scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
-COPY --chown=node:node scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs
-COPY --chown=node:node scripts/ai-provider-secret-restore-cli.mjs ./scripts/ai-provider-secret-restore-cli.mjs
-COPY --chown=node:node lib/ai/provider-secret-crypto-core.mjs ./lib/ai/provider-secret-crypto-core.mjs
-COPY --chown=node:node lib/ai/provider-secret-keyring-core.mjs ./lib/ai/provider-secret-keyring-core.mjs
-COPY --chown=node:node typeorm/migrations ./typeorm/migrations
-COPY --chown=node:node typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs
-COPY --chown=node:node typeorm/seed-required.mjs ./typeorm/seed-required.mjs
-COPY --chown=node:node typeorm/ai-safety-seed-data.mjs ./typeorm/ai-safety-seed-data.mjs
-COPY --chown=node:node typeorm/seed-runner.mjs ./typeorm/seed-runner.mjs
-COPY --chown=node:node lib/mcp/import-validation-fingerprint.mjs ./lib/mcp/import-validation-fingerprint.mjs
-COPY --chown=node:node lib/requirements/responsibility-person-verification-fingerprint.mjs ./lib/requirements/responsibility-person-verification-fingerprint.mjs
-COPY --chown=node:node typeorm/seed.mjs ./typeorm/seed.mjs
-COPY --chown=node:node typeorm/seed-dogfood.mjs ./typeorm/seed-dogfood.mjs
-COPY --chown=node:node typeorm/seed-dogfood-build.mjs ./typeorm/seed-dogfood-build.mjs
-COPY --chown=node:node typeorm/seed-playwright-manual-cases-build.mjs ./typeorm/seed-playwright-manual-cases-build.mjs
-COPY --chown=node:node typeorm/seed-archiving-retention-build.mjs ./typeorm/seed-archiving-retention-build.mjs
+COPY --from=db-job-dependencies --chown=1000:1000 /workspace/node_modules ./node_modules
+COPY --chown=1000:1000 package.json package-lock.json ./
+COPY --chown=1000:1000 scripts/db-sqlserver-admin.mjs ./scripts/db-sqlserver-admin.mjs
+COPY --chown=1000:1000 scripts/ai-provider-secret-maintenance.mjs ./scripts/ai-provider-secret-maintenance.mjs
+COPY --chown=1000:1000 scripts/ai-provider-secret-restore-cli.mjs ./scripts/ai-provider-secret-restore-cli.mjs
+COPY --chown=1000:1000 lib/ai/provider-secret-crypto-core.mjs ./lib/ai/provider-secret-crypto-core.mjs
+COPY --chown=1000:1000 lib/ai/provider-secret-keyring-core.mjs ./lib/ai/provider-secret-keyring-core.mjs
+COPY --chown=1000:1000 typeorm/migrations ./typeorm/migrations
+COPY --chown=1000:1000 typeorm/runtime-permission-manifest.mjs ./typeorm/runtime-permission-manifest.mjs
+COPY --chown=1000:1000 typeorm/seed-required.mjs ./typeorm/seed-required.mjs
+COPY --chown=1000:1000 typeorm/ai-safety-seed-data.mjs ./typeorm/ai-safety-seed-data.mjs
+COPY --chown=1000:1000 typeorm/seed-runner.mjs ./typeorm/seed-runner.mjs
+COPY --chown=1000:1000 lib/mcp/import-validation-fingerprint.mjs ./lib/mcp/import-validation-fingerprint.mjs
+COPY --chown=1000:1000 lib/requirements/responsibility-person-verification-fingerprint.mjs ./lib/requirements/responsibility-person-verification-fingerprint.mjs
+COPY --chown=1000:1000 typeorm/seed.mjs ./typeorm/seed.mjs
+COPY --chown=1000:1000 typeorm/seed-dogfood.mjs ./typeorm/seed-dogfood.mjs
+COPY --chown=1000:1000 typeorm/seed-dogfood-build.mjs ./typeorm/seed-dogfood-build.mjs
+COPY --chown=1000:1000 typeorm/seed-playwright-manual-cases-build.mjs ./typeorm/seed-playwright-manual-cases-build.mjs
+COPY --chown=1000:1000 typeorm/seed-archiving-retention-build.mjs ./typeorm/seed-archiving-retention-build.mjs
 
-USER node
+USER 1000:1000
 ENTRYPOINT ["node", "scripts/db-sqlserver-admin.mjs"]
 CMD ["seed:demo"]
