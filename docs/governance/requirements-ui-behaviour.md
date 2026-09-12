@@ -289,6 +289,26 @@ an explicit in-modal error.
 - The current last visible column does not render an extra resize divider
   after its right edge.
 
+### Header layout and default widths
+
+Column headings use a single line and ellipsis when manually narrowed.
+The status column is labelled `Status`, including its picker, sort and filter
+controls. Sort and filter buttons use compact 28-pixel targets. The labelled
+requirement-text wrapping button displays its current state and supports mouse
+and keyboard activation. All labels and the select-all checkbox share the
+header row's centre line, including when filter chips increase the cell height.
+
+The six default visible columns have these base widths: requirement ID 118,
+requirement text 809, requirement area 148, category 130, type 131 and status
+144 pixels. Optional quality characteristic, verifiable, version and norm
+references columns start at 189, 124, 85 and 200 pixels respectively.
+Requirement text absorbs spare width when visible columns have no manual
+width overrides. Horizontal scrolling at 1440 pixels is an accepted result
+of these defaults. Requirement text has no upper width cap, so resizing another
+column preserves its rendered width even in a wide window. Organization column
+order and visibility, saved user preferences and spreadsheet-style resizing
+retain their existing semantics.
+
 ## Sorting
 
 - Sorting is single-column only.
