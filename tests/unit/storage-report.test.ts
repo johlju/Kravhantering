@@ -79,6 +79,7 @@ function runCheck(rootUsed: number, dataUsed: number) {
 
 function runReport(
   configureFixture?: (fixture: {
+    bin: string
     workspace: string
     worktreeRoot: string
   }) => void,
@@ -97,16 +98,31 @@ for argument in "$@"; do
     measured_path="$argument"
   fi
 done
+if [ ! -e "$measured_path" ]; then
+  exit 1
+fi
 printf '4.0K\\t%s\\n' "$measured_path"
 `,
   )
   chmodSync(fakeDu, 0o755)
+  // Keep privileged retries on the fixture PATH; real sudo can select host du.
+  const fakeSudo = path.join(bin, 'sudo')
+  writeFileSync(
+    fakeSudo,
+    `#!/bin/sh
+if [ "$1" = '-n' ]; then
+  shift
+fi
+exec "$@"
+`,
+  )
+  chmodSync(fakeSudo, 0o755)
   for (const command of ['docker', 'podman']) {
     const fakeCommand = path.join(bin, command)
     writeFileSync(fakeCommand, '#!/bin/sh\nexit 0\n')
     chmodSync(fakeCommand, 0o755)
   }
-  configureFixture?.({ workspace, worktreeRoot })
+  configureFixture?.({ bin, workspace, worktreeRoot })
 
   return {
     result: spawnSync('bash', [storageReport], {
@@ -193,4 +209,50 @@ describe('storage-report', () => {
       `${linkedWorktree} (4.0K): clean; commits remain on test/issue-1032`,
     )
   })
+
+  it('reports missing worktrees and continues to cleanup suggestions', () => {
+    let linkedWorktree = ''
+    const { result } = runReport(({ workspace, worktreeRoot }) => {
+      linkedWorktree = createLinkedWorktreeFixture({
+        workspace,
+        worktreeRoot,
+      })
+      rmSync(linkedWorktree, { recursive: true })
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(
+      `${linkedWorktree}: missing; review with git worktree prune --dry-run`,
+    )
+    expect(result.stdout).toContain(
+      'Cleanup suggestions (never run automatically)',
+    )
+  })
+
+  it.each(['partial output', 'no output'])(
+    'continues to cleanup suggestions when sizing fails with %s',
+    output => {
+      const { result, workspace } = runReport(
+        ({ bin, workspace, worktreeRoot }) => {
+          createLinkedWorktreeFixture({ workspace, worktreeRoot })
+          writeFileSync(
+            path.join(bin, 'du'),
+            `#!/bin/sh
+${output === 'partial output' ? "printf '4.0K\\tpartial\\n'" : ''}
+exit 1
+`,
+          )
+        },
+      )
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain(
+        `${workspace} (unknown size): primary worktree, keep`,
+      )
+      expect(result.stdout).toContain('Candidate command: git')
+      expect(result.stdout).toContain(
+        'Cleanup suggestions (never run automatically)',
+      )
+    },
+  )
 })
