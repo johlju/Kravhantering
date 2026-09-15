@@ -7,7 +7,30 @@ target version.
 
 ## Unreleased
 
+<!-- operator-upgrade:source issue-1323 start -->
 
+### Whole-specification agreements and preserved history
+
+Stop write traffic and drain all application nodes before the database upgrade.
+Do not run the previous and new releases together: the previous release can read
+historical requirement versions as current work. Apply the new runtime database
+permissions before starting the application. Keep a tested database backup with
+the matching application release. Recovery after agreement history is recorded
+requires both; a schema rollback cannot preserve the new history.
+
+Existing specifications remain editable working sets until their first agreement
+is confirmed. After upgrade, verify agreement access with the runtime database
+role. Verify that current and pending agreements are protected from retention,
+that archives contain the full retained agreement and deviation history, and that
+privacy export and anonymization include the new agreement actors.
+
+Coordinate external clients that edit requirement applications or handle
+deviations. They must use the selected agreement context, handle locked content
+and pending agreement conflicts, and use returned application identities after
+content changes. Pending deviations require explicit cancellation with a reason.
+Verify that reports identify the selected agreement and use its preserved
+content and follow-up. No additional service or scheduled job is required.
+<!-- operator-upgrade:source issue-1323 end -->
 
 ## v0.7.0 - 2026-09-13
 

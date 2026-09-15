@@ -21,6 +21,9 @@ export const REQUIRED_SEED_FILE = resolve(
 )
 export const DEMO_SEED_FILE = resolve(SCRIPT_DIR, '../typeorm/seed.mjs')
 export const DEMO_RESET_TABLES = Object.freeze([
+  'specification_deviation_endings',
+  'specification_agreement_items',
+  'specification_agreement_corrections',
   'rfi_question_suggestions',
   'specification_rfi_assessments',
   'specification_rfi_question_items',
@@ -46,10 +49,11 @@ export const DEMO_RESET_TABLES = Object.freeze([
   'deviations',
   'requirements_specification_items',
   'improvement_suggestions',
-  'requirement_versions',
   'specification_local_requirement_norm_references',
   'specification_local_requirement_deviations',
   'specification_local_requirements',
+  'requirement_versions',
+  'specification_agreements',
   'requirements',
   'specification_needs_references',
   'action_audit_events',

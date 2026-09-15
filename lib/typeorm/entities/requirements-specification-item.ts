@@ -2,19 +2,27 @@ import { EntitySchema } from 'typeorm'
 import type { RequirementEntity } from '@/lib/typeorm/entities/requirement'
 import type { RequirementVersionEntity } from '@/lib/typeorm/entities/requirement-version'
 import type { RequirementsSpecificationEntity } from '@/lib/typeorm/entities/requirements-specification'
+import type { SpecificationAgreementEntity } from '@/lib/typeorm/entities/specification-agreement'
+import type { SpecificationAgreementItemEntity } from '@/lib/typeorm/entities/specification-agreement-item'
 import type { SpecificationItemStatusEntity } from '@/lib/typeorm/entities/specification-item-status'
 import type { SpecificationNeedsReferenceEntity } from '@/lib/typeorm/entities/specification-needs-reference'
 
 export interface RequirementsSpecificationItemEntity {
+  bindingCreatedByHsaId: string | null
   createdAt: Date
   id: number
   needsReference: SpecificationNeedsReferenceEntity | null
+  needsReferenceSnapshot: string | null
   note: string | null
+  originAgreementItem: SpecificationAgreementItemEntity | null
+  owningAgreement: SpecificationAgreementEntity | null
   requirement: RequirementEntity
   requirementsSpecification: RequirementsSpecificationEntity
   requirementVersion: RequirementVersionEntity
   specificationItemStatus: SpecificationItemStatusEntity
   statusUpdatedAt: Date | null
+  validFrom: Date
+  validUntil: Date | null
 }
 
 export const requirementsSpecificationItemEntity =
@@ -22,6 +30,24 @@ export const requirementsSpecificationItemEntity =
     name: 'RequirementsSpecificationItem',
     tableName: 'requirements_specification_items',
     columns: {
+      validFrom: {
+        name: 'valid_from',
+        type: 'datetime2',
+        default: () => 'SYSUTCDATETIME()',
+      },
+      validUntil: { name: 'valid_until', type: 'datetime2', nullable: true },
+      bindingCreatedByHsaId: {
+        name: 'binding_created_by_hsa_id',
+        type: 'nvarchar',
+        length: 64,
+        nullable: true,
+      },
+      needsReferenceSnapshot: {
+        name: 'needs_reference_snapshot',
+        type: 'nvarchar',
+        length: 'MAX',
+        nullable: true,
+      },
       id: {
         name: 'id',
         primary: true,
@@ -41,13 +67,17 @@ export const requirementsSpecificationItemEntity =
         nullable: true,
       },
     },
-    uniques: [
+    indices: [
+      {
+        name: 'idx_requirements_specification_items_origin_agreement_item_id',
+        columns: ['originAgreementItem'],
+      },
       {
         name: 'uq_requirements_specification_items_specification_requirement',
         columns: ['requirementsSpecification', 'requirement'],
+        unique: true,
+        where: '[valid_until] IS NULL',
       },
-    ],
-    indices: [
       {
         name: 'idx_requirements_specification_items_specification_item_status_id',
         columns: ['specificationItemStatus'],
@@ -62,6 +92,28 @@ export const requirementsSpecificationItemEntity =
       },
     ],
     relations: {
+      originAgreementItem: {
+        type: 'many-to-one',
+        target: 'SpecificationAgreementItem',
+        nullable: true,
+        onDelete: 'SET NULL',
+        joinColumn: {
+          name: 'origin_agreement_item_id',
+          foreignKeyConstraintName:
+            'fk_requirements_specification_items_origin_agreement_item_id',
+        },
+      },
+      owningAgreement: {
+        type: 'many-to-one',
+        target: 'SpecificationAgreement',
+        nullable: true,
+        onDelete: 'SET NULL',
+        joinColumn: {
+          name: 'owning_agreement_id',
+          foreignKeyConstraintName:
+            'fk_requirements_specification_items_owning_agreement_id',
+        },
+      },
       requirementsSpecification: {
         type: 'many-to-one',
         target: 'RequirementsSpecification',

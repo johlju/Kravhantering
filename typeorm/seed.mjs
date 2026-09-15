@@ -5,6 +5,7 @@ import {
 } from '../lib/requirements/responsibility-person-verification-fingerprint.mjs'
 import { REQUIRED_SEED_TABLES, seedRequiredDatabase } from './seed-required.mjs'
 import { runSeedData, seedPositionDetail } from './seed-runner.mjs'
+import { applySpecificationAgreementSeed } from './seed-specification-agreements.mjs'
 
 const DEMO_MCP_PRINCIPAL_HSA_ID = 'SE5560000001-mcp1'
 const DEMO_HSA_QUOTA_SUBJECT_HSA_ID = 'SE5560000001-linneab'
@@ -12652,13 +12653,13 @@ const SEED_DATA = {
         5,
         20,
         'Accessibility requirement WCAG 2.1 AA cannot be fully met for legacy PDF export. Remediation requires vendor update expected in next release.',
-        null,
-        null,
-        null,
-        null,
+        3,
+        'Utkastet avslutades utan beslut innan ett nytt avsteg begärdes.',
+        'Erik Svensson',
+        '2026-05-14 20:07:00',
         'Erik Svensson',
         '2026-04-15 20:07:00',
-        null,
+        '2026-05-14 20:07:00',
         0,
       ],
     ],
@@ -13678,6 +13679,15 @@ const REQUIREMENT_RESPONSIBILITY_PERSON_TIMESTAMPS = new Map([
 
 const REQUIREMENT_RESPONSIBILITY_PERSON_BY_HSA_ID = new Map([
   [
+    'SE5560000001-admin1',
+    {
+      email: 'ada.admin@example.test',
+      givenName: 'Ada',
+      middleName: null,
+      surname: 'Admin',
+    },
+  ],
+  [
     'SE5560000001-2002',
     {
       email: 'pontus.paket@example.test',
@@ -13934,7 +13944,7 @@ const SPEC_RESPONSIBLE_BY_ID = new Map([
   [5, { displayName: 'Karl Persson', hsaId: 'SE5560000001-karlpersson' }],
   [6, { displayName: 'Linnéa Bergström', hsaId: 'SE5560000001-linneab' }],
   [7, { displayName: 'Oscar Nilsson', hsaId: 'SE5560000001-oscarn' }],
-  [8, { displayName: 'Emma Lindqvist', hsaId: 'SE5560000001-emmal' }],
+  [8, { displayName: 'Ada Admin', hsaId: 'SE5560000001-admin1' }],
   [9, { displayName: 'Anna Johansson', hsaId: 'SE5560000001-annaj' }],
   [10, { displayName: 'Erik Lindberg', hsaId: 'SE5560000001-erikl' }],
   [11, { displayName: 'Maria Johansson', hsaId: 'SE5560000001-mariaj' }],
@@ -14404,10 +14414,10 @@ function addLinneaPrivacyExerciseSeed() {
   ensureSeedRow(
     localDeviations,
     seedRowFromColumns(localDeviations, {
-      created_at: PRIVACY_SEED_TS,
+      created_at: '2026-04-17 09:00:00',
       created_by: 'Linnéa Bergström',
       created_by_hsa_id: 'SE5560000001-linneab',
-      decided_at: PRIVACY_SEED_TS,
+      decided_at: '2026-04-17 09:00:00',
       decided_by: 'Linnéa Bergström',
       decided_by_hsa_id: 'SE5560000001-linneab',
       decision: 2,
@@ -14418,7 +14428,7 @@ function addLinneaPrivacyExerciseSeed() {
       motivation:
         'Privacy seed local deviation used to verify HSA-id based decision erasure.',
       specification_local_requirement_id: 2,
-      updated_at: PRIVACY_SEED_TS,
+      updated_at: '2026-04-17 09:00:00',
     }),
   )
 }
@@ -14784,6 +14794,7 @@ function applyPrivacyIdentitySeed() {
 applyPrivacyIdentitySeed()
 applyArchivingRetentionSeed()
 applyActionAuditSeed()
+applySpecificationAgreementSeed(SEED_DATA, TABLE_ORDER)
 
 export { REQUIRED_SEED_TABLES, seedRequiredDatabase }
 
@@ -14814,6 +14825,25 @@ async function seedDemoLifecycleRow({
   row,
   table,
 }) {
+  if (table === 'specification_agreement_items') {
+    await query(defaultSql, row)
+    const value = column => row[columns.indexOf(column)]
+    for (const [bindingTable, column] of [
+      ['requirements_specification_items', 'specification_item_id'],
+      [
+        'specification_local_requirements',
+        'specification_local_requirement_id',
+      ],
+    ]) {
+      if (value(column) == null) continue
+      await query(
+        `UPDATE [${bindingTable}] SET origin_agreement_item_id = @1
+         WHERE id = @0 AND owning_agreement_id = @2 AND origin_agreement_item_id IS NULL`,
+        [value(column), value('id'), value('specification_agreement_id')],
+      )
+    }
+    return true
+  }
   if (
     table !== 'improvement_suggestions' &&
     table !== 'rfi_question_suggestions'
@@ -14822,6 +14852,11 @@ async function seedDemoLifecycleRow({
   }
 
   const value = column => row[columns.indexOf(column)]
+  const existing = await query(
+    `SELECT id FROM [${table}] WITH (UPDLOCK, HOLDLOCK) WHERE id = @0`,
+    [value('id')],
+  )
+  if (existing?.some(record => record.id === value('id'))) return true
   const resolvedByDisplayColumn =
     table === 'improvement_suggestions'
       ? 'resolved_by'

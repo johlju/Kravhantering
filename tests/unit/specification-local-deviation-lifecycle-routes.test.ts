@@ -121,13 +121,19 @@ describe('specification-local deviation lifecycle routes', () => {
     }
   })
 
-  it('request-review returns 200 and delegates to the DAL on success', async () => {
+  it('accepts an empty streamed review request from the HTTP transport', async () => {
     const response = await postRequestReview(
       new Request(
         'https://example.test/api/specification-local-deviations/1/request-review',
         {
           method: 'POST',
-        },
+          body: new ReadableStream({
+            start(controller) {
+              controller.close()
+            },
+          }),
+          duplex: 'half',
+        } as RequestInit,
       ),
       makeParams('1'),
     )
@@ -138,6 +144,7 @@ describe('specification-local deviation lifecycle routes', () => {
     expect(routeState.requestSpecificationLocalReview).toHaveBeenCalledWith(
       mockDb,
       1,
+      { agreementId: undefined },
     )
   })
 
@@ -452,6 +459,7 @@ describe('specification-local deviation lifecycle routes', () => {
     expect(routeState.revertSpecificationLocalToDraft).toHaveBeenCalledWith(
       mockDb,
       1,
+      { agreementId: undefined },
     )
   })
 

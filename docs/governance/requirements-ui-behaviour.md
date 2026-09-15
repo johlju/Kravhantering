@@ -1197,3 +1197,59 @@ saving. Inclusion and requirement selection remain separate.
 History includes earlier saves and questions removed from the current list.
 The CSV/PDF outputs distinguish current question rows, pending evidence and
 assessment history. Historical rows never add current questions or outcomes.
+
+## Avtal och kravhistorik
+
+Kravunderlaget kan fortsätta genom flera avtal. Varje avtal omfattar hela
+kravuppsättningen. Rutan **Avtal**, direkt till vänster om
+**Styrningsobjektstyp**, visar **Inget** före den första bekräftelsen och därefter
+valt avtals referens, avtalsdatum och status. Valet styr den ordinarie kravlistan,
+kravdetaljen och rapporterna. Tidigare och avbrutna avtal grupperas under
+**Tidigare avtal**. Registrering och avtalsåtgärder finns i rutans dialog;
+registreringsuppgifter kan fällas ut där.
+
+Avtalsreferens och avtalsdatum är obligatoriska. Avtalsdatum är dagen då avtalet
+börjar gälla. Referensen är unik inom kravunderlaget, även bland avbrutna avtal.
+Icke avbrutna avtal har olika avtalsdatum. Beskrivning är frivillig och rättelser
+kräver inget skäl; aktör, tid samt gamla och nya värden loggas automatiskt.
+
+Bekräftelse låser hela innehållet omedelbart, även för ett framtida avtal.
+Ett nytt avtal förbereds som ett fullständigt **Utkast** från det aktuella eller
+senast upphörda avtalet. Högst ett utkast eller **Kommande** avtal får finnas.
+Ett passerat utkastdatum måste rättas före bekräftelse. Dagens avtal börjar gälla
+vid bekräftelsen; framtida avtal börjar gälla vid midnatt i Stockholm.
+
+**Redigera krav** på ett bibliotekskrav finns bara i ett senare avtalsutkast.
+Den fullständiga lokala kraveditorn används. Vid sparad innehållsändring får
+kravet ett nytt lokalt Krav-ID, med ursprungligt biblioteks-ID och version som
+referens. Fortsatta lokala ändringar behåller det lokala Krav-ID:t. **Uppdatera
+från kravbiblioteket** visas när en nyare publicerad version finns och innehållet
+får ändras, även före det första avtalet. Jämförelsen visar hela innehållet och
+sparar endast den uttryckligen valda versionen.
+
+Kravrader visar **Avtalsändring** med avtalsdatum. Oförändrade krav behåller sin
+senaste tillämpliga markering; tidigare avtal visar sin egen historik.
+Borttagna utkastkrav visas som **Borttaget** med möjlighet att ångra. Bekräftade
+avtal behåller sina fullständiga tidigare kravuppsättningar.
+
+Uppföljning får fortsätta i det aktuella avtalet. Vid nästa ikraftträdande ärver
+oförändrade krav de senaste resultaten, medan ändrade krav börjar som
+**Inkluderad**. Tidigare avtals uppföljning fryses. Senare avstegshändelser visas
+separat från det historiska resultatet.
+
+Avsteg får begäras och granskas i utkast och kommande avtal för exakt det
+kravinnehåll som visas. Oförändrade krav delar ärende med det aktuella avtalet.
+Obeslutade avsteg måste avbrytas med skäl före innehållsändring. För ett ärvt
+godkänt avsteg godkänner ansvarig ett planerat avslut tillsammans med ändringen;
+avsteget gäller fram till nästa ikraftträdande. Ursprungligt beslut bevaras.
+Ångrad ändring, borttaget utkast eller avbrutet kommande avtal upphäver planen.
+
+**Ta bort utkast** raderar utkastets egna kravändringar och avsteg men bevarar
+delade aktuella ärenden. Ett avbrutet bekräftat kommande avtal bevaras som
+**Avbrutet**, med skäl, aktör och tid. Om det första framtida avtalet avbryts
+återgår arbetet till **Inget**, med en separat redigerbar kravuppsättning.
+
+**Registrera att avtalet upphört** kräver slutdatum och skäl samt att väntande
+avtal först hanteras uttryckligen. Uppföljningen fryses vid registreringen.
+Samma kravunderlag kan därefter få ett nytt avtal. Tidigare **Avviken** börjar då
+som **Inkluderad** och behöver ett nytt godkänt avsteg.

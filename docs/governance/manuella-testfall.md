@@ -1531,7 +1531,9 @@ och listan återkommer först när indikatorn har försvunnit.
 ### SPEC-05: delade listor scrollar oberoende
 
 **Steg:** Öppna kravunderlagsdetalj med långa listor och scrolla respektive
-panel. Öppna ett tillgängligt krav i den delade vyn. Läs kravtext,
+panel. Scrolla även Avtal och versionshistorik på dator och kontrollera att
+kravlistorna behåller sina scrollpositioner. Öppna ett tillgängligt krav i den
+delade vyn. Läs kravtext,
 acceptanskriterium och verifieringsmetod och öppna områdesinformationen med
 mellanslag. Stäng med Escape.
 
@@ -1589,14 +1591,16 @@ fungera.
 
 **Steg:** Skapa ett nytt krav direkt från kravunderlaget. Ändra
 kravtexten via Redigera i det unika kravets inline-detalj och kontrollera att
-formuläret öppnas i modal med kravets ID i huvudet. Öppna därefter åtgärden
+formuläret öppnas i modal med kravets ID i huvudet. Spara och öppna den aktuella
+kravradens inline-detalj igen. Öppna därefter åtgärden
 `Lyft till kravbiblioteket`, välj ett kravområde och genomför lyftet.
 
 **Förväntat resultat:** Kravet får unikt ID och kopplas till underlaget.
 Redigering sker i modal och lyftåtgärden är tillgänglig från det
 kravunderlagslokala kravets inline-detalj. Ett nytt utkast visas i valt
 kravområde i kravbiblioteket medan det ursprungliga kravunderlagslokala kravet
-finns kvar oförändrat.
+finns kvar oförändrat av lyftet. Den tidigare bindningen före redigeringen
+behåller sin ursprungliga text i historiken.
 
 ### SPEC-07A: referensdata återhämtas för unikt krav
 
@@ -1963,6 +1967,149 @@ detaljdata med ett inaktuellt antal kravunderlag.
 Det gäller även när detaljen öppnas automatiskt genom den bevarade
 expanderingen; ingen extra stängning och öppning ska behövas.
 
+### SPEC-22: bekräfta hela kravunderlaget och välj avtal
+
+**Steg:** Skapa ett kravunderlag med ett bibliotekskrav och ett lokalt krav som
+kravunderlagsansvarig. Öppna pennan vid **Inget** i rutan **Avtal** till vänster
+om **Styrningsobjektstyp**. Ange avtalsreferens och avtalsdatum, lämna beskrivningen
+tom och bekräfta. Prova även ett första avtal med framtida datum. Öppna dialogens
+registreringsuppgifter och byt mellan tillgängliga avtal. Kontrollera
+avtalsväljaren både utan historik och när tidigare avtal finns. Använd
+tangentbordet för att nå avtalsåtgärderna i **Avtalsuppgifter**, även när
+registreringsuppgifterna är utfällda. Välj **Stäng** i knappraden och öppna
+**Avtalsuppgifter** igen. Öppna också ett kravs detaljvy, först med bara ett
+avtal och sedan med flera avtal och det första avtalet valt.
+
+**Förväntat resultat:** Hela kravuppsättningen låses direkt vid bekräftelse,
+även när avtalet är kommande. Rutan visar referens, datum och status. Valet styr
+den vanliga kravlistan och dess filtrering. Uppföljning är tillgänglig i det
+aktuella avtalet. Gruppen **Tidigare avtal** visas bara när det finns tidigare
+avtal att välja. Registreringsuppgifter ligger i dialogen och kan fällas ut.
+**Stäng** stänger bara dialogen och återför fokus till öppningsknappen; avtalet
+behåller sina uppgifter och sin status. Det gäller även läsare utan
+beslutsbehörighet. Kravets **Historik** visas när det finns en faktisk ändring i
+kravets avtalsserie, även om ändringen hör till ett senare avtal än det visade.
+**Jämför med föregående avtal** visas bara
+när det valda avtalet har ett föregående avtal, även vid visning av äldre avtal.
+
+### SPEC-23: ändra krav i ett nytt avtalsutkast
+
+**Steg:** Skapa ett nytt avtal från det aktuella avtalet. Redigera ett
+bibliotekskrav med **Redigera krav**. Kontrollera meddelandet om lokal identitet
+och ändra text, acceptanskriterier, klassificering och verifieringsuppgifter i
+den fullständiga editorn. Spara och ångra sedan ändringen. Gör en ny ändring,
+lägg till ett lokalt krav och ta bort ett annat krav. Bekräfta avtalet och välj
+sedan det tidigare avtalet. Jämför också en nyare publicerad biblioteksversion
+och använd **Uppdatera från kravbiblioteket** i åtgärdskolumnen till höger.
+Där finns även **Ångra ändring** när ändringen kan ångras. Kontrollera att
+åtgärdernas fullständiga namn är läsbara även när texten radbryts, på både
+svenska och engelska samt i mobilvy. Öppna **Jämför med föregående avtal** för
+detaljerade skillnader. Fäll ut **Historik** och kontrollera korta ändringsposter,
+avtalsreferens, avtalsdatum, status och vilket avtal ändringen jämförs med.
+Välj ett äldre avtal och kontrollera att även senare ändringar visas, med
+**Visar avtal** som markering för det visade avtalet. Prova ett oförändrat krav
+och ett krav där hela utkaständringen ångras. Kontrollera **Avstegshistorik**
+för ett avsteg som hör till en tidigare, ångrad version av kravet.
+
+**Förväntat resultat:** Biblioteksredigering skapar ett nytt lokalt Krav-ID med
+ursprungligt Krav-ID och version som referens. Ångring återställer den tidigare
+bibliotekskopplingen. Rader visar **Avtalsändring** och avtalsdatum; borttagna
+utkastkrav visar **Borttaget** och kan återställas. Ändrade krav börjar som
+**Inkluderad** vid ikraftträdandet. Tidigare avtal behåller sitt innehåll och
+sin uppföljning. Biblioteksuppdatering behåller bibliotekets Krav-ID och sparar
+exakt den jämförda publicerade versionen. Utan en nyare publicerad version visas
+inte uppdateringsknappen. Före första avtalet är biblioteksuppdatering tillåten,
+medan manuell biblioteksredigering förutsätter ett senare avtalsutkast.
+**Historik** visar en sammanfattning per ändrat avtal, med senaste avtalsdatum
+först. Oförändrade krav och helt ångrade utkaständringar ger inga poster.
+Historiken är dold om hela serien är oförändrad; första avtalets ursprungliga
+krav utgör utgångspunkten. En separat tilläggning efter en borttagning som trätt
+i kraft börjar en ny historik. Avstegshistoriken visar varje äldre ärende en
+gång och bevarar **Senare händelser**, även när kravets ändringshistorik är dold.
+
+### SPEC-24: ansvarig beslutar och avsteg följer exakt innehåll
+
+**Steg:** Skapa och granska avsteg mot oförändrat respektive nytt innehåll i
+ett avtalsutkast. Prova att ändra ett krav med ett obeslutat avsteg. Avbryt
+ärendet med skäl och ändra kravet. Redigera också motiveringen i ett
+avstegsutkast och återta en granskningsbegäran. Prova sedan ett ärvt godkänt
+avsteg: spara en ändring med ansvarigs uttryckliga godkännande av planerat
+avslut. Ångra ändringen och upprepa den inför ikraftträdande. Kontrollera som
+medförfattare, ansvarig, Reviewer, enbart Admin och otilldelad användare; följ
+även AUTHZ-04 och AUTHZ-05.
+
+**Förväntat resultat:** Oförändrat innehåll delar ärende med aktuellt avtal.
+Obeslutade avsteg måste avbrytas uttryckligen. Godkänt ärvt avsteg gäller tills
+ersättningsavtalet börjar gälla; ursprungligt beslut och separat avslut bevaras.
+Ångring upphäver planen och behåller godkännandet. Författare kan förbereda,
+men endast tilldelad ansvarig fattar avtalsbeslut och godkänner avstegsavslut.
+Endast Reviewer fattar granskningsbeslut. Otilldelad användare nekas åtkomst.
+
+Prova även ett avsteg som tillkommer i aktuellt avtal efter att kravet ändrats
+i utkastet. Bekräftelsen ska blockera ett obeslutat ärende och kräva ansvarigs
+uttryckliga godkännande av planerat avslut för ett nytt godkänt avsteg. Skapa
+ett avsteg direkt från kravraden i ett kommande avtal. En begäran eller ett
+beslut från en tidigare avtalsvy ska avvisas även om samma innehåll finns kvar
+i aktuellt avtal.
+
+### SPEC-25: rätta referens och datum
+
+**Steg:** Prova tom och redan använd referens samt ett redan använt avtalsdatum.
+Rätta en referens och kontrollera ändringshistoriken. Flytta ett kommande avtal
+till dagens datum och avbryt först bekräftelsen; upprepa och bekräfta. Prova ett
+utkast vars datum har passerat samt datumrättelse för ett aktuellt avtal.
+
+**Förväntat resultat:** Referens och datum är obligatoriska och konflikter
+avvisas. Rättelser registrerar aktör, tid och gamla/nya värden utan skälfråga.
+Dagens datum kräver uttrycklig bekräftelse av omedelbart ikraftträdande. Passerat
+utkastdatum måste rättas; det ändras inte automatiskt. Datum efter ikraftträdande
+är låst. Nytt framtida datum flyttar även planerade avstegsavslut.
+
+### SPEC-26: ta bort utkast och avbryt kommande avtal
+
+**Steg:** Ta bort ett utkast som har egna avsteg och delar ett aktuellt ärende.
+Avbryt därefter ett bekräftat kommande avtal med skäl. Skapa en ersättning.
+Upprepa avbrottet för det första framtida avtalet utan aktuellt avtal.
+Kontrollera kravets **Historik** från ett äldre avtal efter att en ersättning
+har skapats för ett avbrutet kommande avtal.
+
+**Förväntat resultat:** Utkastet och dess egna ändringar och avsteg försvinner;
+delade aktuella ärenden bevaras. Kravändringar i ett avbrutet avtal markeras
+**Avbrutet — trädde aldrig i kraft**. Ersättningens ändring jämförs med dess
+verkliga föregående avtal, inte med det avbrutna avtalet.
+Kommande avtal bevaras som **Avbrutet** med
+fryst innehåll och egen historik. Dess egna obeslutade avsteg avbryts och planer
+för aktuella avsteg upphävs. Ersättningen utgår från aktuellt avtal. Efter
+avbrott av första framtida avtalet visas **Inget** med självständigt redigerbara
+krav; historiken påverkas inte av fortsatt arbete. Avbruten referens förblir
+upptagen, medan dess datum kan återanvändas.
+
+### SPEC-27: upphört avtal och kort förlängning
+
+**Steg:** Registrera att aktuellt avtal upphört med slutdatum och skäl. Prova
+först med ett väntande avtal och hantera det uttryckligen. Skapa sedan ett nytt
+avtal från det senast upphörda avtalet och bekräfta. Kontrollera tidigare
+verifierade och avvikna krav samt historiska rapporter.
+
+**Förväntat resultat:** Väntande avtal blockerar avslut tills det hanterats.
+Slutdatum och registreringstid visas separat. Uppföljningen fryses, obeslutade
+avsteg avbryts och godkända avsteg får separata avslut vid registreringen.
+Förlängningen fortsätter samma kravunderlag. Verifierade resultat följer med,
+medan tidigare **Avviken** börjar som **Inkluderad** och kräver nytt godkänt
+avsteg. Tidigare avtal och eventuellt mellanrum bevaras.
+
+### SPEC-28: rapportera valt avtal och bevara historik
+
+**Steg:** Exportera och skapa rapport för aktuellt avtal, utkast, kommande,
+tidigare och avbrutet avtal med samma listfilter. Ändra aktuell uppföljning och
+öppna en tidigare rapport igen. Granska aktuella och senare avstegshändelser.
+
+**Förväntat resultat:** Varje utdata anger valt avtals referens, avtalsdatum och
+status samt använder dess krav och uppföljning. Utkast, kommande och avbrutet
+identifieras tydligt. Tidigare resultat påverkas inte av senare uppföljning;
+senare avstegshändelser visas separat. Behörighet och befintliga exportformat
+gäller även för historiska sammanhang.
+
 ## Avsteg
 
 ### DEV-01: skapa avstegsutkast
@@ -2018,6 +2165,44 @@ begära granskning och återta avsteg i sitt kravunderlag men saknar
 beslutsåtgärd och får 403 vid besluts-API. `noah.noroles` får också 403.
 `rita.reviewer` kan läsa kravunderlaget, ser beslutsåtgärden och kan godkänna
 eller avslå avsteget med beslutsmotivering.
+
+### DEV-08: enhetlig avstegshantering och tydliga statusar
+
+**Steg:** Öppna ett bibliotekskrav och ett lokalt krav i ett kravunderlag utan
+avtal. Skapa ett avsteg för respektive krav. Redigera motiveringen, begär
+granskning och ladda om. Kontrollera ärendet som behörig kravgranskare.
+Återför till utkast med bekräftelse. Skapa och avsluta även ett avstegsutkast
+på ett kommande avtal. Använd tangentbord för granskning och en smal vy för
+avslut.
+
+**Förväntat resultat:** Båda kravtyperna har samma avstegsflöde. Utkast och
+Granskning begärd skiljs åt och sparas efter omladdning. Åtgärderna påverkar
+rätt avsteg. Historiska ärenden kan öppnas via Tidigare avsteg. Kravets
+borttagningsåtgärd ligger direkt under Begär ett avsteg i åtgärdskolumnen och
+följer gällande behörighet och avtalslåsning.
+
+### DEV-09: konflikt visas i registreringsdialogen
+
+**Steg:** Öppna avstegsformuläret och fyll i en motivering. Låt en annan
+författare spara ett avsteg för samma kravinnehåll före din registrering.
+Försök spara. Avsluta därefter det konkurrerande ärendet utan beslut och
+försök igen. Upprepa för båda kravtyperna.
+
+**Förväntat resultat:** Konflikten visas i den öppna dialogen. Motiveringen
+bevaras och kan sparas när konflikten är löst. Högst ett aktivt avsteg finns
+för samma kravinnehåll, även vid samtidiga anrop.
+
+### DEV-10: avsluta avsteg utan beslut
+
+**Steg:** Skapa ett avstegsutkast. Välj Avsluta utan beslut i ärendet. Läs
+förklaringen och ange orsak. Bekräfta och ladda om. Kontrollera att ett nytt
+avsteg får begäras. Upprepa för båda kravtyperna och i ett kommande avtal.
+
+**Förväntat resultat:** Ärendet visas som Avbrutet och finns kvar med orsak,
+aktör och tidpunkt. Det kan inte längre skickas till granskning och blockerar
+inte ett nytt avsteg. Ett delat ärende visar berörda avtalsreferenser före
+bekräftelsen. Fel visas vid åtgärden och dialogen behåller inmatningen.
+Knapparna Stäng och Avsluta utan beslut har mellanrum även i smal vy.
 
 ## Admincenter
 

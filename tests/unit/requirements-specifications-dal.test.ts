@@ -49,11 +49,13 @@ import {
 } from '@/lib/dal/requirements-specifications'
 import { ARRAY_INPUT_MAX_ITEMS } from '@/lib/http/validation'
 import { DEFAULT_SPECIFICATION_ITEM_STATUS_ID } from '@/lib/specification-item-status-constants'
+import { withEditableAgreementState } from '../support/editable-agreement-database'
 
 function createSqlServerDb() {
   const query =
     vi.fn<(sql: string, parameters?: unknown[]) => Promise<unknown[]>>()
   const getRepository = vi.fn()
+  const guardedQuery = withEditableAgreementState(query)
   const transaction = vi.fn(async (...args: unknown[]) => {
     const callback =
       typeof args[0] === 'function'
@@ -62,11 +64,11 @@ function createSqlServerDb() {
           ? args[1]
           : null
     if (!callback) throw new Error('Missing transaction callback')
-    return (callback as (manager: unknown) => unknown)({ query })
+    return (callback as (manager: unknown) => unknown)({ query: guardedQuery })
   })
   const db = {
     getRepository,
-    query,
+    query: guardedQuery,
     transaction,
   } as unknown as Parameters<typeof listSpecifications>[0]
 
@@ -106,12 +108,8 @@ describe('requirement application deviation status', () => {
   ] as const)(
     'rejects Deviated without approval for a %s requirement',
     async (_kind, update) => {
-      const db = {
-        query: vi
-          .fn()
-          .mockResolvedValueOnce([{ id: 5 }])
-          .mockResolvedValueOnce([]),
-      }
+      const { db, query } = createSqlServerDb()
+      query.mockResolvedValueOnce([{ id: 5 }]).mockResolvedValueOnce([])
       await expect(
         update(db as never, 42, { specificationItemStatusId: 5 }),
       ).rejects.toMatchObject({
@@ -1143,28 +1141,38 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     await deleteSpecification(db, 7)
 
     expect(transaction).toHaveBeenCalledTimes(1)
-    expect(query).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('SELECT responsible_hsa_id AS hsaId'),
+    expect(query).toHaveBeenCalledWith(
+      'DELETE FROM specification_deviation_endings WHERE specification_id = @0',
       [7],
     )
-    expect(query).toHaveBeenNthCalledWith(
-      2,
-      'DELETE FROM specification_local_requirements WHERE specification_id = @0',
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM specification_agreement_items'),
       [7],
     )
     expect(query).toHaveBeenNthCalledWith(
       3,
-      'DELETE FROM requirements_specification_items WHERE requirements_specification_id = @0',
+      expect.stringContaining('SELECT responsible_hsa_id AS hsaId'),
       [7],
     )
     expect(query).toHaveBeenNthCalledWith(
       4,
-      'DELETE FROM specification_needs_references WHERE specification_id = @0',
+      'DELETE FROM specification_local_requirements WHERE specification_id = @0',
       [7],
     )
     expect(query).toHaveBeenNthCalledWith(
       5,
+      'DELETE FROM requirements_specification_items WHERE requirements_specification_id = @0',
+      [7],
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      6,
+      expect.stringContaining(
+        'DELETE FROM specification_needs_references WHERE specification_id = @0',
+      ),
+      [7],
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      7,
       'DELETE FROM requirements_specifications WHERE id = @0',
       [7],
     )
@@ -1374,6 +1382,8 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
     await expect(
       updateSpecificationNeedsReference(disappearedUpdate.db, 5, 33, {
         text: 'After',
@@ -1539,13 +1549,22 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
-        { id: 41, specificationId: 5, sequenceNumber: 1, uniqueId: 'LOK-001' },
+        {
+          id: 41,
+          specificationId: 5,
+          sequenceNumber: 1,
+          uniqueId: 'LOK-001',
+          description: 'Created local requirement',
+          verifiable: false,
+        },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 41 }])
+      .mockResolvedValueOnce([{ id: 42 }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
-          id: 41,
+          id: 42,
           specificationId: 5,
           uniqueId: 'LOK-001',
           description: 'Updated local requirement',
@@ -1592,7 +1611,7 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
       specificationItemStatusId: DEFAULT_SPECIFICATION_ITEM_STATUS_ID,
     })
     expect(updated).toMatchObject({
-      id: 41,
+      id: 42,
       description: 'Updated local requirement',
       acceptanceCriteria: 'Updated AC',
       verifiable: true,
@@ -1766,8 +1785,16 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     const { db, query, transaction } = createSqlServerDb()
     query
       .mockResolvedValueOnce([
-        { id: 41, specificationId: 5, sequenceNumber: 1, uniqueId: 'LOK-001' },
+        {
+          id: 41,
+          specificationId: 5,
+          sequenceNumber: 1,
+          uniqueId: 'LOK-001',
+          description: 'Original',
+          verifiable: false,
+        },
       ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
 
     await expect(
@@ -1782,9 +1809,12 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
       status: 400,
     })
 
-    expect(transaction).not.toHaveBeenCalled()
+    expect(transaction).toHaveBeenCalledTimes(1)
     expect(query.mock.calls.map(([sql]) => String(sql))).toEqual([
-      expect.stringContaining('FROM specification_local_requirements'),
+      expect.stringContaining('FROM current_specification_local_requirements'),
+      expect.stringContaining(
+        'FROM specification_local_requirement_norm_references',
+      ),
       expect.stringContaining('FROM quality_characteristics'),
     ])
   })
@@ -1799,10 +1829,13 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
           sequenceNumber: 1,
           specificationId: 5,
           uniqueId: 'LOK-001',
+          description: 'Original local content',
           verificationMethod: 'Checklist',
         },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 41 }])
+      .mockResolvedValueOnce([{ id: 42 }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
@@ -1836,7 +1869,7 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     })
 
     const updateCall = query.mock.calls.find(([sql]) =>
-      String(sql).includes('UPDATE specification_local_requirements'),
+      String(sql).includes('description = @0'),
     )
     expect(updateCall?.[1]?.at(6)).toBe(1)
     expect(updateCall?.[1]?.at(8)).toBe('Checklist')
@@ -2067,7 +2100,16 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     expect(query).toHaveBeenNthCalledWith(
       4,
       expect.stringContaining('INSERT INTO requirements_specification_items'),
-      [5, 7, 101, 33, DEFAULT_SPECIFICATION_ITEM_STATUS_ID, expect.any(Date)],
+      [
+        5,
+        7,
+        101,
+        33,
+        DEFAULT_SPECIFICATION_ITEM_STATUS_ID,
+        expect.any(Date),
+        null,
+        null,
+      ],
     )
   })
 
@@ -2131,32 +2173,8 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
       'lib:31',
     ])
 
-    expect(query).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining(
-        'FROM requirements_specification_items specification_item',
-      ),
-      [5, 1, 2, 31],
-    )
-    expect(query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining(
-        'FROM specification_local_requirements local_requirement',
-      ),
-      [5, 1, 2, 41],
-    )
-    expect(query.mock.calls[0]?.[0]).toContain(
-      'WHERE deviation.specification_item_id IN (@3)',
-    )
-    expect(query.mock.calls[0]?.[0]).toContain(
-      'specification_item.needs_reference_id AS needsReferenceId',
-    )
-    expect(query.mock.calls[1]?.[0]).toContain(
-      'WHERE deviation.specification_local_requirement_id IN (@3)',
-    )
-    expect(query.mock.calls[1]?.[0]).toContain(
-      'local_requirement.needs_reference_id AS needsReferenceId',
-    )
+    expect(query).toHaveBeenNthCalledWith(1, expect.any(String), [5, 1, 2, 31])
+    expect(query).toHaveBeenNthCalledWith(2, expect.any(String), [5, 1, 2, 41])
     expect(result).toEqual([
       expect.objectContaining({
         deviationCounts: { approved: 0, pending: 0, rejected: 0, total: 0 },
@@ -2332,7 +2350,7 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     expect(query).toHaveBeenCalledTimes(1)
     expect(query).toHaveBeenCalledWith(
       expect.stringMatching(
-        /DELETE FROM requirements_specification_items[\s\S]*WHERE requirements_specification_id = @0 AND requirement_id IN \(@1,[\s\S]*@200\)/u,
+        /UPDATE item SET valid_until = SYSUTCDATETIME\(\)[\s\S]*WHERE item.requirements_specification_id = @0 AND item.requirement_id IN \(@1,[\s\S]*@200\)/u,
       ),
       [5, ...requirementIds],
     )
@@ -2352,14 +2370,14 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     expect(query).toHaveBeenNthCalledWith(
       1,
       expect.stringMatching(
-        /DELETE FROM requirements_specification_items[\s\S]*WHERE requirements_specification_id = @0 AND id IN \(@1\)/u,
+        /UPDATE item SET valid_until = SYSUTCDATETIME\(\)[\s\S]*FROM requirements_specification_items item[\s\S]*WHERE item.requirements_specification_id = @0 AND item.id IN \(@1\)/u,
       ),
       [5, 31],
     )
     expect(query).toHaveBeenNthCalledWith(
       2,
       expect.stringMatching(
-        /DELETE FROM specification_local_requirements[\s\S]*WHERE specification_id = @0 AND id IN \(@1\)/u,
+        /UPDATE item SET valid_until = SYSUTCDATETIME\(\)[\s\S]*FROM specification_local_requirements item[\s\S]*WHERE item.specification_id = @0 AND item.id IN \(@1\)/u,
       ),
       [5, 4],
     )
@@ -2597,10 +2615,13 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
   })
 
   it('updates library and local item fields through validated SQL paths', async () => {
-    const { db, query } = createSqlServerDb()
+    const { db, query, transaction } = createSqlServerDb()
 
-    await updateSpecificationItemFields(db, 31, {})
-    await updateSpecificationLocalRequirementFields(db, 41, {})
+    await expect(updateSpecificationItemFields(db, 31, {})).resolves.toBe(0)
+    await expect(
+      updateSpecificationLocalRequirementFields(db, 41, {}),
+    ).resolves.toBe(0)
+    expect(transaction).not.toHaveBeenCalled()
     expect(query).not.toHaveBeenCalled()
 
     await expect(
@@ -2648,4 +2669,57 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     ).resolves.toBe(0)
     expect(transaction).not.toHaveBeenCalled()
   })
+})
+
+describe('application follow-up transaction boundary', () => {
+  it.each([
+    ['library', updateSpecificationItemFields],
+    ['local', updateSpecificationLocalRequirementFields],
+  ] as const)(
+    'keeps %s policy checks and writes on the transaction manager',
+    async (_kind, update) => {
+      let active = false
+      const transactionalQuery = vi.fn(async (sql: string) => {
+        expect(active).toBe(true)
+        if (sql.includes('AS specificationId')) return [{ specificationId: 5 }]
+        if (sql.includes('AS requiresReassessment'))
+          return [{ requiresReassessment: false }]
+        return [{ id: 17 }]
+      })
+      const query = vi.fn()
+      const transaction = vi.fn(
+        async (
+          work: (manager: {
+            query: typeof transactionalQuery
+          }) => Promise<number>,
+        ) => {
+          active = true
+          try {
+            return await work({ query: transactionalQuery })
+          } finally {
+            active = false
+          }
+        },
+      )
+      const db = { query, transaction } as unknown as Parameters<
+        typeof update
+      >[0]
+      await expect(
+        update(db, 17, { specificationItemStatusId: 2 }),
+      ).resolves.toBe(1)
+      expect(query).not.toHaveBeenCalled()
+      expect(transactionalQuery).toHaveBeenCalledWith(
+        expect.stringContaining('UPDLOCK, HOLDLOCK'),
+        [5],
+      )
+      expect(transactionalQuery).toHaveBeenLastCalledWith(
+        expect.stringMatching(/UPDATE[\s\S]*SET specification_item_status_id/),
+        [2, expect.any(String), 17],
+      )
+      const failure = new Error('update failed')
+      transactionalQuery.mockRejectedValueOnce(failure)
+      await expect(update(db, 17, { note: 'Follow-up' })).rejects.toBe(failure)
+      expect(active).toBe(false)
+    },
+  )
 })

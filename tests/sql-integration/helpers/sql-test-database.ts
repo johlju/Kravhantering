@@ -68,6 +68,10 @@ const TRANSACTIONAL_TABLES = [
   'requirement_selection_question_sequences',
   'requirement_version_requirement_packages',
   'requirement_version_norm_references',
+  'specification_deviation_endings',
+  'specification_agreement_items',
+  'specification_agreement_corrections',
+  'specification_agreements',
   'specification_local_requirement_norm_references',
   'specification_local_requirement_deviations',
   'deviations',
@@ -186,6 +190,8 @@ async function seedLookups(target: SqlServerDatabase): Promise<void> {
   }
 
   const itemStatuses: Array<[number, string, string, string, number]> = [
+    [3, 'Implementerad', 'Implemented', '#22c55e', 3],
+    [4, 'Verifierad', 'Verified', '#22c55e', 4],
     [
       DEFAULT_SPECIFICATION_ITEM_STATUS_ID,
       'Inkluderad',

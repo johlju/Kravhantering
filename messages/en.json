@@ -696,7 +696,9 @@
     "areaInfo": "Information about {name}",
     "areaInfoLoading": "Loading requirement area…",
     "areaInfoError": "Could not load the requirement area description. Close and reopen to try again.",
-    "areaDescriptionEmpty": "No description available."
+    "areaDescriptionEmpty": "No description available.",
+    "agreementChange": "Agreement change",
+    "agreementRemoved": "Removed"
   },
   "requirementsTable": {
     "clear": "Clear",
@@ -1005,7 +1007,7 @@
     "decisionHeading": "Decision:",
     "revertToDraftConfirm": "Are you sure you want to revert this deviation to draft?",
     "revertToDraftConfirmTitle": "Revert to draft",
-    "historyLabel": "{count, plural, one {Previous deviation (#)} other {Previous deviations (#)}}",
+    "historyLabel": "Deviation history",
     "decisionMotivationPlaceholder": "Enter the reasoning for the decision",
     "decidedByPlaceholder": "Enter the name of the decision maker",
     "createdByLabel": "Requested by",
@@ -1016,7 +1018,9 @@
     "priorityLevel": "Priority",
     "priorityLevels": "Priorities",
     "affectedRequirementIds": "Affected Requirement IDs",
-    "bulkDeviationPartialFail": "Deviation requests failed for Requirement IDs: {ids}. Those requirements remain selected."
+    "bulkDeviationPartialFail": "Deviation requests failed for Requirement IDs: {ids}. Those requirements remain selected.",
+    "statusCancelled": "Cancelled",
+    "manageCancellation": "Cancel in specification"
   },
   "improvementSuggestion": {
     "attachImplementation": "Attach implementing version",
@@ -1168,7 +1172,8 @@
         "archived": "Archived",
         "uniqueRequirement": "Unique requirement",
         "libraryRequirement": "Library requirement",
-        "specificationLocalRequirement": "Specification-local requirement"
+        "specificationLocalRequirement": "Specification-local requirement",
+        "noAgreement": "No agreement"
       },
       "filenames": {
         "list": "Requirements List",
@@ -1244,7 +1249,10 @@
         "statusChangedAt": "Status changed",
         "traceabilityReportTitle": "Requirement application traceability",
         "usageStatus": "Usage status",
-        "version": "Version"
+        "version": "Version",
+        "agreementReference": "Agreement reference",
+        "agreementEffectiveDate": "Agreement effective date",
+        "agreementState": "Agreement status"
       },
       "suggestions": {
         "implementingVersion": "Implementing version",
@@ -1275,6 +1283,14 @@
         "deviationsByDecision": "Deviations by decision state",
         "noDeviation": "No deviation",
         "verification": "Verifiable / verification method"
+      },
+      "agreementStates": {
+        "draft": "Draft",
+        "upcoming": "Upcoming",
+        "current": "Current",
+        "previous": "Previous",
+        "cancelled": "Cancelled",
+        "ended": "Ended"
       }
     },
     "specificationCover": {
@@ -1811,7 +1827,8 @@
         "requirementImportValidationRateBuckets": "MCP validation-session rate limits",
         "requirementImportValidationSessions": "MCP import validation sessions",
         "exportActorQuotaEntries": "Export and report actor quotas",
-        "rfiAssessments": "RFI assessments"
+        "rfiAssessments": "RFI assessments",
+        "specificationAgreements": "Specification agreements"
       },
       "fields": {
         "identity": "Identity",
@@ -1836,7 +1853,13 @@
         "specificationArchive": "Specification",
         "requirementSelection": "Requirement selection",
         "rfiQuestion": "RFI question",
-        "rfiQuestionVersion": "Historical RFI question version"
+        "rfiQuestionVersion": "Historical RFI question version",
+        "confirmedBy": "Confirmed by",
+        "endedBy": "Agreement end recorded by",
+        "cancelledBy": "Cancelled by",
+        "bindingCreatedBy": "Binding recorded by",
+        "recordedBy": "Recorded by",
+        "correctedBy": "Corrected by"
       },
       "warnings": {
         "ownerSwitch": "Switch references to a replacement owner, or anonymize to the deleted-user sentinel when no replacement is supplied.",
@@ -3169,6 +3192,14 @@
       "rfiAssessment": {
         "heading": "RFI relevance assessments",
         "body": "Lock the RFI list and assess included questions. Reason, document reference and link are optional. Save confirms all fields for the displayed question version. Adopting another version requires confirmation of the earlier assessment. History and internal CSV/PDF retain the evidence; relevance does not select requirements."
+      },
+      "agreements": {
+        "heading": "Agreement and version history",
+        "body": "Each agreement covers the entire specification. Confirmation immediately locks all requirements, including when the effective date is in the future. Prepare changes in a new agreement draft. Manually editing a library requirement creates a local requirement with a new Requirement ID and a retained source reference. Newer published versions can be compared and adopted before the first agreement or in an agreement draft. Changed requirements start as Included. Cancel undecided deviations before changing content. The specification lead authorizes planned endings of applicable deviations; original decisions are retained. Select an agreement in the Agreement card to view its requirements and history."
+      },
+      "deviations": {
+        "heading": "Deviations",
+        "body": "Deviations appear above the requirement, with their own actions inside each case. Request a deviation and Remove requirement are in the requirement action column. Draft and Review requested are distinct states. End without a decision requires a reason and retains the case as Cancelled. Expand Registration information and Previous deviations for details. Dialog errors preserve your input. Agreement locks and permissions determine available actions."
       }
     },
     "specificationRequirementSelection": {
@@ -3806,5 +3837,134 @@
   },
   "safeMarkdown": {
     "imageOmitted": "Image omitted"
+  },
+  "agreement": {
+    "heading": "Agreement",
+    "none": "None",
+    "register": "Register agreement",
+    "details": "Agreement details",
+    "select": "Select agreement",
+    "newAgreement": "New agreement",
+    "previousAgreements": "Previous agreements",
+    "reference": "Agreement reference",
+    "effectiveDate": "Agreement effective date",
+    "description": "Description",
+    "referenceHelp": "Enter an agreement reference, for example the contract number. The reference must be unique within this specification.",
+    "effectiveDateHelp": "Enter the date when the agreement takes effect.",
+    "descriptionHelp": "Add a description if needed. The description is optional.",
+    "confirm": "Confirm agreement",
+    "createDraft": "Create draft",
+    "working": "Working…",
+    "loadFailed": "The agreement could not be loaded.",
+    "saveFailed": "The agreement could not be saved.",
+    "pendingBlocker": "Resolve the existing draft or upcoming agreement first.",
+    "states": {
+      "draft": "Draft",
+      "upcoming": "Upcoming",
+      "current": "Current",
+      "previous": "Previous",
+      "cancelled": "Cancelled",
+      "ended": "Ended"
+    },
+    "discard": "Discard draft",
+    "discardTitle": "Discard agreement draft",
+    "discardWarning": "The entire draft is deleted, including its own requirement changes and deviations. Cases shared with the current agreement are preserved. Planned endings of current deviations are cancelled.",
+    "cancelAgreement": "Cancel upcoming agreement",
+    "cancelWarning": "The agreement is retained as Cancelled with its requirement content and history. Its own pending deviations are cancelled. The current agreement and its shared deviations continue. Planned endings are cancelled.",
+    "reason": "Reason",
+    "cancelReasonHelp": "Explain why the upcoming agreement is being cancelled. The reason is retained in its history.",
+    "endAgreement": "Record agreement end",
+    "endWarning": "Follow-up is locked when the end is recorded. Pending deviations are cancelled and approved deviations are ended, retaining their original decisions. Agreement requirements and history remain available.",
+    "endDate": "Agreement ended",
+    "endDateHelp": "Enter the date the agreement ended, from its effective date through today. The time you record the end is retained separately.",
+    "endReasonHelp": "Explain why the agreement has ended. The reason is retained in its history.",
+    "openPending": "Open the pending agreement",
+    "correct": "Correct agreement details",
+    "saveCorrection": "Save correction",
+    "immediateTitle": "Agreement takes effect immediately",
+    "immediateWarning": "The agreement takes effect as soon as you save. Requirement changes and planned deviation endings are applied at the same time.",
+    "registrationInformation": "Registration information",
+    "registered": "Registered",
+    "confirmed": "Confirmed",
+    "cancelled": "Cancelled",
+    "endRecorded": "End recorded",
+    "notRecorded": "Not recorded",
+    "correctionHistory": "Correction history",
+    "previousValues": "Previous values",
+    "newValues": "New values",
+    "editRequirement": "Edit requirement",
+    "sourceRequirement": "Original requirement",
+    "localConversionWarning": "Saving this change creates a local requirement with a new requirement ID. The requirement is disconnected from the library. Its original requirement ID and version are retained as a reference.",
+    "requirementNote": "Note",
+    "removeRequirement": "Remove requirement",
+    "removeRequirementWarning": "Requirement {id} will be marked Removed in this draft. You can undo the removal before confirming the agreement.",
+    "undoRequirement": "Undo change",
+    "pendingDeviationWarning": "Cancel pending deviations before changing or removing the requirement. The cancellation and reason are retained in history.",
+    "cancelDeviation": "End without a decision",
+    "cancelDeviationReasonHelp": "Explain why handling of the deviation must end without a decision.",
+    "plannedEndingWarning": "The deviation continues to apply to the current agreement. It ends when the new agreement takes effect. The original decision and the ending remain in the affected agreements’ history.",
+    "draftEndingWarning": "The deviation applies only to this draft. Saving the change ends it immediately. The original requirement content, decision and ending remain in the draft history.",
+    "saveAndPlanEnding": "Save and plan ending",
+    "saveAndEndDeviation": "Save and end deviation",
+    "responsibleEndingRequired": "The assigned specification responsible person must authorize ending approved deviations together with the change.",
+    "updateFromLibrary": "Update from requirement library",
+    "compareLibraryVersions": "Compare library versions",
+    "selectedVersion": "Selected version",
+    "newPublishedVersion": "Newer published version",
+    "adoptComparedVersion": "Use the compared version",
+    "compareFailed": "The versions could not be compared. Reload the requirement.",
+    "adoptFailed": "The version could not be adopted. Reload the requirement and compare again.",
+    "workingEndingWarning": "Using the newer library version ends the deviation immediately. The original requirement content, decision and ending remain in history.",
+    "confirmationWarning": "Confirming the agreement immediately locks the entire set of requirements, even if the effective date is in the future.",
+    "contentLockedError": "Requirement content is locked. Create or select an agreement draft to change it.",
+    "reservedContentError": "A confirmed upcoming agreement replaces this content. Open that agreement to create or handle its deviation.",
+    "pendingAgreementError": "There is already a draft or upcoming agreement. Handle it before continuing.",
+    "duplicateAgreementError": "The agreement reference or effective date is already used in this specification. Choose another value.",
+    "lockedDateError": "The effective date is locked for this agreement. Only its reference and description can be corrected.",
+    "invalidDateError": "Enter a valid calendar date.",
+    "dateOrderError": "Choose today or a future date after the preceding agreement date.",
+    "endDateError": "Choose an end date between the agreement effective date and today.",
+    "permissionChangedError": "You no longer have permission to perform this action. Reload the agreement.",
+    "contentChangedError": "The agreement, requirement or deviation has changed. Reload the view and try again.",
+    "invalidInputError": "Check the entered values and try again.",
+    "expiredDraftWarning": "The effective date has passed. Choose today or a future date.",
+    "confirmationDeviations": "Deviations received for requirements changed or removed in this agreement:",
+    "confirmAndPlanEndings": "Confirm and plan endings",
+    "openCurrent": "Open current agreement",
+    "endingCancelled": "Planned ending cancelled",
+    "deviationEnded": "Deviation ended",
+    "endingPlanned": "Planned ending",
+    "workingContentEndingWarning": "Saving this change immediately ends applicable approved deviations. The original requirement content, decisions and endings remain in the history.",
+    "laterEvents": "Later events",
+    "sharedDeviationScope": "This deviation also applies to the unchanged requirement in current agreement {reference}. It is shared between the agreements and remains if this draft is discarded.",
+    "laterEventsHelp": "These shared-case events occurred after follow-up for this agreement was frozen. They do not change the historical follow-up result.",
+    "editNote": "Edit note",
+    "noteHelp": "Describe follow-up of this requirement in the current agreement.",
+    "requirementActionColumn": "Requirement actions",
+    "requirementHistory": "History",
+    "comparePrevious": "Compare with previous agreement",
+    "noPreviousRequirement": "This requirement was added in the selected agreement. There is no previous requirement to compare.",
+    "historyFailed": "Could not load requirement history.",
+    "changedField": "Changed field",
+    "affectedDeviations": "Affected deviations",
+    "cancelDeviationExplanation": "Handling of the deviation ends without approval or rejection. The deviation is retained in history as cancelled.",
+    "cancelDeviationSuccess": "The deviation has ended without a decision and is shown as cancelled.",
+    "cancelDeviationSharedScope": "The deviation is shared by these agreements: {references}. This action ends the shared case. Earlier agreements retain their historical view; the cancellation appears under Later events.",
+    "deviationEndedOn": "Ended {date}",
+    "activeDeviationError": "An active deviation already exists for this requirement content. Handle the existing deviation before requesting another.",
+    "missingHistoricalValue": "Missing",
+    "missingHistoricalHelp": "Some historical follow-up information is missing for this agreement.",
+    "deviationChangedOn": "Latest change after this agreement became historical: {date}",
+    "historyChanges": {
+      "added": "Requirement added",
+      "changed": "Requirement changed",
+      "removed": "Requirement removed",
+      "libraryUpdated": "Updated from requirement library",
+      "madeLocal": "Requirement made local"
+    },
+    "viewingAgreement": "Viewing agreement: {reference}",
+    "viewingAgreementBadge": "Viewing agreement",
+    "neverEffective": "never took effect",
+    "historyComparedWith": "Compared with {reference}"
   }
 }

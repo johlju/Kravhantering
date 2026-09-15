@@ -336,3 +336,30 @@ The version history pills show the relevant date per status:
   Draft copy of the selected historical version. If the
   requirement was archived, `is_archived` remains `true`
   until the restored replacement version is published.
+
+## Specification agreement dates
+
+The effective date is a calendar date in Europe/Stockholm. Registration and
+confirmation record separate UTC timestamps. Only the first agreement may have
+a past effective date; it captures the known working set without inventing
+past activity. A later agreement requires today or a future date after its
+predecessor. An overdue draft retains its content and requires an explicit date
+correction before confirmation.
+
+Confirmation locks the complete content immediately. Today's agreement takes
+effect at confirmation; a future agreement takes effect at Stockholm midnight,
+including daylight-saving transitions. Before effect, a date correction also
+reschedules planned deviation endings. Moving an upcoming agreement to today
+requires explicit confirmation of immediate activation. After effect, its date
+is locked.
+
+At replacement effect, unchanged requirements inherit the latest follow-up and
+the previous agreement's results freeze. Approved deviation endings record the
+effective instant separately from their original decisions. At registered
+agreement end, follow-up freezes and deviation endings record the actual
+registration time, separately from the stated end date. Neither transition
+rewrites earlier evidence.
+
+Binding intervals use inclusive `valid_from` and exclusive `valid_until` in UTC.
+Process lifecycle changes do not unlock agreement content. Requirement-version
+`edited_at` and publication dates retain their existing meanings.

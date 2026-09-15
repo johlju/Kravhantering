@@ -1300,6 +1300,57 @@ async function collectRfiAssessmentAuthors(
 }
 
 const SOURCE_DEFINITIONS: DataSubjectExportSourceDefinition[] = [
+  ...PRIVACY_ERASURE_GROUP_POLICIES.filter(
+    policy =>
+      policy.table === 'specification_agreements' ||
+      policy.table === 'specification_agreement_corrections' ||
+      policy.table === 'specification_deviation_endings' ||
+      [
+        'requirements_specification_items.binding_created_by',
+        'specification_local_requirements.binding_created_by',
+      ].includes(policy.key),
+  ).map(policy => ({
+    policy,
+    relationToSubject: 'historical_agreement_actor',
+    collect: async (db: QueryExecutor, targetHsaId: string) => {
+      if (!policy.table || !policy.hsaColumn)
+        throw new Error(
+          'Agreement actor source requires a table and HSA column',
+        )
+      const rows = await db.query<ExportRow[]>(
+        `SELECT id, ${policy.hsaColumn} AS hsaId${policy.displayColumn ? `, ${policy.displayColumn} AS displayName` : ''} FROM ${policy.table} WHERE ${policy.hsaColumn} = @0`,
+        [targetHsaId],
+      )
+      return rows.flatMap(row => [
+        item(
+          policy,
+          'historical_agreement_actor',
+          policy.hsaColumn ?? policy.key,
+          stringValue(row.hsaId),
+          {
+            relatedObject: relatedObject(row, policy.table ?? policy.key, 'id'),
+          },
+        ),
+        ...(policy.displayColumn
+          ? [
+              item(
+                policy,
+                'historical_agreement_actor',
+                policy.displayColumn,
+                stringValue(row.displayName),
+                {
+                  relatedObject: relatedObject(
+                    row,
+                    policy.table ?? policy.key,
+                    'id',
+                  ),
+                },
+              ),
+            ]
+          : []),
+      ])
+    },
+  })),
   {
     collect: collectRfiAssessmentAuthors,
     policy: policyFor('specification_rfi_assessments.created_by'),

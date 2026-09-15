@@ -25,6 +25,17 @@ import {
   DEVIATED_SPECIFICATION_ITEM_STATUS_ID,
   isSystemSpecificationItemStatusId,
 } from '@/lib/specification-item-status-constants'
+import { activateDueAgreements } from '@/lib/specifications/agreement-activation'
+import { recordAgreementContentOrigin } from '@/lib/specifications/agreement-content-origin'
+import { agreementDeviationStateSql } from '@/lib/specifications/agreement-deviation-state'
+import { agreementItemSource } from '@/lib/specifications/agreement-item-source'
+import {
+  assertApplicationFollowupAllowed,
+  assertSpecificationContentEditable,
+  assertSpecificationDeletionAllowed,
+  retireSpecificationApplications,
+  type WorkingRequirementChangeOptions,
+} from '@/lib/specifications/agreement-policy'
 
 const DEVIATION_APPROVED = 1
 const DEVIATION_REJECTED = 2
@@ -339,6 +350,7 @@ export async function listSpecificationTraceabilityItems(
   db: SqlExecutor,
   specificationId: number,
   itemRefs: SpecificationItemRef[],
+  agreementId?: number,
 ): Promise<TraceabilityReportItem[]> {
   const libraryItemIds: number[] = []
   const localRequirementIds: number[] = []
@@ -371,7 +383,7 @@ export async function listSpecificationTraceabilityItems(
           priority_level.name_en AS priorityLevelNameEn,
           priority_level.name_sv AS priorityLevelNameSv,
           specification_item.needs_reference_id AS needsReferenceId,
-          needs_reference.text AS needsReference,
+          specification_item.agreement_needs_reference AS needsReference,
           specification_item.specification_item_status_id AS specificationItemStatusId,
           specification_item_status.name_en AS specificationItemStatusNameEn,
           specification_item_status.name_sv AS specificationItemStatusNameSv,
@@ -381,7 +393,7 @@ export async function listSpecificationTraceabilityItems(
           COALESCE(deviation_counts.pending, 0) AS deviationPending,
           COALESCE(deviation_counts.approved, 0) AS deviationApproved,
           COALESCE(deviation_counts.rejected, 0) AS deviationRejected
-        FROM requirements_specification_items specification_item
+        FROM ${agreementItemSource('library', agreementId === undefined ? undefined : `@${3 + libraryItemIds.length}`)} specification_item
         INNER JOIN requirements requirement
           ON requirement.id = specification_item.requirement_id
         INNER JOIN requirement_versions requirement_version
@@ -394,18 +406,13 @@ export async function listSpecificationTraceabilityItems(
           ON needs_reference.id = specification_item.needs_reference_id
         LEFT JOIN specification_item_statuses specification_item_status
           ON specification_item_status.id = specification_item.specification_item_status_id
-        LEFT JOIN (
-          SELECT
-            deviation.specification_item_id AS itemId,
-            COUNT(*) AS total,
-            SUM(CASE WHEN deviation.decision IS NULL THEN 1 ELSE 0 END) AS pending,
-            SUM(CASE WHEN deviation.decision = @1 THEN 1 ELSE 0 END) AS approved,
-            SUM(CASE WHEN deviation.decision = @2 THEN 1 ELSE 0 END) AS rejected
-          FROM deviations deviation
-          WHERE deviation.specification_item_id IN (${buildInClause(3, libraryItemIds)})
-          GROUP BY deviation.specification_item_id
+        OUTER APPLY (
+          SELECT COUNT(*) AS total,
+            (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').pending}) AS pending,
+            (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').approved}) AS approved,
+            (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').rejected}) AS rejected
+          FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible}
         ) deviation_counts
-          ON deviation_counts.itemId = specification_item.id
         WHERE specification_item.requirements_specification_id = @0
           AND specification_item.id IN (${buildInClause(3, libraryItemIds)})
       `,
@@ -414,6 +421,7 @@ export async function listSpecificationTraceabilityItems(
         DEVIATION_APPROVED,
         DEVIATION_REJECTED,
         ...libraryItemIds,
+        ...(agreementId === undefined ? [] : [agreementId]),
       ],
     )) as Row[]
 
@@ -438,7 +446,7 @@ export async function listSpecificationTraceabilityItems(
           priority_level.name_en AS priorityLevelNameEn,
           priority_level.name_sv AS priorityLevelNameSv,
           local_requirement.needs_reference_id AS needsReferenceId,
-          needs_reference.text AS needsReference,
+          local_requirement.agreement_needs_reference AS needsReference,
           local_requirement.specification_item_status_id AS specificationItemStatusId,
           specification_item_status.name_en AS specificationItemStatusNameEn,
           specification_item_status.name_sv AS specificationItemStatusNameSv,
@@ -448,25 +456,20 @@ export async function listSpecificationTraceabilityItems(
           COALESCE(deviation_counts.pending, 0) AS deviationPending,
           COALESCE(deviation_counts.approved, 0) AS deviationApproved,
           COALESCE(deviation_counts.rejected, 0) AS deviationRejected
-        FROM specification_local_requirements local_requirement
+        FROM ${agreementItemSource('local', agreementId === undefined ? undefined : `@${3 + localRequirementIds.length}`)} local_requirement
         LEFT JOIN priority_levels priority_level
           ON priority_level.id = local_requirement.priority_level_id
         LEFT JOIN specification_needs_references needs_reference
           ON needs_reference.id = local_requirement.needs_reference_id
         LEFT JOIN specification_item_statuses specification_item_status
           ON specification_item_status.id = local_requirement.specification_item_status_id
-        LEFT JOIN (
-          SELECT
-            deviation.specification_local_requirement_id AS itemId,
-            COUNT(*) AS total,
-            SUM(CASE WHEN deviation.decision IS NULL THEN 1 ELSE 0 END) AS pending,
-            SUM(CASE WHEN deviation.decision = @1 THEN 1 ELSE 0 END) AS approved,
-            SUM(CASE WHEN deviation.decision = @2 THEN 1 ELSE 0 END) AS rejected
-          FROM specification_local_requirement_deviations deviation
-          WHERE deviation.specification_local_requirement_id IN (${buildInClause(3, localRequirementIds)})
-          GROUP BY deviation.specification_local_requirement_id
+        OUTER APPLY (
+          SELECT COUNT(*) AS total,
+            (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').pending}) AS pending,
+            (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').approved}) AS approved,
+            (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').rejected}) AS rejected
+          FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible}
         ) deviation_counts
-          ON deviation_counts.itemId = local_requirement.id
         WHERE local_requirement.specification_id = @0
           AND local_requirement.id IN (${buildInClause(3, localRequirementIds)})
       `,
@@ -475,6 +478,7 @@ export async function listSpecificationTraceabilityItems(
         DEVIATION_APPROVED,
         DEVIATION_REJECTED,
         ...localRequirementIds,
+        ...(agreementId === undefined ? [] : [agreementId]),
       ],
     )) as Row[]
 
@@ -490,7 +494,7 @@ export async function listSpecificationTraceabilityItems(
   })
 }
 
-function formatSpecificationLocalRequirementUniqueId(
+export function formatSpecificationLocalRequirementUniqueId(
   sequenceNumber: number,
 ): string {
   return `KRAV${String(sequenceNumber).padStart(4, '0')}`
@@ -558,11 +562,11 @@ async function listSpecificationRows(
         lifecycle_status.name_en AS lifecycleStatusNameEn,
         (
           SELECT COUNT(*)
-          FROM requirements_specification_items AS library_item
+          FROM current_requirement_applications AS library_item
           WHERE library_item.requirements_specification_id = specification_record.id
         ) + (
           SELECT COUNT(*)
-          FROM specification_local_requirements AS local_requirement
+          FROM current_specification_local_requirements AS local_requirement
           WHERE local_requirement.specification_id = specification_record.id
         ) AS itemCount
       FROM selected_specifications
@@ -601,7 +605,7 @@ async function mapSpecificationRows(
             requirement_area.id AS areaId,
             requirement_area.name AS areaName
           FROM selected_specifications
-          INNER JOIN requirements_specification_items specification_item
+          INNER JOIN current_requirement_applications specification_item
             ON specification_item.requirements_specification_id = selected_specifications.id
           INNER JOIN requirements requirement
             ON requirement.id = specification_item.requirement_id
@@ -1544,6 +1548,17 @@ export async function deleteSpecificationWithExecutor(
   executor: SqlExecutor,
   id: number,
 ): Promise<void> {
+  await assertSpecificationDeletionAllowed(executor, id)
+  await executor.query(
+    'DELETE FROM specification_deviation_endings WHERE specification_id = @0',
+    [id],
+  )
+  await executor.query(
+    `DELETE FROM specification_agreement_items WHERE specification_agreement_id IN
+    (SELECT id FROM specification_agreements WHERE specification_id = @0);
+    DELETE FROM specification_agreements WHERE specification_id = @0`,
+    [id],
+  )
   const assignmentRows = (await executor.query(
     `
         SELECT responsible_hsa_id AS hsaId
@@ -1641,13 +1656,13 @@ export async function listSpecificationNeedsReferences(
         needs_reference.updated_at AS updatedAt,
         (
           SELECT COUNT(*)
-          FROM requirements_specification_items specification_item
+          FROM current_requirement_applications specification_item
           WHERE specification_item.requirements_specification_id = @0
             AND specification_item.needs_reference_id = needs_reference.id
         ) AS libraryItemCount,
         (
           SELECT COUNT(*)
-          FROM specification_local_requirements local_requirement
+          FROM current_specification_local_requirements local_requirement
           WHERE local_requirement.specification_id = @0
             AND local_requirement.needs_reference_id = needs_reference.id
         ) AS specificationLocalRequirementCount
@@ -1833,13 +1848,13 @@ export async function getSpecificationNeedsReference(
         needs_reference.updated_at AS updatedAt,
         (
           SELECT COUNT(*)
-          FROM requirements_specification_items specification_item
+          FROM current_requirement_applications specification_item
           WHERE specification_item.requirements_specification_id = @0
             AND specification_item.needs_reference_id = needs_reference.id
         ) AS libraryItemCount,
         (
           SELECT COUNT(*)
-          FROM specification_local_requirements local_requirement
+          FROM current_specification_local_requirements local_requirement
           WHERE local_requirement.specification_id = @0
             AND local_requirement.needs_reference_id = needs_reference.id
         ) AS specificationLocalRequirementCount
@@ -1913,37 +1928,54 @@ export async function updateSpecificationNeedsReference(
   id: number,
   data: SpecificationNeedsReferenceMutationInput,
 ): Promise<SpecificationNeedsReferenceSummary> {
-  const existingIdentity = await findSpecificationNeedsReferenceIdentity(
-    db,
-    specificationId,
-    id,
-  )
-  if (!existingIdentity) {
-    throw notFoundError('Needs reference not found')
-  }
+  return db.transaction(async manager => {
+    await manager.query(
+      'SELECT id FROM requirements_specifications WITH (UPDLOCK, HOLDLOCK) WHERE id = @0',
+      [specificationId],
+    )
+    await activateDueAgreements(manager, specificationId, new Date())
+    const existingIdentity = await findSpecificationNeedsReferenceIdentity(
+      manager,
+      specificationId,
+      id,
+    )
+    if (!existingIdentity) {
+      throw notFoundError('Needs reference not found')
+    }
 
-  const normalized = normalizeSpecificationNeedsReferenceInput(data)
-  await assertSpecificationNeedsReferenceTextAvailable(
-    db,
-    specificationId,
-    normalized.text,
-    id,
-  )
+    const normalized = normalizeSpecificationNeedsReferenceInput(data)
+    await assertSpecificationNeedsReferenceTextAvailable(
+      manager,
+      specificationId,
+      normalized.text,
+      id,
+    )
 
-  await db.query(
-    `
+    await manager.query(
+      `
       UPDATE specification_needs_references
       SET text = @0, description = @1, updated_at = @2
       WHERE id = @3 AND specification_id = @4
     `,
-    [normalized.text, normalized.description, new Date(), id, specificationId],
-  )
+      [
+        normalized.text,
+        normalized.description,
+        new Date(),
+        id,
+        specificationId,
+      ],
+    )
 
-  const updated = await getSpecificationNeedsReference(db, specificationId, id)
-  if (!updated) {
-    throw notFoundError('Needs reference not found after update')
-  }
-  return updated
+    const updated = await getSpecificationNeedsReference(
+      manager,
+      specificationId,
+      id,
+    )
+    if (!updated) {
+      throw notFoundError('Needs reference not found after update')
+    }
+    return updated
+  })
 }
 
 export async function deleteSpecificationNeedsReference(
@@ -2016,7 +2048,7 @@ function normalizeOptionalForeignKeyId(value: number | null | undefined) {
   return value
 }
 
-async function normalizeSpecificationLocalRequirementInput(
+export async function normalizeSpecificationLocalRequirementInput(
   db: SqlExecutor,
   specificationId: number,
   data: SpecificationLocalRequirementMutationInput,
@@ -2087,7 +2119,7 @@ async function getSpecificationLocalRequirementIdentity(
         local_requirement.unique_id AS uniqueId,
         local_requirement.is_verifiable AS verifiable,
         local_requirement.verification_method AS verificationMethod
-      FROM specification_local_requirements local_requirement
+      FROM current_specification_local_requirements local_requirement
       WHERE local_requirement.id = @0 AND local_requirement.specification_id = @1
     `,
     [specificationLocalRequirementId, specificationId],
@@ -2141,7 +2173,7 @@ const LOCAL_REQUIREMENT_DETAIL_SELECT = `
     priority_level.name_en AS priorityLevelNameEn,
     priority_level.name_sv AS priorityLevelNameSv,
     priority_level.sort_order AS priorityLevelSortOrder
-  FROM specification_local_requirements local_requirement
+  FROM current_specification_local_requirements local_requirement
   LEFT JOIN specification_needs_references needs_reference
     ON needs_reference.id = local_requirement.needs_reference_id
   LEFT JOIN specification_item_statuses specification_item_status
@@ -2245,14 +2277,29 @@ function mapSpecificationLocalRequirementDetailFlat(
 }
 
 export async function getSpecificationLocalRequirementDetail(
-  db: SqlServerDatabase,
+  db: SqlExecutor,
   specificationId: number,
   specificationLocalRequirementId: number,
+  options: { agreementId?: number } = {},
 ): Promise<SpecificationLocalRequirementDetail | null> {
+  const select =
+    options.agreementId === undefined
+      ? LOCAL_REQUIREMENT_DETAIL_SELECT
+      : LOCAL_REQUIREMENT_DETAIL_SELECT.replace(
+          'current_specification_local_requirements local_requirement',
+          `${agreementItemSource('local', '@2')} local_requirement`,
+        ).replace(
+          'needs_reference.text AS needsReference',
+          'local_requirement.agreement_needs_reference AS needsReference',
+        )
   const mainRows = (await db.query(
-    `${LOCAL_REQUIREMENT_DETAIL_SELECT}
+    `${select}
      WHERE local_requirement.id = @0 AND local_requirement.specification_id = @1`,
-    [specificationLocalRequirementId, specificationId],
+    [
+      specificationLocalRequirementId,
+      specificationId,
+      ...(options.agreementId === undefined ? [] : [options.agreementId]),
+    ],
   )) as Row[]
 
   const mainRow = mainRows[0]
@@ -2314,6 +2361,7 @@ export async function createSpecificationLocalRequirement(
   )
 
   const createdId = await db.transaction(async (manager: SqlExecutor) => {
+    await assertSpecificationContentEditable(manager, specificationId)
     const sequenceRows = (await manager.query(
       `
         UPDATE requirements_specifications
@@ -2403,6 +2451,8 @@ export async function createSpecificationLocalRequirement(
 }
 
 export interface CreateSpecificationLocalRequirementsBatchOptions {
+  actorHsaId?: string | null
+  agreementId?: number
   batchAudit?: (executor: SqlExecutor, createdIds: number[]) => Promise<void>
   beforeWrite?: (executor: SqlExecutor) => Promise<void>
   maxGroupSize?: number
@@ -2419,6 +2469,11 @@ export async function createSpecificationLocalRequirementsBatchWithExecutor(
   inputs: SpecificationLocalRequirementMutationInput[],
   options: CreateSpecificationLocalRequirementsBatchOptions = {},
 ): Promise<CreatedSpecificationLocalRequirementRow[]> {
+  await assertSpecificationContentEditable(
+    executor,
+    specificationId,
+    options.agreementId,
+  )
   const created: CreatedSpecificationLocalRequirementRow[] = []
 
   for (const data of inputs) {
@@ -2466,10 +2521,10 @@ export async function createSpecificationLocalRequirementsBatchWithExecutor(
           needs_reference_id,
           specification_item_status_id,
           created_at,
-          updated_at
+          updated_at, valid_from, valid_until, owning_agreement_id, binding_created_by_hsa_id
         )
         OUTPUT INSERTED.id AS id
-        VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12, @13, @13)
+        VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12, @13, @13, @13, CASE WHEN @14 IS NULL THEN NULL ELSE @13 END, @14, @15)
       `,
       [
         specificationId,
@@ -2486,6 +2541,8 @@ export async function createSpecificationLocalRequirementsBatchWithExecutor(
         normalized.needsReferenceId,
         DEFAULT_SPECIFICATION_ITEM_STATUS_ID,
         now,
+        options.agreementId ?? null,
+        options.actorHsaId ?? null,
       ],
     )) as Array<{ id: number }>
 
@@ -2500,6 +2557,19 @@ export async function createSpecificationLocalRequirementsBatchWithExecutor(
       createdId,
       normalized,
     )
+    if (options.agreementId !== undefined)
+      await executor.query(
+        `INSERT INTO specification_agreement_items (specification_agreement_id, specification_local_requirement_id, changed_in_agreement_id, change_kind)
+         VALUES (@0, @1, @0, 'added')`,
+        [options.agreementId, createdId],
+      )
+    if (options.agreementId !== undefined)
+      await recordAgreementContentOrigin(
+        executor,
+        'local',
+        createdId,
+        options.agreementId,
+      )
     created.push({ id: createdId, uniqueId })
   }
 
@@ -2527,6 +2597,7 @@ export async function createSpecificationLocalRequirementsBatch(
           manager,
           specificationId,
           group.items,
+          { agreementId: options.agreementId, actorHsaId: options.actorHsaId },
         )),
       )
     }
@@ -2543,6 +2614,7 @@ export async function createSpecificationLocalRequirementsBatch(
       db,
       specificationId,
       createdId,
+      { agreementId: options.agreementId },
     )
     if (!created) {
       throw notFoundError(
@@ -2560,33 +2632,70 @@ export async function updateSpecificationLocalRequirement(
   specificationId: number,
   specificationLocalRequirementId: number,
   data: SpecificationLocalRequirementMutationInput,
+  actorHsaId: string | null = null,
+  options: { authorizeDeviationEndings?: boolean } = {},
 ) {
-  const existing = await getSpecificationLocalRequirementIdentity(
-    db,
-    specificationId,
-    specificationLocalRequirementId,
-  )
-  if (!existing) {
-    throw notFoundError('Specification-local requirement not found')
-  }
-
-  const normalized = await normalizeSpecificationLocalRequirementInput(
-    db,
-    specificationId,
-    data.verifiable === undefined
-      ? {
-          ...data,
-          verifiable: existing.verifiable,
-          verificationMethod:
-            data.verificationMethod === undefined
-              ? existing.verificationMethod
-              : data.verificationMethod,
-        }
-      : data,
-  )
   const updatedAt = new Date()
-
-  await db.transaction(async (manager: SqlExecutor) => {
+  const successorId = await db.transaction(async (manager: SqlExecutor) => {
+    await assertSpecificationContentEditable(manager, specificationId)
+    const existing = await getSpecificationLocalRequirementDetail(
+      manager,
+      specificationId,
+      specificationLocalRequirementId,
+    )
+    if (!existing)
+      throw notFoundError('Specification-local requirement not found')
+    const original = {
+      description: existing.description,
+      acceptanceCriteria: existing.acceptanceCriteria,
+      needsReferenceId: existing.needsReferenceId,
+      normReferenceIds: existing.normReferences.map(norm => norm.id),
+      priorityLevelId: existing.priorityLevel?.id ?? null,
+      qualityCharacteristicId: existing.qualityCharacteristic?.id ?? null,
+      requirementCategoryId: existing.requirementCategory?.id ?? null,
+      requirementTypeId: existing.requirementType?.id ?? null,
+      verifiable: existing.verifiable,
+      verificationMethod: existing.verificationMethod,
+    }
+    const normalized = await normalizeSpecificationLocalRequirementInput(
+      manager,
+      specificationId,
+      { ...original, ...data },
+    )
+    if (
+      Object.entries(normalized).every(([key, value]) => {
+        const previous = original[key as keyof typeof original]
+        return Array.isArray(value) && Array.isArray(previous)
+          ? value.length === previous.length &&
+              value.every(id => previous.includes(id))
+          : value === previous
+      })
+    )
+      return existing.id
+    const retired = await retireSpecificationApplications(
+      manager,
+      specificationId,
+      'specificationLocal',
+      [specificationLocalRequirementId],
+      false,
+      {
+        actorHsaId,
+        authorizeDeviationEndings: options.authorizeDeviationEndings,
+      },
+    )
+    if (!retired) throw conflictError('The local requirement binding changed')
+    const successors = await manager.query<Array<{ id: number }>>(
+      `INSERT INTO specification_local_requirements
+      (specification_id, unique_id, sequence_number, description, note, specification_item_status_id,
+       created_at, updated_at, valid_from, binding_created_by_hsa_id, source_requirement_version_id)
+      OUTPUT INSERTED.id AS id
+      SELECT specification_id, unique_id, sequence_number, description, note, 1,
+        @1, @1, valid_until, @2, source_requirement_version_id FROM specification_local_requirements WHERE id = @0`,
+      [specificationLocalRequirementId, updatedAt, actorHsaId],
+    )
+    const newId = successors[0]?.id
+    if (newId == null)
+      throw new Error('Local successor insertion did not return its identity')
     await manager.query(
       `
         UPDATE specification_local_requirements
@@ -2614,30 +2723,19 @@ export async function updateSpecificationLocalRequirement(
         normalized.priorityLevelId,
         normalized.verificationMethod,
         updatedAt,
-        specificationLocalRequirementId,
+        newId,
         specificationId,
       ],
     )
 
-    await manager.query(
-      `
-        DELETE FROM specification_local_requirement_norm_references
-        WHERE specification_local_requirement_id = @0
-      `,
-      [specificationLocalRequirementId],
-    )
-
-    await insertSpecificationLocalRequirementJoins(
-      manager,
-      specificationLocalRequirementId,
-      normalized,
-    )
+    await insertSpecificationLocalRequirementJoins(manager, newId, normalized)
+    return newId
   })
 
   const updated = await getSpecificationLocalRequirementDetail(
     db,
     specificationId,
-    specificationLocalRequirementId,
+    successorId,
   )
   if (!updated) {
     throw notFoundError(
@@ -2651,17 +2749,21 @@ export async function deleteSpecificationLocalRequirement(
   db: SqlServerDatabase,
   specificationId: number,
   specificationLocalRequirementId: number,
+  options: WorkingRequirementChangeOptions = {},
 ): Promise<boolean> {
-  const deleted = (await db.query(
-    `
-      DELETE FROM specification_local_requirements
-      OUTPUT DELETED.id AS id
-      WHERE id = @0 AND specification_id = @1
-    `,
-    [specificationLocalRequirementId, specificationId],
-  )) as Array<{ id: number }>
-
-  return deleted.length > 0
+  return db.transaction(async manager => {
+    await assertSpecificationContentEditable(manager, specificationId)
+    return (
+      (await retireSpecificationApplications(
+        manager,
+        specificationId,
+        'specificationLocal',
+        [specificationLocalRequirementId],
+        false,
+        options,
+      )) > 0
+    )
+  })
 }
 
 function mapGraduationSourceRow(
@@ -2731,6 +2833,7 @@ export async function graduateSpecificationLocalRequirementToLibrary(
   },
 ): Promise<GraduatedRequirementResult> {
   return db.transaction(async (manager: SqlExecutor) => {
+    await assertSpecificationContentEditable(manager, data.specificationId)
     const sourceRows = (await manager.query(
       `
         SELECT TOP (1)
@@ -2745,7 +2848,7 @@ export async function graduateSpecificationLocalRequirementToLibrary(
           local_requirement.priority_level_id AS priorityLevelId,
           CAST(local_requirement.is_verifiable AS int) AS verifiable,
           local_requirement.verification_method AS verificationMethod
-        FROM specification_local_requirements local_requirement WITH (UPDLOCK, HOLDLOCK)
+        FROM current_specification_local_requirements local_requirement WITH (UPDLOCK, HOLDLOCK)
         WHERE local_requirement.id = @0
           AND local_requirement.specification_id = @1
       `,
@@ -2912,7 +3015,13 @@ export async function linkRequirementsToSpecification(
     requirementVersionId: number
     needsReferenceId?: number | null
   }[],
+  options: { agreementId?: number; actorHsaId?: string | null } = {},
 ): Promise<number> {
+  await assertSpecificationContentEditable(
+    db,
+    specificationId,
+    options.agreementId,
+  )
   if (items.length === 0) return 0
 
   let inserted = 0
@@ -2925,13 +3034,17 @@ export async function linkRequirementsToSpecification(
           requirement_version_id,
           needs_reference_id,
           specification_item_status_id,
-          created_at
+          created_at, valid_from, valid_until, owning_agreement_id, binding_created_by_hsa_id
         )
         OUTPUT INSERTED.id AS id
-        SELECT @0, @1, @2, @3, @4, @5
+        SELECT @0, @1, @2, @3, @4, @5, @5, CASE WHEN @6 IS NULL THEN NULL ELSE @5 END, @6, @7
         WHERE NOT EXISTS (
-          SELECT 1 FROM requirements_specification_items
-          WHERE requirements_specification_id = @0 AND requirement_id = @1
+          ${
+            options.agreementId === undefined
+              ? 'SELECT 1 FROM current_requirement_applications WHERE requirements_specification_id = @0 AND requirement_id = @1'
+              : `SELECT 1 FROM specification_agreement_items membership INNER JOIN requirements_specification_items existing ON existing.id = membership.specification_item_id
+               WHERE membership.specification_agreement_id = @6 AND existing.requirement_id = @1`
+          }
         )
       `,
       [
@@ -2941,15 +3054,30 @@ export async function linkRequirementsToSpecification(
         item.needsReferenceId ?? null,
         DEFAULT_SPECIFICATION_ITEM_STATUS_ID,
         new Date(),
+        options.agreementId ?? null,
+        options.actorHsaId ?? null,
       ],
     )) as Array<{ id: number }>
     if (rows.length > 0) {
+      if (options.agreementId !== undefined)
+        await db.query(
+          `INSERT INTO specification_agreement_items (specification_agreement_id, specification_item_id, changed_in_agreement_id, change_kind)
+           VALUES (@0, @1, @0, 'added')`,
+          [options.agreementId, rows[0].id],
+        )
       await db.query(
         `UPDATE requirement_versions
           SET has_specification_item_history = 1
           WHERE id = @0`,
         [item.requirementVersionId],
       )
+      if (options.agreementId !== undefined)
+        await recordAgreementContentOrigin(
+          db,
+          'library',
+          rows[0].id,
+          options.agreementId,
+        )
       inserted += 1
     }
   }
@@ -2960,16 +3088,19 @@ export async function linkRequirementsToSpecificationAtomically(
   db: SqlServerDatabase,
   specificationId: number,
   {
+    agreementId,
     requirementIds,
     needsReferenceDescription,
     needsReferenceId,
     needsReferenceText,
   }: {
+    agreementId?: number
     requirementIds: number[]
     needsReferenceDescription?: string | null
     needsReferenceId?: number | null
     needsReferenceText?: string | null
   },
+  actorHsaId: string | null = null,
 ): Promise<number> {
   if (requirementIds.length === 0) {
     return 0
@@ -2992,6 +3123,11 @@ export async function linkRequirementsToSpecificationAtomically(
   }
 
   return db.transaction(async (manager: SqlExecutor) => {
+    await assertSpecificationContentEditable(
+      manager,
+      specificationId,
+      agreementId,
+    )
     const items = await resolveRequirementsSpecificationLinkItems(
       manager,
       requirementIds,
@@ -3015,6 +3151,7 @@ export async function linkRequirementsToSpecificationAtomically(
           ...item,
           needsReferenceId: resolvedNeedsReference.id,
         })),
+        { agreementId, actorHsaId },
       )
 
       if (addedCount === 0) {
@@ -3046,6 +3183,7 @@ export async function linkRequirementsToSpecificationAtomically(
         ...item,
         needsReferenceId: resolvedNeedsReferenceId,
       })),
+      { agreementId, actorHsaId },
     )
   })
 }
@@ -3054,23 +3192,17 @@ export async function unlinkRequirementsFromSpecification(
   db: SqlExecutor,
   specificationId: number,
   requirementIds: number[],
+  options: WorkingRequirementChangeOptions = {},
 ): Promise<number> {
-  if (requirementIds.length === 0) return 0
-
-  const params: unknown[] = [specificationId, ...requirementIds]
-  const placeholders = requirementIds
-    .map((_, index) => `@${index + 1}`)
-    .join(', ')
-
-  const deleted = (await db.query(
-    `
-      DELETE FROM requirements_specification_items
-      OUTPUT DELETED.id AS id
-      WHERE requirements_specification_id = @0 AND requirement_id IN (${placeholders})
-    `,
-    params,
-  )) as Array<{ id: number }>
-  return deleted.length
+  await assertSpecificationContentEditable(db, specificationId)
+  return retireSpecificationApplications(
+    db,
+    specificationId,
+    'library',
+    requirementIds,
+    true,
+    options,
+  )
 }
 
 // ─── Item lookup & updates ───────────────────────────────────────────────────
@@ -3190,7 +3322,7 @@ export async function getLibrarySpecificationItemMetadata(
         specification_item_status.icon_name AS specificationItemStatusIconName,
         specification_item_status.name_en AS specificationItemStatusNameEn,
         specification_item_status.name_sv AS specificationItemStatusNameSv
-      FROM requirements_specification_items specification_item
+      FROM current_requirement_applications specification_item
       LEFT JOIN specification_needs_references needs_reference
         ON needs_reference.id = specification_item.needs_reference_id
       LEFT JOIN specification_item_statuses specification_item_status
@@ -3247,10 +3379,30 @@ export type SpecificationItemFieldUpdate = {
 }
 
 export async function updateSpecificationItemFields(
+  db: SqlServerDatabase,
+  itemId: number,
+  data: SpecificationItemFieldUpdate,
+  options: { agreementId?: number } = {},
+): Promise<number> {
+  if (Object.keys(data).length === 0) return 0
+
+  return db.transaction(manager =>
+    updateSpecificationItemFieldsWithExecutor(manager, itemId, data, options),
+  )
+}
+
+export async function updateSpecificationItemFieldsWithExecutor(
   db: SqlExecutor,
   itemId: number,
   data: SpecificationItemFieldUpdate,
+  options: { agreementId?: number } = {},
 ): Promise<number> {
+  await assertApplicationFollowupAllowed(
+    db,
+    'library',
+    itemId,
+    options.agreementId,
+  )
   const setClauses: string[] = []
   const params: unknown[] = []
   let nextStatusId: number | null | undefined
@@ -3277,6 +3429,9 @@ export async function updateSpecificationItemFields(
 
   if ('needsReferenceId' in data) {
     setClauses.push(`needs_reference_id = @${params.length}`)
+    setClauses.push(
+      `needs_reference_snapshot = CASE WHEN valid_until IS NOT NULL THEN (SELECT text FROM specification_needs_references WHERE id = @${params.length}) ELSE NULL END`,
+    )
     params.push(data.needsReferenceId ?? null)
   }
 
@@ -3288,6 +3443,7 @@ export async function updateSpecificationItemFields(
         SELECT TOP (1) deviation.id AS id
         FROM deviations deviation
         WHERE deviation.specification_item_id = @0 AND deviation.decision = @1
+          AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.deviation_id = deviation.id AND ending.ended_at IS NOT NULL)
       `,
       [itemId, DEVIATION_APPROVED],
     )) as Array<{ id: number }>
@@ -3316,10 +3472,35 @@ export async function updateSpecificationItemFields(
 }
 
 export async function updateSpecificationLocalRequirementFields(
+  db: SqlServerDatabase,
+  specificationLocalRequirementId: number,
+  data: SpecificationItemFieldUpdate,
+  options: { agreementId?: number } = {},
+): Promise<number> {
+  if (Object.keys(data).length === 0) return 0
+
+  return db.transaction(manager =>
+    updateSpecificationLocalRequirementFieldsWithExecutor(
+      manager,
+      specificationLocalRequirementId,
+      data,
+      options,
+    ),
+  )
+}
+
+export async function updateSpecificationLocalRequirementFieldsWithExecutor(
   db: SqlExecutor,
   specificationLocalRequirementId: number,
   data: SpecificationItemFieldUpdate,
+  options: { agreementId?: number } = {},
 ): Promise<number> {
+  await assertApplicationFollowupAllowed(
+    db,
+    'specificationLocal',
+    specificationLocalRequirementId,
+    options.agreementId,
+  )
   const setClauses: string[] = []
   const params: unknown[] = []
   let nextStatusId: number | null | undefined
@@ -3346,6 +3527,9 @@ export async function updateSpecificationLocalRequirementFields(
 
   if ('needsReferenceId' in data) {
     setClauses.push(`needs_reference_id = @${params.length}`)
+    setClauses.push(
+      `needs_reference_snapshot = CASE WHEN valid_until IS NOT NULL THEN (SELECT text FROM specification_needs_references WHERE id = @${params.length}) ELSE NULL END`,
+    )
     params.push(data.needsReferenceId ?? null)
   }
 
@@ -3358,6 +3542,7 @@ export async function updateSpecificationLocalRequirementFields(
         FROM specification_local_requirement_deviations deviation
         WHERE deviation.specification_local_requirement_id = @0
           AND deviation.decision = @1
+          AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.local_deviation_id = deviation.id AND ending.ended_at IS NOT NULL)
       `,
       [specificationLocalRequirementId, DEVIATION_APPROVED],
     )) as Array<{ id: number }>
@@ -3389,36 +3574,32 @@ export async function deleteLibrarySpecificationItemsByIds(
   db: SqlExecutor,
   specificationId: number,
   libraryIds: number[],
+  options: WorkingRequirementChangeOptions = {},
 ): Promise<number> {
-  if (libraryIds.length === 0) return 0
-  const placeholders = libraryIds.map((_, index) => `@${index + 1}`).join(', ')
-  const rows = (await db.query(
-    `
-      DELETE FROM requirements_specification_items
-      OUTPUT DELETED.id AS id
-      WHERE requirements_specification_id = @0 AND id IN (${placeholders})
-    `,
-    [specificationId, ...libraryIds],
-  )) as Array<{ id: number }>
-  return rows.length
+  await assertSpecificationContentEditable(db, specificationId)
+  return retireSpecificationApplications(
+    db,
+    specificationId,
+    'library',
+    libraryIds,
+    false,
+    options,
+  )
 }
 
 export async function deleteSpecificationLocalRequirementsByIds(
   db: SqlExecutor,
   specificationId: number,
   specificationLocalRequirementIds: number[],
+  options: WorkingRequirementChangeOptions = {},
 ): Promise<number> {
-  if (specificationLocalRequirementIds.length === 0) return 0
-  const placeholders = specificationLocalRequirementIds
-    .map((_, index) => `@${index + 1}`)
-    .join(', ')
-  const rows = (await db.query(
-    `
-      DELETE FROM specification_local_requirements
-      OUTPUT DELETED.id AS id
-      WHERE specification_id = @0 AND id IN (${placeholders})
-    `,
-    [specificationId, ...specificationLocalRequirementIds],
-  )) as Array<{ id: number }>
-  return rows.length
+  await assertSpecificationContentEditable(db, specificationId)
+  return retireSpecificationApplications(
+    db,
+    specificationId,
+    'specificationLocal',
+    specificationLocalRequirementIds,
+    false,
+    options,
+  )
 }

@@ -126,6 +126,61 @@ function requirementResponsibilityPersonNameSql(alias: string): string {
 }
 
 const GROUP_POLICIES: PrivacyGroupPolicy[] = [
+  ...(
+    [
+      ['specification_agreements', 'created_by_hsa_id', 'createdBy'],
+      ['specification_agreements', 'confirmed_by_hsa_id', 'confirmedBy'],
+      ['specification_agreements', 'cancelled_by_hsa_id', 'cancelledBy'],
+      ['specification_agreements', 'ended_by_hsa_id', 'endedBy'],
+      [
+        'specification_agreement_corrections',
+        'corrected_by_hsa_id',
+        'correctedBy',
+      ],
+      ['specification_deviation_endings', 'recorded_by_hsa_id', 'recordedBy'],
+      ['specification_deviation_endings', 'cancelled_by_hsa_id', 'cancelledBy'],
+      [
+        'requirements_specification_items',
+        'binding_created_by_hsa_id',
+        'bindingCreatedBy',
+      ],
+      [
+        'specification_local_requirements',
+        'binding_created_by_hsa_id',
+        'bindingCreatedBy',
+      ],
+    ] as const
+  ).map(
+    ([table, hsaColumn, fieldKey]): PrivacyGroupPolicy => ({
+      key: `${table}.${hsaColumn.replace('_hsa_id', '')}`,
+      objectKey:
+        table === 'specification_agreements' ||
+        table === 'specification_agreement_corrections' ||
+        table === 'specification_deviation_endings'
+          ? 'specificationAgreements'
+          : 'specifications',
+      fieldKey,
+      kind:
+        table === 'specification_agreements' ||
+        table === 'specification_agreement_corrections'
+          ? 'simpleDisplay'
+          : 'hsaOnly',
+      ...(table === 'specification_agreements' ||
+      table === 'specification_agreement_corrections'
+        ? { displayColumn: hsaColumn.replace('_hsa_id', '_display_name') }
+        : {}),
+      table,
+      hsaColumn,
+      allowedActions: ['anonymize', 'skip'],
+      defaultWithReplacement: 'anonymize',
+      defaultWithoutReplacement: 'anonymize',
+      warningKey: 'historySwitch',
+      countSql: `SELECT COUNT(*) AS count FROM ${table} WHERE ${hsaColumn} = @0`,
+      currentDisplaySql: `SELECT TOP (1) ${hsaColumn} AS value FROM ${table} WHERE ${hsaColumn} = @0 ORDER BY id`,
+      affectedReferencesSql: `SELECT CAST(id AS nvarchar(120)) AS value FROM ${table} WHERE ${hsaColumn} = @0 ORDER BY id`,
+    }),
+  ),
+
   {
     key: 'specification_rfi_assessments.created_by',
     objectKey: 'rfiAssessments',

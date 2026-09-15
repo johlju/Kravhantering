@@ -101,7 +101,26 @@ interface SafePrivacyErasureHttpDetails {
   reason: SafePrivacyErasureReason
 }
 
+const SAFE_AGREEMENT_REASONS = [
+  'active_deviation_exists',
+  'specification_content_locked',
+  'active_deviations',
+  'deviation_cancellation_required',
+  'binding_reserved',
+  'approved_deviations',
+  'pending_agreement',
+  'agreement_date_passed',
+  'activation_confirmation_required',
+  'agreement_identity_conflict',
+  'agreement_date_locked',
+  'agreement_date_invalid',
+  'agreement_date_order',
+  'agreement_end_date_invalid',
+] as const
+type SafeAgreementReason = (typeof SAFE_AGREEMENT_REASONS)[number]
+
 type SafeHttpErrorDetails =
+  | { reason: SafeAgreementReason }
   | { blocker: 'attempt_expired' | 'attempt_mismatch' | 'attempt_unavailable' }
   | SafeAiAdminBlockerHttpDetails
   | SafeAiAdminModelDependencyHttpDetails
@@ -213,6 +232,13 @@ function toSafeHttpErrorDetails(
   details: Record<string, unknown> | undefined,
   safeDetails: HttpErrorPayloadOptions['safeDetails'],
 ): SafeHttpErrorDetails | undefined {
+  if (
+    (code === 'conflict' || code === 'validation') &&
+    SAFE_AGREEMENT_REASONS.includes(details?.reason as SafeAgreementReason)
+  ) {
+    return { reason: details?.reason as SafeAgreementReason }
+  }
+
   if (code === 'validation' && safeDetails === 'ai_admin_blockers') {
     const blockers = toSafeAiAdminBlockers(details?.blockers)
     if (blockers) return { blockers }

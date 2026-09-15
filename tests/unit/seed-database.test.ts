@@ -15,6 +15,7 @@ import {
   seedPositionDetail,
   seedRequiredDatabase,
 } from '../../typeorm/seed-required.mjs'
+import { runSeedData } from '../../typeorm/seed-runner.mjs'
 
 // cspell:ignore linneab manualarea manualpkg manualspec pkglead repobehörighetsöversyn specco
 // cspell:ignore resprefresh retentionfresh retentionlinked retentionorphan
@@ -39,6 +40,7 @@ function collectSeedInsertRows(
 ) {
   const rows: SeedInsertRow[] = []
   const executor = {
+    queryRunner: { isTransactionActive: true },
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
       const lifecycleTable = sql.includes('UPDATE [rfi_question_suggestions]')
         ? 'rfi_question_suggestions'
@@ -122,6 +124,45 @@ function rowById(rows: Record<string, unknown>[]) {
 }
 
 describe('seed profiles', () => {
+  it('seeds non-overlapping active deviation timelines for every exact requirement content', async () => {
+    const { executor, rows } = collectSeedInsertRows()
+    await seedDemoDatabase(executor)
+    for (const [table, binding] of [
+      ['deviations', 'specification_item_id'],
+      [
+        'specification_local_requirement_deviations',
+        'specification_local_requirement_id',
+      ],
+    ]) {
+      const cases = seedRowsFor(rows, table)
+      for (const itemId of new Set(cases.map(row => row[binding]))) {
+        const timeline = cases
+          .filter(row => row[binding] === itemId)
+          .sort(
+            (a, b) =>
+              new Date(String(a.created_at)).getTime() -
+                new Date(String(b.created_at)).getTime() ||
+              Number(a.id) - Number(b.id),
+          )
+        for (const [index, row] of timeline.entries()) {
+          const context = `${table} content ${itemId} case ${row.id}`
+          if (row.decision != null)
+            expect(
+              new Date(String(row.decided_at)).getTime(),
+              context,
+            ).toBeGreaterThanOrEqual(new Date(String(row.created_at)).getTime())
+          const next = timeline[index + 1]
+          if (!next) continue
+          expect(row.decision, context).not.toBeNull()
+          expect(
+            new Date(String(row.decided_at)).getTime(),
+            context,
+          ).toBeLessThanOrEqual(new Date(String(next.created_at)).getTime())
+        }
+      }
+    }
+  })
+
   it('keeps the required seed module free of demo-only builders', () => {
     const requiredSeedSource = readFileSync(
       path.join(process.cwd(), 'typeorm/seed-required.mjs'),
@@ -136,6 +177,7 @@ describe('seed profiles', () => {
 
   it('reports seed failures without serializing the full seed row', async () => {
     const executor = {
+      queryRunner: { isTransactionActive: true },
       query: vi.fn(async () => {
         throw new Error('insert failed')
       }),
@@ -1379,5 +1421,58 @@ describe('seed profiles', () => {
       rfi_question_id: RETENTION_SEED.rfiQuestion.archivedBlockedSuggestion,
       specification_id: RETENTION_SEED.specification.management,
     })
+  })
+})
+
+describe('seed executor transaction boundary', () => {
+  const data = { examples: { columns: ['id'], pk: ['id'], rows: [[1]] } }
+  it.each([undefined, { isTransactionActive: false }])(
+    'rejects an unbound query-only executor before any lookup or insert',
+    async queryRunner => {
+      const query = vi.fn()
+      const insertRow = vi.fn()
+      await expect(
+        runSeedData({ query, queryRunner }, data, ['examples'], { insertRow }),
+      ).rejects.toThrow('transaction-bound')
+      expect(query).not.toHaveBeenCalled()
+      expect(insertRow).not.toHaveBeenCalled()
+    },
+  )
+  it('uses the caller transaction for both the lock lookup and insertion', async () => {
+    const query = vi.fn().mockResolvedValue([])
+    await runSeedData(
+      { query, queryRunner: { isTransactionActive: true } },
+      data,
+      ['examples'],
+      {
+        insertRow: async ({
+          query: execute,
+          defaultSql,
+          row,
+        }: {
+          query: (sql: string, params: number[]) => Promise<unknown>
+          defaultSql: string
+          row: number[]
+        }) => {
+          await execute(
+            'SELECT id FROM examples WITH (UPDLOCK, HOLDLOCK) WHERE id = @0',
+            row,
+          )
+          await execute(defaultSql, row)
+          return true
+        },
+      },
+    )
+    expect(query).toHaveBeenCalledTimes(2)
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('UPDLOCK, HOLDLOCK'),
+      [1],
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('INSERT INTO [examples]'),
+      [1],
+    )
   })
 })

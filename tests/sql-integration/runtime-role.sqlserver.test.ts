@@ -6,6 +6,8 @@ import {
   listAreas,
   updateArea,
 } from '@/lib/dal/requirement-areas'
+import { createSpecificationLocalRequirement } from '@/lib/dal/requirements-specifications'
+import { createSpecificationAgreementWorkflow } from '@/lib/specifications/agreements'
 import { createAppDataSource } from '@/lib/typeorm/data-source'
 import {
   getSqlServerRuntimePermissionStatus,
@@ -15,9 +17,14 @@ import {
   SQL_SERVER_RUNTIME_ROLE,
   seedSqlServerDatabase,
 } from '@/scripts/db-sqlserver-admin.mjs'
+import { requireTestValue } from '@/tests/helpers/require-test-value'
 import RuntimeRoleMigration from '@/typeorm/migrations/0054_runtime_role.mjs'
 import { RUNTIME_PERMISSION_MANIFEST } from '@/typeorm/runtime-permission-manifest.mjs'
-import { resolveSqlIntegrationTestsUrl } from './helpers/sql-test-database'
+import {
+  createSpecificationFixture,
+  makeRequestContext,
+  resolveSqlIntegrationTestsUrl,
+} from './helpers/sql-test-database'
 
 const RUNTIME_LOGIN = 'kravhantering_runtime_test'
 const RUNTIME_PASSWORD = 'RoleOnly!Passw0rd842'
@@ -169,6 +176,59 @@ describe('least-privilege SQL Server runtime role', () => {
     }
   })
 
+  it('records and reads complete agreement history with only the runtime role', async () => {
+    const specification = await createSpecificationFixture(
+      runtimeDb,
+      `ROLE-AGREEMENT-${randomUUID().slice(0, 8)}`,
+    )
+    const local = await createSpecificationLocalRequirement(
+      runtimeDb,
+      specification.id,
+      { description: 'Runtime original content' },
+    )
+    const context = await makeRequestContext()
+    const workflow = createSpecificationAgreementWorkflow(runtimeDb)
+    await workflow.mutate(context, specification.id, {
+      operation: 'establish',
+      agreementReference: 'A',
+      effectiveDate: '2020-01-01',
+    })
+    await workflow.mutate(context, specification.id, {
+      operation: 'create_draft',
+      agreementReference: 'B',
+      effectiveDate: '2035-01-01',
+    })
+    const draft = requireTestValue(
+      (await workflow.read(context, specification.id)).agreements.find(
+        agreement => agreement.state === 'draft',
+      ),
+    )
+    await workflow.mutate(context, specification.id, {
+      operation: 'save_requirement',
+      agreementId: draft.id,
+      itemRef: `local:${local.id}`,
+      content: { description: 'Runtime successor content' },
+    })
+    const selected = await workflow.read(context, specification.id, {
+      agreementId: draft.id,
+    })
+    expect(selected.items[0].description).toBe('Runtime successor content')
+    const history = await workflow.history(
+      context,
+      specification.id,
+      draft.id,
+      selected.items[0].itemRef,
+    )
+    expect(history.previous?.item.description).toBe('Runtime original content')
+    await workflow.mutate(context, specification.id, {
+      operation: 'discard',
+      agreementId: draft.id,
+    })
+    expect(
+      (await workflow.read(context, specification.id)).agreements,
+    ).toHaveLength(1)
+  })
+
   it('rolls back reconciliation when protected audit drift remains', async () => {
     try {
       await adminDb.query(`
@@ -240,15 +300,16 @@ describe('least-privilege SQL Server runtime role', () => {
         unexpectedGrants: [],
         unexpectedParentRoles: [],
       })
-      const currentTables = (await adminDb.query(
-        `SELECT schemas.[name] + N'.' + tables.[name] AS objectName
-         FROM sys.tables AS tables
-         INNER JOIN sys.schemas AS schemas ON tables.schema_id = schemas.schema_id
-         WHERE schemas.[name] = N'dbo' AND tables.is_ms_shipped = 0`,
+      const currentObjects = (await adminDb.query(
+        `SELECT schemas.[name] + N'.' + objects.[name] AS objectName
+         FROM sys.objects AS objects
+         INNER JOIN sys.schemas AS schemas ON objects.schema_id = schemas.schema_id
+         WHERE schemas.[name] = N'dbo' AND objects.is_ms_shipped = 0
+           AND objects.[type] IN ('U', 'V')`,
       )) as Array<{ objectName: string }>
       expect(
         RUNTIME_PERMISSION_MANIFEST.map(entry => entry.object).sort(),
-      ).toEqual(currentTables.map(row => row.objectName).sort())
+      ).toEqual(currentObjects.map(row => row.objectName).sort())
 
       await migrationDb.query(
         'CREATE TABLE [runtime_future_table_probe] ([id] int NOT NULL)',

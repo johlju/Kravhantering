@@ -9,8 +9,14 @@ import {
   type RestCsrfPolicy,
 } from '@/lib/http/route-security-policy'
 
+interface OpenApiResponse {
+  $ref?: string
+  headers?: Record<string, { $ref?: string }>
+}
+
 interface OpenApiOperation {
   parameters?: Array<{ $ref?: string; name?: string }>
+  responses?: Record<string, OpenApiResponse>
   security?: Array<Record<string, unknown>>
   'x-auth'?: RestAuthPolicy
   'x-cache'?: RestCachePolicy
@@ -25,6 +31,7 @@ interface OpenApiSchema {
 
 interface OpenApiDocument {
   components?: {
+    responses?: Record<string, OpenApiResponse>
     schemas?: Record<string, OpenApiSchema>
   }
   paths: Record<string, Record<string, OpenApiOperation>>
@@ -63,14 +70,40 @@ function openApiOperations(document: OpenApiDocument) {
 }
 
 describe('REST registry and OpenAPI contract', () => {
-  it('keeps the existing 31-operation OpenAPI scope exactly synchronized', async () => {
+  it.each(['get', 'post'])(
+    'documents no-store on agreement %s responses',
+    async method => {
+      const document = await openApiDocument()
+      const responses =
+        document.paths['/api/requirements-specifications/{id}/agreement'][
+          method
+        ].responses
+      const statuses = ['200', '400', '401', '403', '409']
+      expect(Object.keys(responses ?? {}).sort()).toEqual(
+        [...statuses, '404'].sort(),
+      )
+      for (const status of statuses) {
+        const response = responses?.[status]
+        const resolved = response?.$ref
+          ? document.components?.responses?.[
+              response.$ref.split('/').at(-1) ?? ''
+            ]
+          : response
+        expect(resolved?.headers?.['Cache-Control'], status).toEqual({
+          $ref: '#/components/headers/NoStore',
+        })
+      }
+    },
+  )
+
+  it('keeps the 33-operation OpenAPI scope exactly synchronized', async () => {
     const document = await openApiDocument()
     const contractOperations = openApiOperations(document)
     const registryOpenApi = REST_OPERATIONS.filter(
       operation => operation.contract === 'openapi',
     )
 
-    expect(contractOperations).toHaveLength(31)
+    expect(contractOperations).toHaveLength(33)
     expect(contractOperations.map(({ key }) => key).sort()).toEqual(
       registryOpenApi
         .map(operation => `${operation.method} ${operation.template}`)
