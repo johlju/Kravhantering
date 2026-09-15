@@ -3040,11 +3040,8 @@ remains separate.
 | `cancelled_by_display_name` | nvarchar(512), nullable | Actor display snapshot; anonymized together with the corresponding HSA identity. |
 | `cancellation_reason` | nvarchar(MAX), nullable | Required reason for cancelling a confirmed upcoming agreement. |
 | `ended_at` | datetime2, nullable | Actual ending event time, separate from the stated agreement end date. |
-| `ending_kind` | nvarchar(32), nullable | `closed`, `superseded` or `agreement_ended`; null denotes the existing content-change ending. |
-| `reason` | nvarchar(max), nullable | Required explanation for manual closure; application limit 10000 characters. |
-| `recorded_by_display_name` | nvarchar(max), nullable | Closure actor snapshot; anonymized together with `recorded_by_hsa_id`. |
 | `ended_by_hsa_id` | nvarchar(64), nullable | Assigned responsible person registering agreement end. |
-| `ended_by_display_name` | nvarchar(512), nullable | Actor display snapshot; anonymized together with the corresponding HSA identity. |
+| `ended_by_display_name` | nvarchar(512), nullable | Actor display snapshot; anonymized together with `ended_by_hsa_id`. |
 | `end_date` | date, nullable | Stated agreement end date, from effective date through today. |
 | `end_reason` | nvarchar(MAX), nullable | Required reason for agreement end. |
 | `is_pending` | bit, required | Draft or confirmed upcoming agreement; at most one per specification. |

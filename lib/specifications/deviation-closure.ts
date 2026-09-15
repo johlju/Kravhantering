@@ -6,6 +6,7 @@ import type { RequestContext } from '@/lib/requirements/auth'
 import { conflictError, notFoundError } from '@/lib/requirements/errors'
 import { stockholmDate } from '@/lib/specifications/agreement-dates'
 import { assertDeviationMutationAllowed } from '@/lib/specifications/agreement-deviation-policy'
+import { applicableDeviationSql } from '@/lib/specifications/agreement-deviation-state'
 import { deviationTables } from '@/lib/specifications/deviation-approval'
 
 /** Called by the responsible-only agreement workflow inside its locked transaction. */
@@ -42,6 +43,15 @@ export async function closeApprovedDeviation(
     [input.deviationId],
   )
   if (previousClosure.length) return
+  const applicable = await db.query<Array<{ id: number }>>(
+    `SELECT deviation.id FROM ${cases} deviation
+     WHERE deviation.id = @0 AND ${applicableDeviationSql(kind)}`,
+    [input.deviationId],
+  )
+  if (!applicable.length)
+    throw conflictError('Only an applicable approval can be closed', {
+      reason: 'deviation_not_applicable',
+    })
   const pending = await db.query<Array<{ id: number }>>(
     `SELECT id FROM ${cases} WHERE ${binding} = @0 AND decision IS NULL`,
     [ref.id],

@@ -62,10 +62,12 @@ export function formatDeviationSignal(
     SpecificationOutputItem,
     'specificationItemStatusId' | 'agreement'
   >,
+  options: { includeOutcomes?: boolean } = {},
 ): string {
   if (counts.applicable !== undefined) {
     const parts: string[] = []
-    if (counts.pending > 0) parts.push(labels.deviations.pending)
+    if (options.includeOutcomes !== false && counts.pending > 0)
+      parts.push(labels.deviations.pending)
     if (counts.applicable > 0) parts.push(labels.deviations.applicable)
     else if (counts.approved > 0) {
       parts.push(labels.deviations.ended)
@@ -77,9 +79,11 @@ export function formatDeviationSignal(
       )
         parts.push(labels.deviations.followup)
     }
-    if (counts.rejected > 0) parts.push(labels.deviations.rejected)
+    if (options.includeOutcomes !== false && counts.rejected > 0)
+      parts.push(labels.deviations.rejected)
     return parts.join(' · ')
   }
+  if (options.includeOutcomes === false) return ''
   if (counts.pending > 0) {
     return labels.deviations.pending
   }

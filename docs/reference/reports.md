@@ -541,7 +541,9 @@ formula-injection protection. No document is uploaded or fetched by the export.
 ## Deviation permission and follow-up
 
 The management PDF, application traceability PDF and Full CSV distinguish
-recorded approval outcomes from applicable permission. Dated permission is
+recorded approval outcomes from applicable permission. Traceability cells show
+each outcome label and count once, followed by applicability and follow-up
+state. Dated permission is
 inclusive in Europe/Stockholm. Pending renewal grants no extension. An ended
 approval without replacement shows action required until the current usage
 status is Verified. An ended agreement retains history without current work.

@@ -181,6 +181,82 @@ describe('selected agreement requirement author workflow', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  it.each([true, false])(
+    'keeps future-ending approval consent and authorization safeguards (responsible: %s)',
+    async canDecide => {
+      const fetchMock = vi.fn(
+        async (_url: string, _init?: RequestInit) => new Response('{}'),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const onChange = vi.fn()
+      render(
+        <ConfirmModalProvider>
+          <SpecificationAgreementRequirement
+            item={{ ...item, currentAgreementReference: 'A' }}
+            needsReferencesResource={{
+              data: [],
+              loading: false,
+              error: null,
+              refreshing: false,
+              refreshError: null,
+              reload: async () => [],
+            }}
+            onChange={onChange}
+            specificationId={1}
+            view={{
+              ...view,
+              canDecide,
+              deviations: [
+                {
+                  id: 8,
+                  itemRef: item.itemRef,
+                  motivation: 'Permission',
+                  decision: 1,
+                  decisionMotivation: 'Approved',
+                  decidedAt: new Date('2020-01-01'),
+                },
+              ],
+              deviationEndings: [
+                {
+                  id: 1,
+                  itemRef: item.itemRef,
+                  deviationId: 8,
+                  agreementId: 2,
+                  endedAt: new Date('2099-01-01'),
+                  cancelledAt: null,
+                },
+              ],
+            }}
+          />
+        </ConfirmModalProvider>,
+      )
+      await userEvent.click(
+        screen.getByRole('button', { name: 'agreement.removeRequirement' }),
+      )
+      if (!canDecide) {
+        expect(
+          screen.getByText('agreement.responsibleEndingRequired'),
+        ).toBeInTheDocument()
+        expect(fetchMock).not.toHaveBeenCalled()
+        return
+      }
+      const confirmation = await screen.findByRole('alertdialog')
+      expect(confirmation).toHaveTextContent('agreement.plannedEndingWarning')
+      await userEvent.click(
+        within(confirmation).getByRole('button', {
+          name: 'agreement.saveAndPlanEnding',
+        }),
+      )
+      await waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+      expect(
+        JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+      ).toMatchObject({
+        operation: 'remove_requirement',
+        authorizeDeviationEndings: true,
+      })
+    },
+  )
+
   it('keeps history errors distinct from an unchanged requirement and offers retry', async () => {
     const reload = vi.fn(async () => undefined)
     const { rerender } = render(

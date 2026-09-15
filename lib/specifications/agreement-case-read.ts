@@ -1,4 +1,5 @@
 import type { SqlExecutor } from '@/lib/dal/requirements-specifications'
+import { applicableDeviationSql } from '@/lib/specifications/agreement-deviation-state'
 import type { DeviationApplicability } from '@/lib/specifications/deviation-applicability'
 
 export interface DeviationStateSnapshot {
@@ -98,22 +99,22 @@ export async function readAgreementEndPreview(
   return db.query<
     Array<{ id: number; itemRef: string; uniqueId: string; motivation: string }>
   >(
-    `SELECT d.id, CONCAT('lib:', item.id) AS itemRef, requirement.unique_id AS uniqueId, d.motivation
+    `SELECT deviation.id, CONCAT('lib:', item.id) AS itemRef, requirement.unique_id AS uniqueId, deviation.motivation
      FROM specification_agreements agreement
      INNER JOIN specification_agreement_items membership ON membership.specification_agreement_id = agreement.id AND membership.is_removed = 0
      INNER JOIN requirements_specification_items item ON item.id = membership.specification_item_id
      INNER JOIN requirements requirement ON requirement.id = item.requirement_id
-     INNER JOIN deviations d ON d.specification_item_id = item.id
+     INNER JOIN deviations deviation ON deviation.specification_item_id = item.id
      WHERE agreement.specification_id = @0 AND agreement.id = @1 AND agreement.is_current = 1
-       AND (d.decision IS NULL OR (d.decision = 1 AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.deviation_id = d.id AND ending.ended_at IS NOT NULL)))
+       AND (deviation.decision IS NULL OR ${applicableDeviationSql('library')})
      UNION ALL
-     SELECT d.id, CONCAT('local:', item.id), item.unique_id, d.motivation
+     SELECT deviation.id, CONCAT('local:', item.id), item.unique_id, deviation.motivation
      FROM specification_agreements agreement
      INNER JOIN specification_agreement_items membership ON membership.specification_agreement_id = agreement.id AND membership.is_removed = 0
      INNER JOIN specification_local_requirements item ON item.id = membership.specification_local_requirement_id
-     INNER JOIN specification_local_requirement_deviations d ON d.specification_local_requirement_id = item.id
+     INNER JOIN specification_local_requirement_deviations deviation ON deviation.specification_local_requirement_id = item.id
      WHERE agreement.specification_id = @0 AND agreement.id = @1 AND agreement.is_current = 1
-       AND (d.decision IS NULL OR (d.decision = 1 AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.local_deviation_id = d.id AND ending.ended_at IS NOT NULL)))`,
+       AND (deviation.decision IS NULL OR ${applicableDeviationSql('local')})`,
     [specificationId, agreementId],
   )
 }

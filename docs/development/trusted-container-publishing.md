@@ -221,6 +221,11 @@ newest preview release. Stable means supported and monitored. Preview means
 monitored, not supported. Change those bounded counts through normal review
 when the product support policy changes.
 
+Preview selection requires a tag with a numeric `vX.Y.Z` core followed by `-`
+and non-empty alphanumeric identifiers separated by single dots or hyphens,
+such as `v1.2.3-preview.4`. Tags with leading, trailing, or consecutive suffix
+separators are excluded before applying the preview channel count.
+
 ### Trusted Input And Public Classification
 
 For each selected release, the monitor downloads `release-metadata.json` and

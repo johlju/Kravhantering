@@ -47,6 +47,174 @@ describe('deviation approval terms', () => {
     resetAuthConfigForTests()
   })
 
+  async function approvedItem(
+    kind: 'library' | 'local',
+    specificationId: number,
+    prefix = 'APR',
+  ) {
+    const db = database()
+    let itemId: number
+    if (kind === 'local') {
+      itemId = (
+        await createSpecificationLocalRequirement(db, specificationId, {
+          description: 'Service access',
+        })
+      ).id
+    } else {
+      const area = await createArea(db, { prefix })
+      const requirement = await createPublishedRequirement(
+        db,
+        area.id,
+        'Service access',
+      )
+      await linkRequirementsToSpecificationAtomically(db, specificationId, {
+        requirementIds: [requirement.requirementId],
+      })
+      const rows = await db.query<Array<{ id: number }>>(
+        'SELECT id FROM requirements_specification_items WHERE requirements_specification_id = @0 AND requirement_id = @1',
+        [specificationId, requirement.requirementId],
+      )
+      itemId = requireTestValue(rows[0]).id
+    }
+    const deviation =
+      kind === 'local'
+        ? await createSpecificationLocalDeviation(db, {
+            specificationLocalRequirementId: itemId,
+            motivation: 'Temporary permission',
+          })
+        : await createDeviation(db, {
+            specificationItemId: itemId,
+            motivation: 'Temporary permission',
+          })
+    await (kind === 'local' ? requestSpecificationLocalReview : requestReview)(
+      db,
+      deviation.id,
+    )
+    await (kind === 'local'
+      ? recordSpecificationLocalDecision
+      : recordDecision)(db, deviation.id, {
+      decision: 1,
+      decisionMotivation: 'Accepted',
+      decidedBy: 'Reviewer',
+      decidedByHsaId: 'SE-REVIEWER',
+    })
+    return {
+      deviationId: deviation.id,
+      itemRef: `${kind === 'local' ? 'local' : 'lib'}:${itemId}`,
+    }
+  }
+
+  it.each(['library', 'local'] as const)(
+    'ends only applicable %s approvals and preserves expired historical linkage',
+    async kind => {
+      const db = database()
+      const specification = await createSpecificationFixture(
+        db,
+        `END-VALIDITY-${kind}`,
+      )
+      const expired = await approvedItem(kind, specification.id, 'EXP')
+      const applicable = await approvedItem(kind, specification.id)
+      const cases =
+        kind === 'local'
+          ? 'specification_local_requirement_deviations'
+          : 'deviations'
+      await db.query(
+        `UPDATE ${cases} SET valid_through = '2020-01-01' WHERE id = @0`,
+        [expired.deviationId],
+      )
+      const context = await makeRequestContext()
+      const workflow = createSpecificationAgreementWorkflow(db)
+      await workflow.mutate(context, specification.id, {
+        operation: 'establish',
+        agreementReference: 'A',
+        effectiveDate: '2020-01-01',
+      })
+      const agreementId = requireTestValue(
+        (await workflow.read(context, specification.id)).selectedAgreement,
+      ).id
+      const preview = await workflow.endPreview(
+        context,
+        specification.id,
+        agreementId,
+      )
+      expect(preview.map(row => row.id)).toEqual([applicable.deviationId])
+      await workflow.mutate(context, specification.id, {
+        operation: 'end',
+        agreementId,
+        endDate: '2020-01-01',
+        reason: 'Term complete',
+      })
+      const ended = await workflow.read(context, specification.id)
+      expect(ended.deviationEndings).toEqual([
+        expect.objectContaining({
+          deviationId: applicable.deviationId,
+          endingKind: 'agreement_ended',
+        }),
+      ])
+      const snapshots = await db.query<Array<{ snapshot: string }>>(
+        'SELECT deviation_state_json AS snapshot FROM specification_agreement_items WHERE specification_agreement_id = @0',
+        [agreementId],
+      )
+      expect(snapshots.flatMap(row => JSON.parse(row.snapshot))).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: expired.deviationId }),
+          expect.objectContaining({ id: applicable.deviationId }),
+        ]),
+      )
+    },
+  )
+
+  it.each([
+    ['library', 'expired'],
+    ['local', 'expired'],
+    ['library', 'content_replaced'],
+    ['local', 'content_replaced'],
+  ] as const)(
+    'rejects closure of a %s approval that is %s',
+    async (kind, state) => {
+      const db = database()
+      const specification = await createSpecificationFixture(
+        db,
+        `INAPPLICABLE-${kind}`,
+      )
+      const approval = await approvedItem(kind, specification.id)
+      const cases =
+        kind === 'local'
+          ? 'specification_local_requirement_deviations'
+          : 'deviations'
+      const endingCase =
+        kind === 'local' ? 'local_deviation_id' : 'deviation_id'
+      if (state === 'expired') {
+        await db.query(
+          `UPDATE ${cases} SET valid_through = '2020-01-01' WHERE id = @0`,
+          [approval.deviationId],
+        )
+      } else {
+        await db.query(
+          `INSERT INTO specification_deviation_endings (specification_id, ${endingCase}, planned_effective_date, recorded_at, ended_at) VALUES (@0, @1, '2020-01-01', SYSUTCDATETIME(), SYSUTCDATETIME())`,
+          [specification.id, approval.deviationId],
+        )
+      }
+      const context = await makeRequestContext()
+      const workflow = createSpecificationAgreementWorkflow(db)
+      await expect(
+        workflow.mutate(context, specification.id, {
+          operation: 'close_deviation',
+          ...approval,
+          reason: 'Cannot close ended permission',
+        }),
+      ).rejects.toMatchObject({
+        status: 409,
+        details: { reason: 'deviation_not_applicable' },
+      })
+      const closures = await db.query<Array<{ id: number }>>(
+        `SELECT id FROM specification_deviation_endings WHERE ${endingCase} = @0 AND ending_kind = 'closed'`,
+        [approval.deviationId],
+      )
+      expect(closures).toEqual([])
+    },
+  )
+
   it('preserves the reviewer conditions and inclusive calendar end date', async () => {
     const db = database()
     const specification = await createSpecificationFixture(db, 'VALIDITY')
@@ -311,6 +479,10 @@ describe('deviation approval terms', () => {
       const first = await create()
       await request(db, first.id)
       await decide(db, first.id, terms)
+      await expect(create()).rejects.toMatchObject({
+        status: 409,
+        details: { reason: 'deviation_renewal_target' },
+      })
       await workflow.mutate(context, specification.id, {
         operation: 'close_deviation',
         itemRef: `${kind === 'local' ? 'local' : 'lib'}:${itemId}`,

@@ -111,13 +111,7 @@ export default function SpecificationAgreementRequirement({
         view.deviations,
         view.deviationEndings,
         new Date(),
-      ) === 'applicable' &&
-      !view.deviationEndings.some(
-        ending =>
-          ending.itemRef === item.itemRef &&
-          ending.deviationId === deviation.id &&
-          ending.endedAt,
-      ),
+      ) === 'applicable',
   )
   const endingRequired = approvedDeviations.length > 0
   const endingWarning = t(

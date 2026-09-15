@@ -105,9 +105,13 @@ function formatDeviationCounts(
     .filter(([, count]) => count > 0)
     .map(([label, count]) => `${label}: ${count}`)
     .join(', ')
-  return item.deviationCounts.applicable === undefined
-    ? outcomes
-    : `${outcomes} · ${formatDeviationSignal(item.deviationCounts, labels, { ...item, agreement })}`
+  const signal = formatDeviationSignal(
+    item.deviationCounts,
+    labels,
+    { ...item, agreement },
+    { includeOutcomes: false },
+  )
+  return [outcomes, signal].filter(Boolean).join(' · ')
 }
 
 function countByLabel(

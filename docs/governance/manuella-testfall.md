@@ -2034,7 +2034,8 @@ ett avtalsutkast. Prova att ändra ett krav med ett obeslutat avsteg. Avbryt
 ärendet med skäl och ändra kravet. Redigera också motiveringen i ett
 avstegsutkast och återta en granskningsbegäran. Prova sedan ett ärvt godkänt
 avsteg: spara en ändring med ansvarigs uttryckliga godkännande av planerat
-avslut. Ångra ändringen och upprepa den inför ikraftträdande. Kontrollera som
+avslut. Kontrollera att ett framtida avslut fortfarande kräver ansvarigs
+godkännande. Ångra ändringen och upprepa den inför ikraftträdande. Kontrollera som
 medförfattare, ansvarig, Reviewer, enbart Admin och otilldelad användare; följ
 även AUTHZ-04 och AUTHZ-05.
 
@@ -2093,7 +2094,9 @@ verifierade och avvikna krav samt historiska rapporter.
 
 **Förväntat resultat:** Väntande avtal blockerar avslut tills det hanterats.
 Slutdatum och registreringstid visas separat. Uppföljningen fryses, obeslutade
-avsteg avbryts och godkända avsteg får separata avslut vid registreringen.
+avsteg avbryts och endast gällande godkännanden får separata avslut vid
+registreringen. Utgångna godkännanden ingår inte i förhandsvisningen av
+berörda avsteg; deras historiska kopplingar bevaras.
 Förlängningen fortsätter samma kravunderlag. Verifierade resultat följer med,
 medan tidigare **Avviken** börjar som **Inkluderad** och kräver nytt godkänt
 avsteg. Tidigare avtal och eventuellt mellanrum bevaras.
@@ -2212,18 +2215,25 @@ Knapparna Stäng och Avsluta utan beslut har mellanrum även i smal vy.
 
 ### DEV-11: förnya och avsluta gemensam tillåtelse
 
-**Steg:** Öppna ett godkänt avsteg i ett oförändrat avtalsutkast. Begär
-förnyelse och kontrollera berörda avtal. Begär granskning. Granskaren anger nya
-villkor och giltighet samt godkänner. Som tilldelad kravunderlagsansvarig,
-avsluta det nya godkännandet med motivering. Ta bort avtalsutkastet.
-Kontrollera att **Begär förnyelse** inte visas och registrera i stället ett
-nytt avsteg med **Begär ett avsteg**.
+**Steg:**
+
+1. Skapa och godkänn ett första avsteg. Registrera aktuellt avtal och ett
+   oförändrat avtalsutkast.
+2. Begär förnyelse och kontrollera berörda avtal. Begär granskning.
+3. Som granskare, ange nya villkor och giltighet samt godkänn.
+4. Som tilldelad kravunderlagsansvarig, avsluta det nya godkännandet med
+   motivering.
+5. Ta bort avtalsutkastet och kontrollera uppföljningen enligt DEV-12.
+   Kontrollera att **Begär förnyelse** inte visas och registrera i stället
+   ett nytt avsteg med **Begär ett avsteg**.
 
 **Förväntat resultat:** Det tidigare godkännandet ersätts för hela det
 gemensamma sammanhanget. Avslutet kvarstår i aktuellt avtal efter borttagning
 av utkastet. Originalbeslut och historiska tillstånd bevaras. Medförfattare
 eller Admin utan ansvarstilldelning får inte avsluta godkännandet. En obeslutad
-förnyelse måste avbrytas först. Efter manuellt avslut krävs ett nytt avsteg
+förnyelse måste avbrytas först. Utgånget godkännande kan inte avslutas igen;
+ett upprepat manuellt avslut skapar ingen extra historikpost. Efter manuellt
+avslut krävs ett nytt avsteg
 utan förnyelselänk och ett nytt granskningsbeslut. Det avslutade
 godkännandets historik bevaras.
 

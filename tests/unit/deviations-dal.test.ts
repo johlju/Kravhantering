@@ -124,7 +124,10 @@ describe('deviations DAL (SQL Server path)', () => {
 
   it('creates a deviation after validating requirement application existence', async () => {
     const { db, query } = createSqlServerDb()
-    query.mockResolvedValueOnce([{ id: 3 }]).mockResolvedValueOnce([{ id: 42 }])
+    query
+      .mockResolvedValueOnce([{ id: 3 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 42 }])
 
     const result = await createDeviation(db, {
       specificationItemId: 3,
@@ -135,7 +138,7 @@ describe('deviations DAL (SQL Server path)', () => {
 
     expect(result).toEqual({ id: 42 })
     expect(query).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.stringContaining('INSERT INTO deviations'),
       [
         3,
@@ -566,6 +569,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const success = createSqlServerDb()
     success.query
       .mockResolvedValueOnce([{ id: 9 }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: '51' }])
     await expect(
       createSpecificationLocalDeviation(success.db, {
@@ -573,7 +577,7 @@ describe('deviations DAL (SQL Server path)', () => {
         motivation: '  Local reason  ',
       }),
     ).resolves.toEqual({ id: 51 })
-    expect(success.query.mock.calls[1][1]).toEqual([
+    expect(success.query.mock.calls[2][1]).toEqual([
       9,
       'Local reason',
       null,
@@ -611,6 +615,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const failed = createSqlServerDb()
     failed.query
       .mockResolvedValueOnce([{ id: 3 }])
+      .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error('SQL insert failed'))
     await expect(
       createDeviation(failed.db, {
@@ -624,6 +629,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const library = createSqlServerDb()
     library.query
       .mockResolvedValueOnce([{ id: 3 }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 31 }])
     await expect(
       createDeviationForItemRef(library.db, {
@@ -638,6 +644,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const local = createSqlServerDb()
     local.query
       .mockResolvedValueOnce([{ id: 9 }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 32 }])
     await expect(
       createDeviationForItemRef(local.db, {

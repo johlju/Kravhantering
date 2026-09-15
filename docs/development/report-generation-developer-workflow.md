@@ -252,5 +252,6 @@ set behavior; only traceability inherits the editor filters and ordering.
 Specification traceability reads supply separate `approved` and `applicable`
 counts. Use the selected agreement source and cutoff for both. The management
 template and Full CSV share `formatDeviationSignal`; the traceability template
-retains outcome counts and adds that compact signal. Approval expiry is evaluated
+retains outcome counts and calls the formatter with `includeOutcomes: false`
+to append only applicability and follow-up state. Approval expiry is evaluated
 at read time, including when no request has run since the deadline.

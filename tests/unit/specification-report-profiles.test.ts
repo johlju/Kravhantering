@@ -379,6 +379,43 @@ describe('specification report profiles', () => {
     })
   })
 
+  it.each([
+    [0, 0, 2, 'Pending: 1, Rejected: 2'],
+    [
+      1,
+      1,
+      2,
+      'Pending: 1, Approved: 1, Rejected: 2 · Applicable approved deviation',
+    ],
+    [
+      1,
+      0,
+      2,
+      'Pending: 1, Approved: 1, Rejected: 2 · Permission ended · Action required',
+    ],
+  ])(
+    'renders outcome counts once with approval state (%s, %s)',
+    (approved, applicable, rejected, expected) => {
+      const data = traceabilityData()
+      const item = data.items[0]
+      if (!item) throw new Error('Expected traceability item')
+      item.deviationCounts = {
+        approved,
+        applicable,
+        pending: 1,
+        rejected,
+        total: approved + 1 + rejected,
+      }
+      const table = buildSpecificationTraceabilityReport(
+        data,
+        'en',
+      ).sections.find(section => section.type === 'traceability-table')
+      if (table?.type !== 'traceability-table')
+        throw new Error('Expected traceability table')
+      expect(table.rows[0]?.deviation).toBe(expected)
+    },
+  )
+
   it('builds a traceability report from selected requirement applications', () => {
     const model = buildSpecificationTraceabilityReport(traceabilityData(), 'sv')
     const header = model.sections.find(section => section.type === 'header')
