@@ -550,7 +550,9 @@ Each trusted run also writes runtime evidence:
 - `hashes.sha256` contains checksums for saved runtime evidence.
 - `public/build.json` contains the app version, commit SHA, build time, image
   tag and expected database schema migration `name` embedded in the tested app
-  image.
+  image. The name comes from the exported migration class's leading `name`
+  field, falling back to the class name; SQL object names are not schema
+  version identifiers.
 - `api-docs/hsa-person-lookup/` contains the static Swagger UI for the
   HSA-person lookup REST contract. Its generated initializer and override
   stylesheet keep the UI compatible with the strict documentation CSP.
