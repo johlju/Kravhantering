@@ -162,11 +162,14 @@ const GROUP_POLICIES: PrivacyGroupPolicy[] = [
       fieldKey,
       kind:
         table === 'specification_agreements' ||
-        table === 'specification_agreement_corrections'
+        table === 'specification_agreement_corrections' ||
+        (table === 'specification_deviation_endings' &&
+          fieldKey === 'recordedBy')
           ? 'simpleDisplay'
           : 'hsaOnly',
       ...(table === 'specification_agreements' ||
-      table === 'specification_agreement_corrections'
+      table === 'specification_agreement_corrections' ||
+      (table === 'specification_deviation_endings' && fieldKey === 'recordedBy')
         ? { displayColumn: hsaColumn.replace('_hsa_id', '_display_name') }
         : {}),
       table,

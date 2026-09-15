@@ -2,6 +2,7 @@ import { EntitySchema } from 'typeorm'
 import type { SpecificationLocalRequirementEntity } from '@/lib/typeorm/entities/specification-local-requirement'
 
 export interface SpecificationLocalRequirementDeviationEntity {
+  conditions: string | null
   createdAt: Date
   createdBy: string | null
   createdByHsaId: string | null
@@ -13,8 +14,10 @@ export interface SpecificationLocalRequirementDeviationEntity {
   id: number
   isReviewRequested: boolean
   motivation: string
+  renewsDeviation: SpecificationLocalRequirementDeviationEntity | null
   specificationLocalRequirement: SpecificationLocalRequirementEntity
   updatedAt: Date | null
+  validThrough: string | null
 }
 
 export const specificationLocalRequirementDeviationEntity =
@@ -28,6 +31,13 @@ export const specificationLocalRequirementDeviationEntity =
         type: 'int',
         generated: 'increment',
       },
+      conditions: {
+        name: 'conditions',
+        type: 'nvarchar',
+        length: 'MAX',
+        nullable: true,
+      },
+      validThrough: { name: 'valid_through', type: 'date', nullable: true },
       motivation: { name: 'motivation', type: 'nvarchar', length: 'MAX' },
       isReviewRequested: {
         name: 'is_review_requested',
@@ -71,6 +81,10 @@ export const specificationLocalRequirementDeviationEntity =
     },
     indices: [
       {
+        name: 'idx_specification_local_requirement_deviations_renews_deviation_id',
+        columns: ['renewsDeviation'],
+      },
+      {
         name: 'idx_specification_local_requirement_deviations_specification_local_requirement_id',
         columns: ['specificationLocalRequirement'],
       },
@@ -84,6 +98,17 @@ export const specificationLocalRequirementDeviationEntity =
       },
     ],
     relations: {
+      renewsDeviation: {
+        type: 'many-to-one',
+        target: 'SpecificationLocalRequirementDeviation',
+        nullable: true,
+        onDelete: 'NO ACTION',
+        joinColumn: {
+          name: 'renews_deviation_id',
+          foreignKeyConstraintName:
+            'fk_specification_local_requirement_deviations_renews_deviation_id',
+        },
+      },
       specificationLocalRequirement: {
         type: 'many-to-one',
         target: 'SpecificationLocalRequirement',

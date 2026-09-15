@@ -212,6 +212,8 @@ describe('specification-local deviation lifecycle routes', () => {
           body: JSON.stringify({
             decision: 1,
             decisionMotivation: 'Looks good',
+            conditions: 'Review access weekly',
+            validThrough: '2099-09-30',
           }),
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
@@ -238,6 +240,8 @@ describe('specification-local deviation lifecycle routes', () => {
       {
         decision: 1,
         decisionMotivation: 'Looks good',
+        conditions: 'Review access weekly',
+        validThrough: '2099-09-30',
         decidedBy: 'Reviewer',
         decidedByHsaId: 'SE5560000001-reviewer1',
       },
@@ -542,6 +546,28 @@ describe('specification-local deviation lifecycle routes', () => {
       expect(response.status).toBe(500)
       await expect(response.json()).resolves.toEqual({ error: expectedError })
       expect(consoleError).toHaveBeenCalled()
+    },
+  )
+  it.each([{ conditions: 'x'.repeat(10001) }, { validThrough: '2099-02-30' }])(
+    'rejects malformed local approval terms before the DAL',
+    async invalid => {
+      const response = await postDecision(
+        new NextRequest(
+          'https://example.test/api/specification-local-deviations/1/decision',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              decision: 1,
+              decisionMotivation: 'Permission',
+              ...invalid,
+            }),
+          },
+        ),
+        makeParams('1'),
+      )
+      expect(response.status).toBe(400)
+      expect(routeState.recordSpecificationLocalDecision).not.toHaveBeenCalled()
     },
   )
 })

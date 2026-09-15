@@ -1253,3 +1253,20 @@ delade aktuella ärenden. Ett avbrutet bekräftat kommande avtal bevaras som
 avtal först hanteras uttryckligen. Uppföljningen fryses vid registreringen.
 Samma kravunderlag kan därefter få ett nytt avtal. Tidigare **Avviken** börjar då
 som **Inkluderad** och behöver ett nytt godkänt avsteg.
+
+## Upphörd tillåtelse för avsteg
+
+Avstegskorten visar godkännandets villkor, inkluderande slutdatum och gällande
+tillåtelse separat från det bevarade beslutet. Förnyelse är ett nytt länkat
+avsteg. Berörda avtal visas före förnyelsebeslut och manuellt avslut. Endast
+tilldelad kravunderlagsansvarig får avsluta godkännandet med motivering.
+
+När tillåtelsen upphör behålls användningsstatusen, även Avviken. Lista och
+detalj visar åtgärdsbehov tills Verifierad registreras eller ny tillåtelse
+gäller. Byte från Verifierad återställer flaggan. Frysta avtal behåller sitt
+tidigare resultat och visar senare utgång, förnyelse och avslut separat i
+avstegshistoriken. Kravets innehållshistorik förblir kompakt.
+
+The older library requirement detail panel links existing approvals and renewal
+reviews to the specification's shared approval controls. This keeps renewal,
+closure and affected agreement scope together.

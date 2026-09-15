@@ -326,3 +326,17 @@ Arkivexport anonymiserar aktörsfälten. Dataskyddsanonymisering ändrar identit
 inte beslut, datum eller verksamhetshistorik. Rättelsernas aktörer har en egen
 källa för registerutdrag och anonymisering, separat från åtgärdsloggen.
 Rättelsehistoriken bevaras även när aktörsnamn och HSA-id anonymiseras.
+
+## Villkor och giltighet för avsteg
+
+Avstegsgodkännandets villkor, slutdatum, förnyelselänk och separata avslut
+tillhör kravunderlagets bevarade avstegshistorik. Samma gallringspolicy och
+bevarandeskydd gäller som för övrig avtalshistorik. Utgång eller manuellt
+avslut startar ingen gallring. Obligatorisk arkiv-JSON bevarar villkor, datum,
+länkar, motivering och tidpunkter med anonymiserade aktörsnamn. Fritext kan
+innehålla personuppgifter och omfattas av samma manuella granskning som
+befintliga motiveringar; ingen automatisk personidentifiering införs.
+
+Avslutets aktör hanteras i Dataskydd med exakt HSA-id. Namn och HSA-id
+anonymiseras tillsammans utan att avslutets anledning eller tidpunkt ändras.
+Registerutdrag använder samma aktörspolicy. Ingen ny bevarandetid införs.

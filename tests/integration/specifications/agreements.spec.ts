@@ -1357,3 +1357,205 @@ for (const kind of ['library', 'local'] as const) {
     }
   })
 }
+
+test('DEV-11/DEV-12: shared renewal and responsible closure survive draft discard and use Verified for follow-up', async ({
+  page,
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000)
+  const owner = await newRoleContext(testInfo, 'specificationResponsible')
+  const reviewer = await newRoleContext(testInfo, 'reviewer')
+  const reviewContext = await browser.newContext({
+    storageState: ROLE_STORAGE_STATE.reviewer,
+  })
+  try {
+    const data = await fixture(owner)
+    const itemRef = `local:${data.local.id}`
+    const create = await owner.post(
+      `/api/specification-item-deviations/${encodeURIComponent(itemRef)}`,
+      { data: { motivation: 'Original temporary permission' } },
+    )
+    await expectOk(create, 'create original request')
+    const original = (await create.json()) as { id: number }
+    await expectOk(
+      await owner.post(
+        `/api/specification-local-deviations/${original.id}/request-review`,
+      ),
+      'request initial review',
+    )
+    await expectOk(
+      await reviewer.post(
+        `/api/specification-local-deviations/${original.id}/decision`,
+        {
+          data: {
+            decision: 1,
+            decisionMotivation: 'Initial approval',
+            conditions: 'Original controls',
+          },
+        },
+      ),
+      'approve initial permission',
+    )
+    await page.goto(`/en/specifications/${data.id}`)
+    await register(page, 'Validity A', '2020-01-01')
+    await draft(page, 'Validity B', futureDate())
+    await expand(page, data.local.uniqueId)
+    await page
+      .getByRole('button', { name: 'Request renewal', exact: true })
+      .click()
+    const renewal = page.getByRole('dialog', {
+      name: 'Request a deviation',
+      exact: true,
+    })
+    await expect(renewal).toContainText('Validity A, Validity B')
+    await renewal
+      .locator('#deviation-motivation')
+      .fill('Continued permission with new controls')
+    await renewal
+      .getByRole('button', { name: 'Register deviation', exact: true })
+      .click()
+    await expect(renewal).toBeHidden()
+    await page
+      .getByRole('article', {
+        name: 'Continued permission with new controls',
+        exact: true,
+      })
+      .getByRole('button', { name: 'Review ↗', exact: true })
+      .click()
+
+    const reviewPage = await reviewContext.newPage()
+    const initialized = reviewPage.waitForResponse(
+      response =>
+        new URL(response.url()).pathname ===
+          `/api/requirements-specifications/${data.id}/items` &&
+        response.request().method() === 'GET',
+    )
+    await reviewPage.goto(
+      new URL(`/en/specifications/${data.id}`, page.url()).toString(),
+    )
+    expect((await initialized).ok()).toBe(true)
+    await expect(
+      reviewPage
+        .locator('[data-specification-detail-list-panel="items"] tbody')
+        .first(),
+    ).not.toHaveClass(/pointer-events-none/u)
+    await expand(reviewPage, data.local.uniqueId)
+    await reviewPage
+      .getByRole('button', { name: 'Record decision', exact: true })
+      .click()
+    const decision = reviewPage.getByRole('dialog', {
+      name: 'Record decision',
+      exact: true,
+    })
+    await expect(decision).toContainText('Validity A, Validity B')
+    await decision
+      .locator('#decision-motivation')
+      .fill('Separate renewal decision')
+    await decision
+      .getByLabel('Approval conditions', { exact: true })
+      .fill('New access controls')
+    await decision.getByLabel('Set an end date', { exact: true }).check()
+    await decision
+      .getByLabel('Valid through', { exact: true })
+      .fill('2099-09-30')
+    await decision
+      .getByRole('button', { name: 'Record decision', exact: true })
+      .click()
+    await expect(decision).toBeHidden()
+    const refreshed = page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname ===
+          `/api/requirements-specifications/${data.id}/items` &&
+        response.request().method() === 'GET',
+    )
+    await page.reload()
+    expect((await refreshed).ok()).toBe(true)
+    await select(page, 'Validity B')
+    await expect(
+      page
+        .locator('[data-specification-detail-list-panel="items"] tbody')
+        .first(),
+    ).not.toHaveClass(/pointer-events-none/u)
+    await expand(page, data.local.uniqueId)
+    await page
+      .getByRole('button', { name: 'Close approval', exact: true })
+      .click()
+    const close = page.getByRole('dialog', {
+      name: 'Close approval',
+      exact: true,
+    })
+    await expect(close).toContainText('Validity A, Validity B')
+    await close.getByLabel(/^Reason/).fill('Departure no longer needed')
+    await close
+      .getByRole('button', { name: 'Close approval', exact: true })
+      .click()
+    await expect(close).toBeHidden()
+    await expect(
+      page.getByText('Deviation approval was closed – action required', {
+        exact: true,
+      }),
+    ).toHaveCount(1)
+
+    await page
+      .getByRole('button', { name: 'Agreement details', exact: true })
+      .click()
+    await page
+      .getByRole('dialog', { name: 'Agreement details', exact: true })
+      .getByRole('button', { name: 'Discard draft', exact: true })
+      .click()
+    await page
+      .getByRole('alertdialog', {
+        name: 'Discard agreement draft',
+        exact: true,
+      })
+      .getByRole('button', { name: 'Discard draft', exact: true })
+      .click()
+    await expect(card(page)).toContainText('Validity A')
+    await expand(page, data.local.uniqueId)
+    await expect(
+      page.getByText('Departure no longer needed', { exact: false }),
+    ).toHaveCount(1)
+    const leftPanel = page.locator(
+      '[data-specification-detail-list-panel="items"]',
+    )
+    await leftPanel
+      .getByRole('button', { name: 'Columns', exact: true })
+      .click()
+    await page
+      .locator(
+        '[data-column-picker-option="specificationItemStatus"] input[type="checkbox"]',
+      )
+      .check()
+    await leftPanel
+      .getByRole('button', { name: 'Columns', exact: true })
+      .click()
+    await leftPanel
+      .locator('[data-requirements-scroll-container="true"]')
+      .evaluate(node => {
+        node.scrollLeft = node.scrollWidth
+      })
+    const status = page.getByRole('combobox', {
+      name: 'Usage status',
+      exact: true,
+    })
+    await status.selectOption('4')
+    await expect(
+      page.getByText('Deviation approval was closed – action required', {
+        exact: true,
+      }),
+    ).toHaveCount(0)
+    await status.selectOption('3')
+    await expect(
+      page.getByText('Deviation approval was closed – action required', {
+        exact: true,
+      }),
+    ).toHaveCount(1)
+    await expect(
+      status.getByRole('option', { name: 'Deviated', exact: true }),
+    ).toHaveCount(0)
+  } finally {
+    await reviewContext.close()
+    await owner.dispose()
+    await reviewer.dispose()
+  }
+})

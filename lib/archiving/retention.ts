@@ -1624,6 +1624,7 @@ async function exportSpecification(
           CASE WHEN deviation.decided_by IS NULL THEN NULL ELSE N'no-user' END AS decidedBy,
           deviation.created_at AS createdAt,
           deviation.updated_at AS updatedAt,
+          deviation.conditions, CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough, deviation.renews_deviation_id AS renewsDeviationId,
           deviation.decided_at AS decidedAt
         FROM deviations deviation
         INNER JOIN requirements_specification_items specification_item
@@ -1713,6 +1714,7 @@ async function exportSpecification(
           CASE WHEN deviation.decided_by IS NULL THEN NULL ELSE N'no-user' END AS decidedBy,
           deviation.created_at AS createdAt,
           deviation.updated_at AS updatedAt,
+          deviation.conditions, CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough, deviation.renews_deviation_id AS renewsDeviationId,
           deviation.decided_at AS decidedAt
         FROM specification_local_requirement_deviations deviation
         INNER JOIN specification_local_requirements local_requirement
@@ -1757,7 +1759,8 @@ async function exportSpecification(
     deviationEndings: await db.query<Row[]>(
       `SELECT id, agreement_id AS agreementId, agreement_reference AS agreementReference,
       agreement_item_id AS agreementItemId, deviation_id AS deviationId, local_deviation_id AS localDeviationId,
-      planned_effective_date AS plannedEffectiveDate, recorded_at AS recordedAt, cancelled_at AS cancelledAt, ended_at AS endedAt
+      planned_effective_date AS plannedEffectiveDate, recorded_at AS recordedAt, cancelled_at AS cancelledAt, ended_at AS endedAt, ending_kind AS endingKind, reason,
+      CASE WHEN recorded_by_display_name IS NULL THEN NULL ELSE N'no-user' END AS recordedBy
       FROM specification_deviation_endings WHERE specification_id = @0 ORDER BY id`,
       [specificationId],
     ),

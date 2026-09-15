@@ -10,13 +10,25 @@ import {
   notFoundError,
   validationError,
 } from '@/lib/requirements/errors'
+import {
+  stockholmDate,
+  validateAgreementDate,
+} from '@/lib/specifications/agreement-dates'
 import { assertDeviationMutationAllowed } from '@/lib/specifications/agreement-deviation-policy'
+import { currentDeviationApplicabilitySql } from '@/lib/specifications/agreement-deviation-state'
 import { assertNewDeviationAllowed } from '@/lib/specifications/agreement-policy'
+import type { DeviationApplicability } from '@/lib/specifications/deviation-applicability'
+import {
+  assertRenewalTarget,
+  preserveApprovalReplacement,
+} from '@/lib/specifications/deviation-approval'
 
 export const DEVIATION_APPROVED = 1
 export const DEVIATION_REJECTED = 2
 
 export interface DeviationRow {
+  applicability?: DeviationApplicability
+  conditions?: string | null
   createdAt: string
   createdBy: string | null
   createdByHsaId: string | null
@@ -30,6 +42,7 @@ export interface DeviationRow {
   isSpecificationLocal?: boolean
   itemRef?: string
   motivation: string
+  renewsDeviationId?: number | null
   requirementDescription: string | null
   requirementUniqueId: string | null
   requirementVersionId: number | null
@@ -38,9 +51,11 @@ export interface DeviationRow {
   specificationLocalRequirementId?: number | null
   specificationName: string | null
   updatedAt: string | null
+  validThrough?: string | null
 }
 
 export interface DeviationCounts {
+  applicable?: number
   approved: number
   pending: number
   rejected: number
@@ -86,6 +101,10 @@ function mapSqlServerDeviationRow(row: Record<string, unknown>): DeviationRow {
     toNumericFlag(row.isSpecificationLocal ?? row.isLocal ?? 0) === 1
 
   return {
+    applicability: row.applicability as DeviationApplicability | undefined,
+    renewsDeviationId: toOptionalNumber(row.renewsDeviationId),
+    conditions: row.conditions == null ? null : String(row.conditions),
+    validThrough: toIsoString(row.validThrough)?.slice(0, 10) ?? null,
     createdAt: toIsoString(row.createdAt) ?? new Date(0).toISOString(),
     createdBy: row.createdBy == null ? null : String(row.createdBy),
     createdByHsaId:
@@ -195,7 +214,9 @@ type DeviationStateFinder = (
 export type ConflictMessageForDeviationState = (state: DeviationState) => string
 
 export interface RunGuardedDeviationMutationOptions {
+  afterMutation?: (manager: SqlExecutor) => Promise<void>
   agreementId?: number
+  beforeMutation?: () => void
   conflictMessageForState: ConflictMessageForDeviationState
   db: SqlServerDatabase
   deviationId: number
@@ -207,6 +228,8 @@ export interface RunGuardedDeviationMutationOptions {
 }
 
 async function runGuardedDeviationMutation({
+  beforeMutation,
+  afterMutation,
   conflictMessageForState,
   db,
   findState,
@@ -224,11 +247,15 @@ async function runGuardedDeviationMutation({
       deviationId,
       agreementId,
     )
+    beforeMutation?.()
     const mutatedRows = await manager.query<Array<Record<string, unknown>>>(
       mutationSql,
       parameters,
     )
-    if (mutatedRows[0]) return
+    if (mutatedRows[0]) {
+      await afterMutation?.(manager)
+      return
+    }
     const row = await findState(manager, deviationId)
     if (!row) throw notFoundError(notFoundMessage)
     throw conflictError(conflictMessageForState(row))
@@ -272,6 +299,10 @@ export async function listDeviationsForSpecificationItem(
         CAST(deviation.is_review_requested AS int) AS isReviewRequested,
         deviation.decision AS decision,
         deviation.decision_motivation AS decisionMotivation,
+        deviation.conditions AS conditions,
+        ${currentDeviationApplicabilitySql('library')} AS applicability,
+        deviation.renews_deviation_id AS renewsDeviationId,
+        CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough,
         deviation.decided_by AS decidedBy,
         deviation.decided_by_hsa_id AS decidedByHsaId,
         deviation.decided_at AS decidedAt,
@@ -317,6 +348,10 @@ export async function listDeviationsForSpecification(
         CAST(deviation.is_review_requested AS int) AS isReviewRequested,
         deviation.decision AS decision,
         deviation.decision_motivation AS decisionMotivation,
+        deviation.conditions AS conditions,
+        ${currentDeviationApplicabilitySql('library')} AS applicability,
+        deviation.renews_deviation_id AS renewsDeviationId,
+        CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough,
         deviation.decided_by AS decidedBy,
         deviation.decided_by_hsa_id AS decidedByHsaId,
         deviation.decided_at AS decidedAt,
@@ -351,6 +386,10 @@ export async function listDeviationsForSpecification(
         CAST(deviation.is_review_requested AS int) AS isReviewRequested,
         deviation.decision AS decision,
         deviation.decision_motivation AS decisionMotivation,
+        deviation.conditions AS conditions,
+        ${currentDeviationApplicabilitySql('local')} AS applicability,
+        deviation.renews_deviation_id AS renewsDeviationId,
+        CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough,
         deviation.decided_by AS decidedBy,
         deviation.decided_by_hsa_id AS decidedByHsaId,
         deviation.decided_at AS decidedAt,
@@ -393,6 +432,10 @@ export async function getDeviation(
         CAST(deviation.is_review_requested AS int) AS isReviewRequested,
         deviation.decision AS decision,
         deviation.decision_motivation AS decisionMotivation,
+        deviation.conditions AS conditions,
+        ${currentDeviationApplicabilitySql('library')} AS applicability,
+        deviation.renews_deviation_id AS renewsDeviationId,
+        CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough,
         deviation.decided_by AS decidedBy,
         deviation.decided_by_hsa_id AS decidedByHsaId,
         deviation.decided_at AS decidedAt,
@@ -431,6 +474,7 @@ export async function getDeviation(
 export async function createDeviation(
   db: SqlServerDatabase,
   data: {
+    renewsDeviationId?: number
     agreementId?: number
     specificationItemId: number
     motivation: string
@@ -464,6 +508,12 @@ export async function createDeviation(
       )
     }
 
+    await assertRenewalTarget(
+      manager,
+      'library',
+      data.specificationItemId,
+      data.renewsDeviationId,
+    )
     const now = new Date()
     const insertedRows = (await manager.query(
       `
@@ -472,10 +522,11 @@ export async function createDeviation(
         motivation,
         created_by,
         created_by_hsa_id,
-        created_at
+        created_at,
+        renews_deviation_id
       )
       OUTPUT INSERTED.id AS id
-      VALUES (@0, @1, @2, @3, @4)
+      VALUES (@0, @1, @2, @3, @4, @5)
     `,
       [
         data.specificationItemId,
@@ -483,6 +534,7 @@ export async function createDeviation(
         data.createdBy ?? null,
         data.createdByHsaId ?? null,
         now,
+        data.renewsDeviationId ?? null,
       ],
     )) as Array<Record<string, unknown>>
 
@@ -503,6 +555,10 @@ export async function listDeviationsForSpecificationLocalRequirement(
         CAST(deviation.is_review_requested AS int) AS isReviewRequested,
         deviation.decision AS decision,
         deviation.decision_motivation AS decisionMotivation,
+        deviation.conditions AS conditions,
+        ${currentDeviationApplicabilitySql('local')} AS applicability,
+        deviation.renews_deviation_id AS renewsDeviationId,
+        CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough,
         deviation.decided_by AS decidedBy,
         deviation.decided_by_hsa_id AS decidedByHsaId,
         deviation.decided_at AS decidedAt,
@@ -534,6 +590,7 @@ export async function listDeviationsForSpecificationLocalRequirement(
 export async function createSpecificationLocalDeviation(
   db: SqlServerDatabase,
   data: {
+    renewsDeviationId?: number
     agreementId?: number
     createdBy?: string | null
     createdByHsaId?: string | null
@@ -567,6 +624,12 @@ export async function createSpecificationLocalDeviation(
       )
     }
 
+    await assertRenewalTarget(
+      manager,
+      'local',
+      data.specificationLocalRequirementId,
+      data.renewsDeviationId,
+    )
     const now = new Date()
     const insertedRows = (await manager.query(
       `
@@ -575,10 +638,11 @@ export async function createSpecificationLocalDeviation(
         motivation,
         created_by,
         created_by_hsa_id,
-        created_at
+        created_at,
+        renews_deviation_id
       )
       OUTPUT INSERTED.id AS id
-      VALUES (@0, @1, @2, @3, @4)
+      VALUES (@0, @1, @2, @3, @4, @5)
     `,
       [
         data.specificationLocalRequirementId,
@@ -586,6 +650,7 @@ export async function createSpecificationLocalDeviation(
         data.createdBy ?? null,
         data.createdByHsaId ?? null,
         now,
+        data.renewsDeviationId ?? null,
       ],
     )) as Array<Record<string, unknown>>
 
@@ -596,6 +661,7 @@ export async function createSpecificationLocalDeviation(
 export async function createDeviationForItemRef(
   db: SqlServerDatabase,
   data: {
+    renewsDeviationId?: number
     agreementId?: number
     createdBy?: string | null
     createdByHsaId?: string | null
@@ -610,6 +676,7 @@ export async function createDeviationForItemRef(
 
   if (parsed.kind === 'library') {
     return createDeviation(db, {
+      renewsDeviationId: data.renewsDeviationId,
       agreementId: data.agreementId,
       createdBy: data.createdBy,
       createdByHsaId: data.createdByHsaId,
@@ -619,6 +686,7 @@ export async function createDeviationForItemRef(
   }
 
   return createSpecificationLocalDeviation(db, {
+    renewsDeviationId: data.renewsDeviationId,
     agreementId: data.agreementId,
     createdBy: data.createdBy,
     createdByHsaId: data.createdByHsaId,
@@ -640,6 +708,10 @@ export async function getSpecificationLocalDeviation(
         CAST(deviation.is_review_requested AS int) AS isReviewRequested,
         deviation.decision AS decision,
         deviation.decision_motivation AS decisionMotivation,
+        deviation.conditions AS conditions,
+        ${currentDeviationApplicabilitySql('local')} AS applicability,
+        deviation.renews_deviation_id AS renewsDeviationId,
+        CONVERT(varchar(10), deviation.valid_through, 23) AS validThrough,
         deviation.decided_by AS decidedBy,
         deviation.decided_by_hsa_id AS decidedByHsaId,
         deviation.decided_at AS decidedAt,
@@ -812,6 +884,27 @@ export async function updateDeviation(
   return
 }
 
+/** Sample the decision clock only after the specification lock is held. */
+function validateApprovalTerms(
+  data: {
+    decision: number
+    conditions?: string | null
+    validThrough?: string | null
+  },
+  now: Date,
+): void {
+  now.setTime(Date.now())
+  if (data.decision === DEVIATION_APPROVED && data.validThrough != null) {
+    validateAgreementDate(data.validThrough)
+    if (data.validThrough < stockholmDate(now))
+      throw validationError('The end date cannot be before the decision day', {
+        reason: 'deviation_date_invalid',
+      })
+  }
+  if ((data.conditions?.length ?? 0) > 10000)
+    throw validationError('Approval conditions exceed 10000 characters')
+}
+
 export async function recordDecision(
   db: SqlServerDatabase,
   deviationId: number,
@@ -819,6 +912,8 @@ export async function recordDecision(
     agreementId?: number
     decision: number
     decisionMotivation: string
+    conditions?: string | null
+    validThrough?: string | null
     decidedBy: string
     decidedByHsaId: string
   },
@@ -840,6 +935,18 @@ export async function recordDecision(
 
   const now = new Date()
   await runGuardedDeviationMutation({
+    beforeMutation: () => validateApprovalTerms(data, now),
+    afterMutation:
+      data.decision === DEVIATION_APPROVED
+        ? manager =>
+            preserveApprovalReplacement(
+              manager,
+              'library',
+              deviationId,
+              data.decidedByHsaId,
+              now,
+            )
+        : undefined,
     agreementId: data.agreementId,
     conflictMessageForState: recordDecisionConflictMessage,
     db,
@@ -850,6 +957,8 @@ export async function recordDecision(
       SET
         decision = @0,
         decision_motivation = @1,
+        conditions = @6,
+        valid_through = @7,
         decided_by = @2,
         decided_by_hsa_id = @3,
         decided_at = @4,
@@ -868,6 +977,10 @@ export async function recordDecision(
       data.decidedByHsaId,
       now,
       deviationId,
+      data.decision === DEVIATION_APPROVED
+        ? data.conditions?.trim() || null
+        : null,
+      data.decision === DEVIATION_APPROVED ? (data.validThrough ?? null) : null,
     ],
   })
   return
@@ -1040,6 +1153,8 @@ export async function recordSpecificationLocalDecision(
     agreementId?: number
     decision: number
     decisionMotivation: string
+    conditions?: string | null
+    validThrough?: string | null
     decidedBy: string
     decidedByHsaId: string
   },
@@ -1061,6 +1176,18 @@ export async function recordSpecificationLocalDecision(
 
   const now = new Date()
   await runGuardedDeviationMutation({
+    beforeMutation: () => validateApprovalTerms(data, now),
+    afterMutation:
+      data.decision === DEVIATION_APPROVED
+        ? manager =>
+            preserveApprovalReplacement(
+              manager,
+              'local',
+              deviationId,
+              data.decidedByHsaId,
+              now,
+            )
+        : undefined,
     agreementId: data.agreementId,
     conflictMessageForState: recordDecisionConflictMessage,
     db,
@@ -1072,6 +1199,8 @@ export async function recordSpecificationLocalDecision(
       SET
         decision = @0,
         decision_motivation = @1,
+        conditions = @6,
+        valid_through = @7,
         decided_by = @2,
         decided_by_hsa_id = @3,
         decided_at = @4,
@@ -1090,6 +1219,10 @@ export async function recordSpecificationLocalDecision(
       data.decidedByHsaId,
       now,
       deviationId,
+      data.decision === DEVIATION_APPROVED
+        ? data.conditions?.trim() || null
+        : null,
+      data.decision === DEVIATION_APPROVED ? (data.validThrough ?? null) : null,
     ],
   })
   return

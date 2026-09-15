@@ -1590,13 +1590,36 @@ avslag. Ett avbrutet avsteg ingår inte längre i avstegsbeslutsarbetskön.
 
 _Avoid_: Avslaget avsteg, avstegsutkast, raderat avsteg.
 
+**Avstegsgodkännande**:
+Ett bevarat beslut med eventuella villkor och tidsbegränsning som tillåter
+ett avsteg från ett bestämt granskat kravinnehåll i ett kravunderlag.
+Att beslutet bevaras innebär inte att tillåtelsen fortfarande gäller.
+
+- `en`: Deviation approval
+
+_Avoid_: Aktivt avsteg, verifiering av kravet, gällande tillåtelse när enbart
+det historiska beslutet avses.
+
 **Gällande godkänt avsteg**:
-Ett godkänt avsteg som fortfarande gäller för det berörda kravinnehållet i
-kravunderlaget eller det valda avtalet.
+Ett godkänt avsteg vars tillåtelse fortfarande gäller för det granskade
+kravinnehållet med hänsyn till beslutets giltighetstid, ersättning och
+avslut, inklusive registrerat avtalsavslut. Oförändrat innehåll kan dela
+samma avsteg mellan avtal.
 
 - `en`: Applicable approved deviation
 
 _Avoid_: Aktivt avsteg, avslutat avsteg, historiskt godkännande.
+
+**Förnyelse av avsteg**:
+En begäran om fortsatt tillåtelse genom ett nytt avsteg som hänvisar till
+ett tidigare godkännande för samma granskade kravinnehåll. Ett nytt
+godkännande har egna villkor och egen eventuell tidsbegränsning och
+ersätter det föregående för samtliga sammanhang som delar avsteget.
+
+- `en`: Deviation renewal
+
+_Avoid_: Redigering av ett tidigare beslut, automatisk förlängning,
+automatiskt överförd tillåtelse till ändrat kravinnehåll.
 
 **Planerat avslut av avsteg**:
 Ett godkänt framtida avslut av ett gällande avsteg när ett efterföljande

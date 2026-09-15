@@ -432,10 +432,26 @@ for (const viewport of viewports) {
             const decisionDialog = reviewer.page.getByRole('dialog', {
               name: 'Registrera beslut',
             })
-            await decisionDialog.getByLabel(deviationCase.radioLabel).check()
+            await decisionDialog
+              .getByRole('radio', {
+                name: deviationCase.radioLabel,
+                exact: true,
+              })
+              .check()
             await decisionDialog
               .locator('#decision-motivation')
               .fill(decisionMotivation)
+            if (deviationCase.action === 'approve') {
+              await decisionDialog
+                .getByLabel('Villkor för godkännandet', { exact: true })
+                .fill('Veckovis behörighetskontroll')
+              await decisionDialog
+                .getByLabel('Ange slutdatum', { exact: true })
+                .check()
+              await decisionDialog
+                .getByLabel('Gäller till och med', { exact: true })
+                .fill('2099-09-30')
+            }
             await decisionDialog
               .getByRole('button', { name: 'Registrera beslut' })
               .click()

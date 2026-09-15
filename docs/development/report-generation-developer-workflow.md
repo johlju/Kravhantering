@@ -246,3 +246,11 @@ both membership paging and enrichment. Norms and packages come from the exact
 binding version. The report cover and CSV row fields include the agreement
 reference, effective date and state. Profile reports and CSV retain their full
 set behavior; only traceability inherits the editor filters and ordering.
+
+### Deviation validity in specification outputs
+
+Specification traceability reads supply separate `approved` and `applicable`
+counts. Use the selected agreement source and cutoff for both. The management
+template and Full CSV share `formatDeviationSignal`; the traceability template
+retains outcome counts and adds that compact signal. Approval expiry is evaluated
+at read time, including when no request has run since the deadline.

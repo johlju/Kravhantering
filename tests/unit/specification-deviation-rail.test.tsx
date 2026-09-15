@@ -193,4 +193,48 @@ describe('SpecificationDeviationRail', () => {
 
     expect(onRemoveFromSpecification).toHaveBeenCalledWith(button)
   })
+  it.each(['decided', 'review_requested'] as const)(
+    'routes %s cases with existing approval to shared management',
+    deviationStep => {
+      const current = workflow(false)
+      const approval = {
+        id: 7,
+        decision: 1,
+        decisionMotivation: 'Approved',
+        motivation: 'Original permission',
+        createdAt: '2025-01-01',
+        decidedAt: '2025-01-02',
+        createdBy: 'Author',
+        decidedBy: 'Reviewer',
+        isReviewRequested: 1,
+      }
+      current.deviationStep = deviationStep
+      current.latestDeviation =
+        deviationStep === 'decided'
+          ? approval
+          : { ...approval, id: 8, decision: null }
+      current.deviationHistory = deviationStep === 'decided' ? [] : [approval]
+      render(
+        <SpecificationDeviationRail
+          canManageDeviationDrafts
+          canReviewDeviationDecisions
+          locale="en"
+          priorityLevel={null}
+          requirementId={7}
+          specificationId={5}
+          specificationItemId={31}
+          workflow={current}
+        />,
+      )
+      expect(
+        screen.getByRole('link', { name: 'deviation.manageApproval' }),
+      ).toHaveAttribute('href', '/en/specifications/5#agreement-history')
+      expect(
+        screen.queryByRole('button', { name: 'deviation.requestDeviation' }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'deviation.markDecided' }),
+      ).not.toBeInTheDocument()
+    },
+  )
 })

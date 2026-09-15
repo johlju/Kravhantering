@@ -55,6 +55,9 @@ describe('deviations DAL (SQL Server path)', () => {
     query.mockResolvedValue([
       {
         id: 7,
+        conditions: null,
+        validThrough: null,
+        renewsDeviationId: null,
         specificationItemId: 3,
         motivation: 'Needs waiver',
         isReviewRequested: true,
@@ -92,6 +95,9 @@ describe('deviations DAL (SQL Server path)', () => {
     expect(result).toEqual([
       {
         id: 7,
+        conditions: null,
+        validThrough: null,
+        renewsDeviationId: null,
         specificationItemId: 3,
         specificationLocalRequirementId: null,
         motivation: 'Needs waiver',
@@ -137,6 +143,7 @@ describe('deviations DAL (SQL Server path)', () => {
         'tester',
         'SE5560000001-tester1',
         expect.any(Date),
+        null,
       ],
     )
   })
@@ -294,7 +301,11 @@ describe('deviations DAL (SQL Server path)', () => {
 
   it('records decisions using an atomic review-requested guard', async () => {
     const { db, query } = createSqlServerDb()
-    query.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([{ id: 9 }])
+    query
+      .mockResolvedValueOnce([{ id: 7 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 9 }])
 
     await recordDecision(db, 7, {
       decidedBy: 'reviewer',
@@ -321,22 +332,26 @@ describe('deviations DAL (SQL Server path)', () => {
       'SE5560000001-reviewer1',
       expect.any(Date),
       7,
+      null,
+      null,
     ])
 
-    const localSql = compactSql(query.mock.calls[1][0])
+    const localSql = compactSql(query.mock.calls[3][0])
     expect(localSql).toContain(
       'UPDATE specification_local_requirement_deviations',
     )
     expect(localSql).toContain('OUTPUT INSERTED.id AS id')
     expect(localSql).toContain('AND decision IS NULL')
     expect(localSql).toContain('AND is_review_requested = 1')
-    expect(query.mock.calls[1][1]).toEqual([
+    expect(query.mock.calls[3][1]).toEqual([
       DEVIATION_REJECTED,
       'Rejected',
       'local reviewer',
       'SE5560000001-reviewer2',
       expect.any(Date),
       9,
+      null,
+      null,
     ])
   })
 
@@ -564,6 +579,7 @@ describe('deviations DAL (SQL Server path)', () => {
       null,
       null,
       expect.any(Date),
+      null,
     ])
 
     const missing = createSqlServerDb()

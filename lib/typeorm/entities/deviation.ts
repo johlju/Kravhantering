@@ -2,6 +2,7 @@ import { EntitySchema } from 'typeorm'
 import type { RequirementsSpecificationItemEntity } from '@/lib/typeorm/entities/requirements-specification-item'
 
 export interface DeviationEntity {
+  conditions: string | null
   createdAt: Date
   createdBy: string | null
   createdByHsaId: string | null
@@ -13,8 +14,10 @@ export interface DeviationEntity {
   id: number
   isReviewRequested: boolean
   motivation: string
+  renewsDeviation: DeviationEntity | null
   specificationItem: RequirementsSpecificationItemEntity
   updatedAt: Date | null
+  validThrough: string | null
 }
 
 export const deviationEntity = new EntitySchema<DeviationEntity>({
@@ -27,6 +30,13 @@ export const deviationEntity = new EntitySchema<DeviationEntity>({
       type: 'int',
       generated: 'increment',
     },
+    conditions: {
+      name: 'conditions',
+      type: 'nvarchar',
+      length: 'MAX',
+      nullable: true,
+    },
+    validThrough: { name: 'valid_through', type: 'date', nullable: true },
     motivation: { name: 'motivation', type: 'nvarchar', length: 'MAX' },
     decision: { name: 'decision', type: 'int', nullable: true },
     decisionMotivation: {
@@ -70,6 +80,10 @@ export const deviationEntity = new EntitySchema<DeviationEntity>({
   },
   indices: [
     {
+      name: 'idx_deviations_renews_deviation_id',
+      columns: ['renewsDeviation'],
+    },
+    {
       name: 'idx_deviations_specification_item_id',
       columns: ['specificationItem'],
     },
@@ -83,6 +97,16 @@ export const deviationEntity = new EntitySchema<DeviationEntity>({
     },
   ],
   relations: {
+    renewsDeviation: {
+      type: 'many-to-one',
+      target: 'Deviation',
+      nullable: true,
+      onDelete: 'NO ACTION',
+      joinColumn: {
+        name: 'renews_deviation_id',
+        foreignKeyConstraintName: 'fk_deviations_renews_deviation_id',
+      },
+    },
     specificationItem: {
       type: 'many-to-one',
       target: 'RequirementsSpecificationItem',

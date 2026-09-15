@@ -56,8 +56,8 @@ export async function endCurrentAgreement(
     await db.query(
       `INSERT INTO specification_deviation_endings
       (specification_id, agreement_id, agreement_reference, agreement_item_id, ${endingColumn},
-       planned_effective_date, recorded_at, recorded_by_hsa_id, ended_at)
-      SELECT @0, @1, @2, membership.id, deviation.id, @3, @4, @5, @4 FROM ${table} deviation
+       planned_effective_date, recorded_at, recorded_by_hsa_id, ended_at, ending_kind)
+      SELECT @0, @1, @2, membership.id, deviation.id, @3, @4, @5, @4, 'agreement_ended' FROM ${table} deviation
       INNER JOIN specification_agreement_items membership ON membership.${column} = deviation.${column}
       WHERE membership.specification_agreement_id = @1 AND membership.is_removed = 0 AND deviation.decision = 1
         AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.${endingColumn} = deviation.id AND ending.ended_at IS NOT NULL)`,

@@ -7,6 +7,20 @@ target version.
 
 ## Unreleased
 
+### Deviation approval validity
+
+Stop write traffic and drain application nodes before the database upgrade. Keep
+all nodes on the same release: previous releases do not enforce approval expiry
+or replacement. Keep a tested backup with the matching application release.
+Recovery must restore both; removing the new decision terms loses evidence.
+
+Existing approvals keep their recorded decisions and have no calendar end date.
+Only the most recent approval for the same reviewed content can give permission.
+No scheduled job is required. Verify approval expiry, responsible-person closure,
+archive export and actor anonymization with the runtime database role after
+upgrade. Coordinate consumers of Full CSV and specification reports: approval
+outcomes and current permission are now reported separately.
+
 <!-- operator-upgrade:source issue-1323 start -->
 
 ### Whole-specification agreements and preserved history

@@ -44,6 +44,7 @@ import {
 import { useColumnState } from '@/components/_requirements-table/useColumnState'
 import { useFloatingRailPosition } from '@/components/_requirements-table/useFloatingRailPosition'
 import { useResizeHandles } from '@/components/_requirements-table/useResizeHandles'
+import DeviationFollowup from '@/components/DeviationFollowup'
 import RequirementPackagePurposeTooltip from '@/components/RequirementPackagePurposeTooltip'
 import RequirementsPackageFilter from '@/components/RequirementsPackageFilter'
 import StatusBadge from '@/components/StatusBadge'
@@ -2448,6 +2449,11 @@ export default function RequirementsTable({
             }
           >
             {row.version?.description ?? '—'}
+            {row.deviationFollowup && (
+              <span className="block whitespace-normal">
+                <DeviationFollowup />
+              </span>
+            )}
             {row.changeDate && (
               <span
                 className={`ml-2 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${row.isRemoved ? 'border-red-300 text-red-800 dark:border-red-700 dark:text-red-200' : 'border-primary-300 text-primary-800 dark:border-primary-700 dark:text-primary-200'}`}

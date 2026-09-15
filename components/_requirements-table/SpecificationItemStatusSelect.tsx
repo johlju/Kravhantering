@@ -16,6 +16,7 @@ interface SpecificationItemStatusSelectProps {
 
 interface StatusOption {
   description: string | undefined
+  disabled: boolean
   id: number
   label: string
 }
@@ -33,15 +34,21 @@ function SpecificationItemStatusSelectImpl({
   const options = useMemo<StatusOption[]>(
     () =>
       statuses
-        .filter(status => !status.isDeviationStatus || hasApprovedDeviation)
+        .filter(
+          status =>
+            !status.isDeviationStatus ||
+            hasApprovedDeviation ||
+            status.id === statusId,
+        )
         .map(status => ({
+          disabled: Boolean(status.isDeviationStatus) && !hasApprovedDeviation,
           description:
             (locale === 'sv' ? status.descriptionSv : status.descriptionEn) ||
             undefined,
           id: status.id,
           label: locale === 'sv' ? status.nameSv : status.nameEn,
         })),
-    [hasApprovedDeviation, locale, statuses],
+    [hasApprovedDeviation, locale, statuses, statusId],
   )
 
   const handleChange = useCallback(
@@ -72,7 +79,12 @@ function SpecificationItemStatusSelectImpl({
       value={statusId ?? ''}
     >
       {options.map(option => (
-        <option key={option.id} title={option.description} value={option.id}>
+        <option
+          disabled={option.disabled}
+          key={option.id}
+          title={option.description}
+          value={option.id}
+        >
           {option.label}
         </option>
       ))}

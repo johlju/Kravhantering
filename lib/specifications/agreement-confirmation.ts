@@ -1,6 +1,7 @@
 import type { SqlExecutor } from '@/lib/dal/requirements-specifications'
 import type { RequestContext } from '@/lib/requirements/auth'
 import { conflictError } from '@/lib/requirements/errors'
+import { applicableDeviationSql } from '@/lib/specifications/agreement-deviation-state'
 
 interface ConfirmationDeviation {
   agreementItemId: number
@@ -39,7 +40,7 @@ export async function readConfirmationDeviations(
      WHERE agreement.specification_id = @0 AND agreement.id = @1 AND agreement.is_pending = 1 AND agreement.confirmed_at IS NULL
        AND current_agreement.is_current = 1
        AND (membership.is_removed = 1 OR ISNULL(membership.${column}, 0) <> previous.${column})
-       AND (deviation.decision IS NULL OR (deviation.decision = 1
+       AND (deviation.decision IS NULL OR (${applicableDeviationSql(library ? 'library' : 'local')}
          AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.${caseColumn} = deviation.id
            AND (ending.ended_at IS NOT NULL OR (ending.agreement_id = @1 AND ending.cancelled_at IS NULL)))))`
   })

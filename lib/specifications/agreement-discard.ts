@@ -21,7 +21,7 @@ export async function discardAgreementDraft(
   // Own cases disappear with the discarded draft; plans concerning shared
   // current cases retain cancellation evidence after membership is removed.
   await db.query(
-    `DELETE FROM specification_deviation_endings WHERE agreement_id = @0 AND (
+    `DELETE FROM specification_deviation_endings WHERE (
     deviation_id IN (SELECT deviation.id FROM deviations deviation INNER JOIN requirements_specification_items item
       ON item.id = deviation.specification_item_id WHERE item.owning_agreement_id = @0)
     OR local_deviation_id IN (SELECT deviation.id FROM specification_local_requirement_deviations deviation

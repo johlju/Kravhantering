@@ -2132,9 +2132,11 @@ gäller även för historiska sammanhang.
 
 ### DEV-04: godkänn avsteg
 
-**Steg:** Som behörig kravgranskare, godkänn avsteg med kommentar.
+**Steg:** Som behörig kravgranskare, godkänn avsteg med kommentar, valfria
+villkor och slutdatum. Prova även ingen tidsbegränsning.
 
-**Förväntat resultat:** Avsteget markeras som godkänt och låses.
+**Förväntat resultat:** Beslut, villkor och inkluderande slutdatum bevaras.
+Tillåtelsen börjar vid beslutet och gäller enligt Europe/Stockholm.
 
 ### DEV-05: avslå avsteg
 
@@ -2142,14 +2144,14 @@ gäller även för historiska sammanhang.
 
 **Förväntat resultat:** Avsteget markeras som avslaget och låses.
 
-### DEV-06: beslutade avsteg är terminala
+### DEV-06: registrerade avstegsbeslut är oföränderliga
 
 **Steg:** Öppna godkänt eller avslaget avsteg för både bibliotekskrav och
 kravunderlagslokalt krav. Försök fatta ett andra beslut, redigera eller ta bort
 avsteget.
 
-**Förväntat resultat:** Inga åtgärder för ny beslutscykel, redigering eller
-borttagning visas. Motsvarande direkta anrop avvisas.
+**Förväntat resultat:** Originalbeslutet kan inte ändras eller tas bort.
+Förnyelse skapar ett nytt länkat avsteg. Avslut bevaras separat.
 
 ### DEV-07: endast kravgranskare kan besluta avsteg
 
@@ -2203,6 +2205,31 @@ aktör och tidpunkt. Det kan inte längre skickas till granskning och blockerar
 inte ett nytt avsteg. Ett delat ärende visar berörda avtalsreferenser före
 bekräftelsen. Fel visas vid åtgärden och dialogen behåller inmatningen.
 Knapparna Stäng och Avsluta utan beslut har mellanrum även i smal vy.
+
+### DEV-11: förnya och avsluta gemensam tillåtelse
+
+**Steg:** Öppna ett godkänt avsteg i ett oförändrat avtalsutkast. Begär
+förnyelse och kontrollera berörda avtal. Begär granskning. Granskaren anger nya
+villkor och giltighet samt godkänner. Som tilldelad kravunderlagsansvarig,
+avsluta det nya godkännandet med motivering. Ta bort avtalsutkastet.
+
+**Förväntat resultat:** Det tidigare godkännandet ersätts för hela det
+gemensamma sammanhanget. Avslutet kvarstår i aktuellt avtal efter borttagning
+av utkastet. Originalbeslut och historiska tillstånd bevaras. Medförfattare
+eller Admin utan ansvarstilldelning får inte avsluta godkännandet. En obeslutad
+förnyelse måste avbrytas först.
+
+### DEV-12: följ upp upphörd tillåtelse
+
+**Steg:** Öppna ett krav med utgånget eller manuellt avslutat godkännande och
+användningsstatus Avviken. Kontrollera listan och detaljen. Sätt Verifierad,
+ändra sedan till Implementerad. Försök välja Avviken igen. Öppna ett fryst
+historiskt avtal och kontrollera beslutet samt Senare händelser.
+
+**Förväntat resultat:** Avviken behålls när tillåtelsen upphör. Åtgärdsflaggan
+visas i lista och detalj, släcks av Verifierad och återkommer efter ändring
+från Verifierad. Avviken kan inte väljas på nytt utan gällande tillåtelse.
+En obeslutad förnyelse förlänger inte tillåtelsen. Fryst historik behålls.
 
 ## Admincenter
 

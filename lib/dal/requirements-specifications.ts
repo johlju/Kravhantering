@@ -27,7 +27,10 @@ import {
 } from '@/lib/specification-item-status-constants'
 import { activateDueAgreements } from '@/lib/specifications/agreement-activation'
 import { recordAgreementContentOrigin } from '@/lib/specifications/agreement-content-origin'
-import { agreementDeviationStateSql } from '@/lib/specifications/agreement-deviation-state'
+import {
+  agreementDeviationStateSql,
+  applicableDeviationSql,
+} from '@/lib/specifications/agreement-deviation-state'
 import { agreementItemSource } from '@/lib/specifications/agreement-item-source'
 import {
   assertApplicationFollowupAllowed,
@@ -57,6 +60,7 @@ export type SpecificationItemRef = `lib:${number}` | `local:${number}`
 export interface TraceabilityReportItem {
   areaName: string | null
   deviationCounts: {
+    applicable?: number
     approved: number
     pending: number
     rejected: number
@@ -314,6 +318,7 @@ function mapTraceabilityReportRow(
   return {
     areaName: toStr(row.areaName),
     deviationCounts: {
+      applicable: Number(row.deviationApplicable) || 0,
       approved: Number(row.deviationApproved) || 0,
       pending: Number(row.deviationPending) || 0,
       rejected: Number(row.deviationRejected) || 0,
@@ -392,6 +397,7 @@ export async function listSpecificationTraceabilityItems(
           COALESCE(deviation_counts.total, 0) AS deviationTotal,
           COALESCE(deviation_counts.pending, 0) AS deviationPending,
           COALESCE(deviation_counts.approved, 0) AS deviationApproved,
+          COALESCE(deviation_counts.applicable, 0) AS deviationApplicable,
           COALESCE(deviation_counts.rejected, 0) AS deviationRejected
         FROM ${agreementItemSource('library', agreementId === undefined ? undefined : `@${3 + libraryItemIds.length}`)} specification_item
         INNER JOIN requirements requirement
@@ -410,6 +416,7 @@ export async function listSpecificationTraceabilityItems(
           SELECT COUNT(*) AS total,
             (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').pending}) AS pending,
             (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').approved}) AS approved,
+            (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').applicable}) AS applicable,
             (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').rejected}) AS rejected
           FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible}
         ) deviation_counts
@@ -455,6 +462,7 @@ export async function listSpecificationTraceabilityItems(
           COALESCE(deviation_counts.total, 0) AS deviationTotal,
           COALESCE(deviation_counts.pending, 0) AS deviationPending,
           COALESCE(deviation_counts.approved, 0) AS deviationApproved,
+          COALESCE(deviation_counts.applicable, 0) AS deviationApplicable,
           COALESCE(deviation_counts.rejected, 0) AS deviationRejected
         FROM ${agreementItemSource('local', agreementId === undefined ? undefined : `@${3 + localRequirementIds.length}`)} local_requirement
         LEFT JOIN priority_levels priority_level
@@ -467,6 +475,7 @@ export async function listSpecificationTraceabilityItems(
           SELECT COUNT(*) AS total,
             (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').pending}) AS pending,
             (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').approved}) AS approved,
+            (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').applicable}) AS applicable,
             (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').rejected}) AS rejected
           FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible}
         ) deviation_counts
@@ -3442,8 +3451,7 @@ export async function updateSpecificationItemFieldsWithExecutor(
       `
         SELECT TOP (1) deviation.id AS id
         FROM deviations deviation
-        WHERE deviation.specification_item_id = @0 AND deviation.decision = @1
-          AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.deviation_id = deviation.id AND ending.ended_at IS NOT NULL)
+        WHERE deviation.specification_item_id = @0 AND deviation.decision = @1 AND ${applicableDeviationSql('library')}
       `,
       [itemId, DEVIATION_APPROVED],
     )) as Array<{ id: number }>
@@ -3541,8 +3549,7 @@ export async function updateSpecificationLocalRequirementFieldsWithExecutor(
         SELECT TOP (1) deviation.id AS id
         FROM specification_local_requirement_deviations deviation
         WHERE deviation.specification_local_requirement_id = @0
-          AND deviation.decision = @1
-          AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending WHERE ending.local_deviation_id = deviation.id AND ending.ended_at IS NOT NULL)
+          AND deviation.decision = @1 AND ${applicableDeviationSql('local')}
       `,
       [specificationLocalRequirementId, DEVIATION_APPROVED],
     )) as Array<{ id: number }>

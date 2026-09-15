@@ -540,6 +540,12 @@ function mapEnrichedRow(
     area: row.areaName == null ? null : { name: String(row.areaName) },
     deviationCount: deviationTotal,
     hasApprovedDeviation: deviationApproved > 0,
+    deviationFollowup:
+      Number(row.deviationHistoricalApproved) > 0 &&
+      deviationApproved === 0 &&
+      Number(row.specificationItemStatusId) !== 4 &&
+      !toBool(row.isRemoved) &&
+      row.followupFrozenAt == null,
     hasPendingDeviation: deviationPending > 0,
     id: local ? -sourceId : Number(row.requirementId),
     isArchived: local ? false : toBool(row.isArchived),
@@ -669,7 +675,9 @@ async function enrichLibraryItems(
             AND current_package_version.requirement_status_id = ${STATUS_PUBLISHED}) AS requirementPackageIds,
         (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible}) AS deviationTotal,
         (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').pending}) AS deviationPending,
-        (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').approved}) AS deviationApproved
+        (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').applicable}) AS deviationApproved,
+        specification_item.followup_frozen_at AS followupFrozenAt,
+        (SELECT COUNT(*) FROM deviations deviation WHERE deviation.specification_item_id = specification_item.id AND ${agreementDeviationStateSql('library').visible} AND ${agreementDeviationStateSql('library').approved}) AS deviationHistoricalApproved
       FROM ${agreementItemSource('library', agreementId === undefined ? undefined : builder.push(agreementId))} specification_item
       INNER JOIN requirements requirement ON requirement.id = specification_item.requirement_id
       INNER JOIN requirement_versions requirement_version ON requirement_version.id = specification_item.requirement_version_id
@@ -736,7 +744,9 @@ async function enrichLocalItems(
         CAST(NULL AS varchar(1)) AS requirementPackageIds,
         (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible}) AS deviationTotal,
         (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').pending}) AS deviationPending,
-        (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').approved}) AS deviationApproved
+        (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').applicable}) AS deviationApproved,
+        local_requirement.followup_frozen_at AS followupFrozenAt,
+        (SELECT COUNT(*) FROM specification_local_requirement_deviations deviation WHERE deviation.specification_local_requirement_id = local_requirement.id AND ${agreementDeviationStateSql('local').visible} AND ${agreementDeviationStateSql('local').approved}) AS deviationHistoricalApproved
       FROM ${agreementItemSource('local', agreementId === undefined ? undefined : builder.push(agreementId))} local_requirement
       LEFT JOIN requirement_categories requirement_category ON requirement_category.id = local_requirement.requirement_category_id
       LEFT JOIN requirement_types requirement_type ON requirement_type.id = local_requirement.requirement_type_id

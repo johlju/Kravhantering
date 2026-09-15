@@ -23,6 +23,38 @@ describe('agreement demo data', () => {
         displayName: 'Ada Admin',
       },
     }
+    const validityWorkflow = createSpecificationAgreementWorkflow(db, {
+      now: () => new Date('2026-09-15T12:00:00Z'),
+    })
+    const validity = await validityWorkflow.read(adaContext, 8)
+    const expected = [
+      [132501, 'applicable'],
+      [132502, 'applicable'],
+      [132503, 'expired'],
+      [132504, 'expired'],
+      [132505, 'expired'],
+      [132555, 'pending'],
+      [132506, 'applicable'],
+      [132556, 'rejected'],
+      [132507, 'superseded'],
+      [132557, 'expired'],
+      [132508, 'closed'],
+    ] as const
+    for (const [id, applicability] of expected)
+      expect(validity.deviations.find(value => value.id === id)).toMatchObject({
+        applicability,
+      })
+    expect(
+      validity.items.find(value => value.itemRef === 'local:132503'),
+    ).toMatchObject({ specificationItemStatusId: 5 })
+    expect(
+      validity.items.find(value => value.itemRef === 'local:132504'),
+    ).toMatchObject({ specificationItemStatusId: 4 })
+    const endedValidity = await validityWorkflow.read(adaContext, 1325)
+    expect(endedValidity.selectedAgreement?.state).toBe('ended')
+    expect(
+      endedValidity.deviations.find(value => value.id === 132520),
+    ).toMatchObject({ applicability: 'agreement_ended' })
     expect(await workflow.read(adaContext, 8)).toMatchObject({
       canDecide: true,
       canAuthor: true,
@@ -131,6 +163,12 @@ describe('agreement demo data', () => {
     ).toBe(true)
     expect(current.deviationEndings.some(ending => ending.endedAt)).toBe(true)
     await seedDemoDatabase(db)
+    expect(
+      (await validityWorkflow.read(adaContext, 8)).deviations.map(value => [
+        value.id,
+        value.applicability,
+      ]),
+    ).toEqual(validity.deviations.map(value => [value.id, value.applicability]))
     const repeated = await workflow.read(context, 5)
     expect(repeated.agreements.map(agreement => agreement.id)).toEqual(
       current.agreements.map(agreement => agreement.id),

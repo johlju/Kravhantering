@@ -58,7 +58,28 @@ export function formatNormReferenceUris(item: SpecificationOutputItem): string {
 export function formatDeviationSignal(
   counts: DeviationCounts,
   labels: ReportLabels,
+  item?: Pick<
+    SpecificationOutputItem,
+    'specificationItemStatusId' | 'agreement'
+  >,
 ): string {
+  if (counts.applicable !== undefined) {
+    const parts: string[] = []
+    if (counts.pending > 0) parts.push(labels.deviations.pending)
+    if (counts.applicable > 0) parts.push(labels.deviations.applicable)
+    else if (counts.approved > 0) {
+      parts.push(labels.deviations.ended)
+      if (
+        item &&
+        item.specificationItemStatusId !==
+          VERIFIED_SPECIFICATION_ITEM_STATUS_ID &&
+        item.agreement?.state !== 'ended'
+      )
+        parts.push(labels.deviations.followup)
+    }
+    if (counts.rejected > 0) parts.push(labels.deviations.rejected)
+    return parts.join(' · ')
+  }
   if (counts.pending > 0) {
     return labels.deviations.pending
   }

@@ -1125,3 +1125,169 @@ describe('selected agreement requirement author workflow', () => {
     },
   )
 })
+
+describe('approval validity and follow-up in the selected agreement', () => {
+  const approval = {
+    id: 17,
+    itemRef: item.itemRef,
+    motivation: 'Temporary access exception',
+    decision: 1,
+    decisionMotivation: 'Accepted with controls',
+    decidedAt: new Date('2020-01-01'),
+    createdAt: new Date('2019-12-01'),
+    conditions: 'Weekly access review',
+    validThrough: '2020-09-30',
+    agreementReferences: 'A, B',
+  }
+  const approvalView = { ...view, deviations: [approval] }
+
+  it('shows expiry beside the unchanged usage status and clears follow-up only for Verified', () => {
+    const props = { specificationId: 5, onChange: vi.fn(), view: approvalView }
+    const rendered = render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          {...props}
+          item={{ ...item, specificationItemStatusId: 5 }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(
+      screen.getByText('deviation.applicability.expired'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Weekly access review/)).toBeInTheDocument()
+    expect(screen.getByText('deviation.endedFollowup')).toHaveAttribute(
+      'role',
+      'status',
+    )
+    rendered.rerender(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          {...props}
+          item={{ ...item, specificationItemStatusId: 4 }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(screen.queryByText('deviation.endedFollowup')).toBeNull()
+    rendered.rerender(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          {...props}
+          item={{ ...item, specificationItemStatusId: 3 }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(screen.getByText('deviation.endedFollowup')).toBeInTheDocument()
+  })
+
+  it('shows the shared scope when requesting renewal and sends the original approval link', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}'))
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={vi.fn()}
+          specificationId={5}
+          view={approvalView}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.renewDeviation' }),
+    )
+    expect(
+      screen.getByText('deviation.sharedApprovalScope'),
+    ).toBeInTheDocument()
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /deviation.motivation/ }),
+      'Continue the reviewed departure',
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.newDeviation' }),
+    )
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body).toMatchObject({
+      renewsDeviationId: 17,
+      agreementId: 2,
+      motivation: 'Continue the reviewed departure',
+    })
+    fetchMock.mockRestore()
+  })
+
+  it('keeps frozen approval applicable and shows later expiry separately', async () => {
+    const frozen = {
+      ...approvalView,
+      selectedAgreement: {
+        ...agreement,
+        state: 'previous',
+        replacedAt: new Date('2020-06-01'),
+      },
+    }
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={{
+            ...item,
+            deviationStateSnapshot: [
+              { id: 17, motivation: approval.motivation, isReviewRequested: 1 },
+            ],
+          }}
+          onChange={vi.fn()}
+          showLaterEvents
+          specificationId={5}
+          view={frozen}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(
+      screen.getByText('deviation.applicability.applicable'),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByText('agreement.laterEvents'))
+    expect(
+      screen.getByText('deviation.applicability.expired'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('deviation.endedFollowup')).toBeNull()
+  })
+  it('renders an anonymized closure actor without exposing the internal sentinel', () => {
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={vi.fn()}
+          specificationId={1}
+          view={{
+            ...view,
+            selectedAgreement: null,
+            deviations: [
+              {
+                id: 7,
+                itemRef: item.itemRef,
+                decision: 1,
+                decidedAt: new Date('2025-01-01'),
+                motivation: 'Temporary departure',
+                decisionMotivation: 'Approved',
+              },
+            ],
+            deviationEndings: [
+              {
+                id: 1,
+                itemRef: item.itemRef,
+                deviationId: 7,
+                agreementId: null,
+                endedAt: new Date('2025-02-01'),
+                cancelledAt: null,
+                endingKind: 'closed',
+                reason: 'Resolved',
+                recordedBy: 'no-user',
+              },
+            ],
+          }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(screen.getByText(/Anonymous/)).toBeInTheDocument()
+    expect(screen.queryByText(/no-user/)).not.toBeInTheDocument()
+  })
+})

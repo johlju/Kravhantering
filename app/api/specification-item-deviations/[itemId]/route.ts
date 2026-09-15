@@ -53,6 +53,7 @@ const itemDeviationParamSchema = z
 const createDeviationSchema = z
   .object({
     agreementId: positiveIntegerSchema.optional(),
+    renewsDeviationId: positiveIntegerSchema.optional(),
     motivation: businessTextSchema,
   })
   .strict()
@@ -202,7 +203,7 @@ export const POST = secureMutationRoute({
       return itemIdResult.response
     }
     const { decodedItemId, parsedItemRef, numericItemId } = itemIdResult
-    const { motivation, agreementId } = body
+    const { motivation, agreementId, renewsDeviationId } = body
 
     try {
       const actor = requireHumanActorSnapshot(context)
@@ -213,6 +214,7 @@ export const POST = secureMutationRoute({
               specificationItemId: numericItemId ?? 0,
               motivation,
               agreementId,
+              renewsDeviationId,
               createdBy: actor.displayName,
               createdByHsaId: actor.hsaId,
             })
@@ -222,6 +224,7 @@ export const POST = secureMutationRoute({
               itemRef: decodedItemId,
               motivation,
               agreementId,
+              renewsDeviationId,
             })
       return NextResponse.json({ id: result.id, ok: true }, { status: 201 })
     } catch (error) {

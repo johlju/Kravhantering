@@ -2,6 +2,7 @@ import type { SqlExecutor } from '@/lib/dal/requirements-specifications'
 import { conflictError, notFoundError } from '@/lib/requirements/errors'
 import { activateDueAgreements } from '@/lib/specifications/agreement-activation'
 import { guardAgreementRequirementChange } from '@/lib/specifications/agreement-deviation-endings'
+import { applicableDeviationSql } from '@/lib/specifications/agreement-deviation-state'
 
 async function lockSpecification(
   db: SqlExecutor,
@@ -235,8 +236,7 @@ export async function retireSpecificationApplications(
     )
   const approved = await db.query<Array<{ id: number }>>(
     `SELECT DISTINCT item.id FROM ${table} item INNER JOIN ${deviations} deviation ON deviation.${child} = item.id
-     WHERE ${condition} AND deviation.decision = 1 AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending
-       WHERE ending.${kind === 'library' ? 'deviation_id' : 'local_deviation_id'} = deviation.id AND ending.ended_at IS NOT NULL)`,
+     WHERE ${condition} AND ${applicableDeviationSql(kind === 'library' ? 'library' : 'local')}`,
     [specificationId, ...ids],
   )
   for (const item of approved)

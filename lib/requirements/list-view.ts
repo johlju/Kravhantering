@@ -84,6 +84,7 @@ export interface RequirementRow {
   changeDate?: string | null
   changeKind?: 'added' | 'changed' | 'removed' | null
   deviationCount?: number
+  deviationFollowup?: boolean
   hasApprovedDeviation?: boolean
   hasPendingDeviation?: boolean
   hasPendingVersion?: boolean

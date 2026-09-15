@@ -13,10 +13,13 @@ export interface SpecificationDeviationEndingEntity {
   cancelledByHsaId: string | null
   deviation: DeviationEntity | null
   endedAt: Date | null
+  endingKind: string | null
   id: number
   localDeviation: SpecificationLocalRequirementDeviationEntity | null
   plannedEffectiveDate: string
+  reason: string | null
   recordedAt: Date
+  recordedByDisplayName: string | null
   recordedByHsaId: string | null
   specification: RequirementsSpecificationEntity
 }
@@ -26,6 +29,24 @@ export const specificationDeviationEndingEntity =
     name: 'SpecificationDeviationEnding',
     tableName: 'specification_deviation_endings',
     columns: {
+      endingKind: {
+        name: 'ending_kind',
+        type: 'nvarchar',
+        length: 32,
+        nullable: true,
+      },
+      reason: {
+        name: 'reason',
+        type: 'nvarchar',
+        length: 'MAX',
+        nullable: true,
+      },
+      recordedByDisplayName: {
+        name: 'recorded_by_display_name',
+        type: 'nvarchar',
+        length: 'MAX',
+        nullable: true,
+      },
       id: { name: 'id', type: 'int', primary: true, generated: 'increment' },
       agreementReference: {
         name: 'agreement_reference',

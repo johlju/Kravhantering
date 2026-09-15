@@ -137,4 +137,28 @@ describe('DeviationDecisionModal', () => {
     expect(onClose).toHaveBeenCalledOnce()
     expect(confirmDiscardChanges).toHaveBeenNthCalledWith(1, cancel)
   })
+  it('submits approval conditions and an inclusive end date', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <DeviationDecisionModal onClose={vi.fn()} onSubmit={onSubmit} open />,
+    )
+    await userEvent.type(
+      screen.getByLabelText(/Decision motivation/, { selector: 'textarea' }),
+      'Accepted',
+    )
+    await userEvent.type(
+      screen.getByLabelText('conditions', { selector: 'textarea' }),
+      'Weekly access review',
+    )
+    await userEvent.click(screen.getByLabelText('limitedValidity'))
+    const date = screen.getByLabelText('validThrough', { selector: 'input' })
+    await userEvent.type(date, '2099-09-30')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Record decision' }),
+    )
+    expect(onSubmit).toHaveBeenCalledWith(1, 'Accepted', {
+      conditions: 'Weekly access review',
+      validThrough: '2099-09-30',
+    })
+  })
 })

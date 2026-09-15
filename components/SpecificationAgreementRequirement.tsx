@@ -29,6 +29,7 @@ import type {
   AgreementItem,
   AgreementMutationInput,
 } from '@/lib/specifications/agreements'
+import { deviationApplicability } from '@/lib/specifications/deviation-applicability'
 
 interface ComponentProps {
   item: AgreementItem
@@ -105,7 +106,12 @@ export default function SpecificationAgreementRequirement({
   const approvedDeviations = view.deviations.filter(
     deviation =>
       deviation.itemRef === item.itemRef &&
-      deviation.decision === 1 &&
+      deviationApplicability(
+        deviation,
+        view.deviations,
+        view.deviationEndings,
+        new Date(),
+      ) === 'applicable' &&
       !view.deviationEndings.some(
         ending =>
           ending.itemRef === item.itemRef &&

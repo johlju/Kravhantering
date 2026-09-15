@@ -1020,7 +1020,35 @@
     "affectedRequirementIds": "Affected Requirement IDs",
     "bulkDeviationPartialFail": "Deviation requests failed for Requirement IDs: {ids}. Those requirements remain selected.",
     "statusCancelled": "Cancelled",
-    "manageCancellation": "Cancel in specification"
+    "manageApproval": "Manage approval and renewal",
+    "manageCancellation": "Cancel in specification",
+    "conditions": "Approval conditions",
+    "conditionsHelp": "Optional conditions for this permission. These remain part of the recorded decision.",
+    "validity": "Validity",
+    "validityHelp": "Permission starts when approved. Choose an inclusive end date or no calendar time limit.",
+    "unlimitedValidity": "No time limit",
+    "limitedValidity": "Set an end date",
+    "validThrough": "Valid through",
+    "validThroughHelp": "The approval applies through this date in Europe/Stockholm. The date cannot precede the decision day.",
+    "validThroughValue": "Valid through {date} (Europe/Stockholm)",
+    "renewDeviation": "Request renewal",
+    "renewalOf": "Renewal of approval #{id}",
+    "closeApproval": "Close approval",
+    "closeApprovalHelp": "End permission for the shared deviation. Give a reason. Cancel any undecided renewal first. Closing does not verify the requirement.",
+    "sharedApprovalScope": "This action affects the shared deviation in all these agreements: {references}.",
+    "endedFollowup": "Deviation permission has ended – action required",
+    "closedFollowup": "Deviation approval was closed – action required",
+    "applicability": {
+      "pending": "Awaiting decision",
+      "rejected": "Rejected",
+      "cancelled": "Cancelled",
+      "applicable": "Applicable approved deviation",
+      "expired": "Approval expired",
+      "superseded": "Approval replaced",
+      "closed": "Approval manually closed",
+      "content_replaced": "Reviewed content replaced",
+      "agreement_ended": "Agreement ended"
+    }
   },
   "improvementSuggestion": {
     "attachImplementation": "Attach implementing version",
@@ -1270,7 +1298,10 @@
         "submittedBy": "Submitted by",
         "pending": "Pending",
         "approved": "Approved",
-        "rejected": "Rejected"
+        "rejected": "Rejected",
+        "applicable": "Applicable approved deviation",
+        "ended": "Permission ended",
+        "followup": "Action required"
       },
       "traceability": {
         "summaryTitle": "Summary",
@@ -3965,6 +3996,9 @@
     "viewingAgreement": "Viewing agreement: {reference}",
     "viewingAgreementBadge": "Viewing agreement",
     "neverEffective": "never took effect",
-    "historyComparedWith": "Compared with {reference}"
+    "historyComparedWith": "Compared with {reference}",
+    "deviationDateError": "The end date cannot be before the decision day.",
+    "renewalPendingError": "Cancel the undecided renewal before closing this approval.",
+    "renewalTargetError": "The approval has changed. Refresh and select the latest approval."
   }
 }

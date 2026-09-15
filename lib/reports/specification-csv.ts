@@ -102,7 +102,7 @@ const FULL_COLUMNS = Object.freeze([
   column('isoChapter', item => item.qualityCharacteristicChapterId ?? ''),
   column('normReferenceUri', item => formatNormReferenceUris(item)),
   column('deviationSignal', (item, _locale, labels) =>
-    formatDeviationSignal(item.deviationCounts, labels),
+    formatDeviationSignal(item.deviationCounts, labels, item),
   ),
 ])
 

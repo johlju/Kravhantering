@@ -1,4 +1,5 @@
 import type { TraceabilityReportItem } from '@/lib/dal/requirements-specifications'
+import type { ReportAgreementContext } from '@/lib/reports/data/agreement-context'
 import type { SpecificationTraceabilityData } from '@/lib/reports/data/specification-traceability'
 import { createReportPriorityIdentityFromItem } from '@/lib/reports/priority'
 import {
@@ -7,6 +8,7 @@ import {
   getReportLabels,
   localizeReportValue,
 } from '@/lib/reports/report-labels'
+import { formatDeviationSignal } from '@/lib/reports/specification-output-format'
 import type { ReportModel, ReportSection } from '@/lib/reports/types'
 
 function buildCoverSection(
@@ -87,6 +89,7 @@ function formatVerification(
 function formatDeviationCounts(
   item: TraceabilityReportItem,
   locale: string,
+  agreement?: ReportAgreementContext | null,
 ): string {
   const labels = getReportLabels(locale)
   if (item.deviationCounts.total === 0) {
@@ -98,10 +101,13 @@ function formatDeviationCounts(
     [labels.deviations.approved, item.deviationCounts.approved],
     [labels.deviations.rejected, item.deviationCounts.rejected],
   ]
-  return counts
+  const outcomes = counts
     .filter(([, count]) => count > 0)
     .map(([label, count]) => `${label}: ${count}`)
     .join(', ')
+  return item.deviationCounts.applicable === undefined
+    ? outcomes
+    : `${outcomes} · ${formatDeviationSignal(item.deviationCounts, labels, { ...item, agreement })}`
 }
 
 function countByLabel(
@@ -211,7 +217,7 @@ function buildTableSection(
     },
     rows: data.items.map(item => ({
       area: formatArea(item, locale),
-      deviation: formatDeviationCounts(item, locale),
+      deviation: formatDeviationCounts(item, locale, data.agreement),
       needsReference: item.needsReference ?? '',
       note: item.note ?? '',
       origin: formatOrigin(item, locale),

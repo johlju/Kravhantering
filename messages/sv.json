@@ -1020,7 +1020,35 @@
     "affectedRequirementIds": "Berörda krav-ID:n",
     "bulkDeviationPartialFail": "Avstegsförfrågningar misslyckades för krav-ID:n: {ids}. De kraven är fortfarande markerade.",
     "statusCancelled": "Avbrutet",
-    "manageCancellation": "Avbryt i kravunderlaget"
+    "manageApproval": "Hantera godkännande och förnyelse",
+    "manageCancellation": "Avbryt i kravunderlaget",
+    "conditions": "Villkor för godkännandet",
+    "conditionsHelp": "Valfria villkor för tillåtelsen. Villkoren bevaras med beslutet.",
+    "validity": "Giltighet",
+    "validityHelp": "Tillåtelsen börjar vid godkännandet. Välj ett inkluderande slutdatum eller ingen tidsbegränsning.",
+    "unlimitedValidity": "Ingen tidsbegränsning",
+    "limitedValidity": "Ange slutdatum",
+    "validThrough": "Gäller till och med",
+    "validThroughHelp": "Godkännandet gäller till och med detta datum enligt Europe/Stockholm. Datumet får inte vara före beslutsdagen.",
+    "validThroughValue": "Gäller till och med {date} (Europe/Stockholm)",
+    "renewDeviation": "Begär förnyelse",
+    "renewalOf": "Förnyelse av godkännande #{id}",
+    "closeApproval": "Avsluta godkänt avsteg",
+    "closeApprovalHelp": "Avsluta tillåtelsen för det gemensamma avsteget. Ange en motivering. Avbryt först eventuell obeslutad förnyelse. Avslut verifierar inte kravet.",
+    "sharedApprovalScope": "Åtgärden gäller det gemensamma avsteget i samtliga berörda avtal: {references}.",
+    "endedFollowup": "Avstegets giltighet har upphört – åtgärd krävs",
+    "closedFollowup": "Det godkända avsteget har avslutats – åtgärd krävs",
+    "applicability": {
+      "pending": "Väntar på beslut",
+      "rejected": "Avslaget",
+      "cancelled": "Avbrutet",
+      "applicable": "Gällande godkänt avsteg",
+      "expired": "Giltighetstiden har löpt ut",
+      "superseded": "Godkännandet har ersatts",
+      "closed": "Godkännandet har avslutats manuellt",
+      "content_replaced": "Granskat innehåll har ersatts",
+      "agreement_ended": "Avtalet har upphört"
+    }
   },
   "improvementSuggestion": {
     "attachImplementation": "Koppla genomförandeversion",
@@ -1270,7 +1298,10 @@
         "submittedBy": "Inlämnad av",
         "pending": "Väntande",
         "approved": "Godkänd",
-        "rejected": "Avslagen"
+        "rejected": "Avslagen",
+        "applicable": "Gällande godkänt avsteg",
+        "ended": "Tillåtelsen har upphört",
+        "followup": "Åtgärd krävs"
       },
       "traceability": {
         "summaryTitle": "Sammanfattning",
@@ -3965,6 +3996,9 @@
     "viewingAgreement": "Visar avtal: {reference}",
     "viewingAgreementBadge": "Visar avtal",
     "neverEffective": "trädde aldrig i kraft",
-    "historyComparedWith": "Jämfört med {reference}"
+    "historyComparedWith": "Jämfört med {reference}",
+    "deviationDateError": "Slutdatum får inte vara före beslutsdagen.",
+    "renewalPendingError": "Avbryt den obeslutade förnyelsen innan godkännandet avslutas.",
+    "renewalTargetError": "Godkännandet har ändrats. Uppdatera och välj det senaste godkännandet."
   }
 }
