@@ -2670,12 +2670,17 @@ export default function RequirementsTable({
       case 'needsReference':
         return (
           <td
-            className={`py-2 px-2 truncate text-secondary-600 dark:text-secondary-400 ${archivedContentClass} ${dividerClass}`}
+            className={`${onNeedsReferenceChange && row.itemRef ? 'py-1 px-1' : 'py-2 px-2'} truncate text-secondary-600 dark:text-secondary-400 ${archivedContentClass} ${dividerClass}`}
           >
             {onNeedsReferenceChange && row.itemRef ? (
               <select
                 aria-label={t('needsReference')}
-                className="min-h-11 w-full min-w-36 rounded-lg border border-secondary-200 bg-white px-2 py-1.5 text-sm text-secondary-700 focus:outline-none focus:ring-2 focus:ring-primary-400/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-200"
+                className="w-auto max-w-full rounded-lg border border-gray-300 dark:border-secondary-600 bg-white dark:bg-secondary-800/50 py-1 px-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-400/50 dark:focus:ring-primary-400/50 transition-all duration-200"
+                {...devMarker({
+                  context: 'requirements specification detail',
+                  name: 'needs reference select',
+                  priority: 300,
+                })}
                 onChange={event => {
                   const value = event.target.value
                   onNeedsReferenceChange(
