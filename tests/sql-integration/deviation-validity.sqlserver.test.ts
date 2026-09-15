@@ -256,6 +256,107 @@ describe('deviation approval terms', () => {
     })
   })
 
+  it.each(['library', 'local'] as const)(
+    'rejects renewal of a closed %s approval and accepts a fresh independently reviewed request',
+    async kind => {
+      const db = database()
+      const specification = await createSpecificationFixture(
+        db,
+        `CLOSED-${kind}`,
+      )
+      const context = await makeRequestContext()
+      const workflow = createSpecificationAgreementWorkflow(db)
+      let itemId: number
+      if (kind === 'local') {
+        itemId = (
+          await createSpecificationLocalRequirement(db, specification.id, {
+            description: 'Service access',
+          })
+        ).id
+      } else {
+        const area = await createArea(db)
+        const requirement = await createPublishedRequirement(
+          db,
+          area.id,
+          'Service access',
+        )
+        await linkRequirementsToSpecificationAtomically(db, specification.id, {
+          requirementIds: [requirement.requirementId],
+        })
+        const view = await workflow.read(context, specification.id)
+        itemId = Number(view.items[0]?.itemRef.split(':')[1])
+      }
+      const create = (renewsDeviationId?: number) =>
+        kind === 'local'
+          ? createSpecificationLocalDeviation(db, {
+              specificationLocalRequirementId: itemId,
+              motivation: 'Permission needed',
+              renewsDeviationId,
+            })
+          : createDeviation(db, {
+              specificationItemId: itemId,
+              motivation: 'Permission needed',
+              renewsDeviationId,
+            })
+      const request =
+        kind === 'local' ? requestSpecificationLocalReview : requestReview
+      const decide =
+        kind === 'local' ? recordSpecificationLocalDecision : recordDecision
+      const terms = {
+        decision: 1,
+        decisionMotivation: 'Accepted after review',
+        decidedBy: 'Reviewer',
+        decidedByHsaId: 'SE-REVIEWER',
+      }
+      const first = await create()
+      await request(db, first.id)
+      await decide(db, first.id, terms)
+      await workflow.mutate(context, specification.id, {
+        operation: 'close_deviation',
+        itemRef: `${kind === 'local' ? 'local' : 'lib'}:${itemId}`,
+        deviationId: first.id,
+        reason: 'Permission no longer needed',
+      })
+      await expect(create(first.id)).rejects.toMatchObject({
+        status: 409,
+        details: { reason: 'deviation_approval_closed' },
+      })
+      expect(
+        (await workflow.read(context, specification.id)).deviations,
+      ).toHaveLength(1)
+      const fresh = await create()
+      const pending = await workflow.read(context, specification.id)
+      expect(
+        pending.deviations.find(value => value.id === fresh.id),
+      ).toMatchObject({
+        renewsDeviationId: null,
+        applicability: 'pending',
+      })
+      expect(
+        pending.deviations.find(value => value.id === first.id),
+      ).toMatchObject({
+        applicability: 'closed',
+      })
+      await request(db, fresh.id)
+      await decide(db, fresh.id, terms)
+      const approved = await workflow.read(context, specification.id)
+      expect(
+        approved.deviations.find(value => value.id === fresh.id),
+      ).toMatchObject({
+        renewsDeviationId: null,
+        applicability: 'applicable',
+      })
+      expect(approved.deviationEndings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            deviationId: first.id,
+            endingKind: 'closed',
+          }),
+        ]),
+      )
+    },
+  )
+
   it.each([
     ['2030-03-31', '2030-03-31T21:59:59.999Z', '2030-03-31T22:00:00Z'],
     ['2030-10-27', '2030-10-27T22:59:59.999Z', '2030-10-27T23:00:00Z'],
@@ -899,7 +1000,6 @@ describe('deviation approval terms', () => {
     const next = await createSpecificationLocalDeviation(db, {
       specificationLocalRequirementId: item.id,
       motivation: 'Legacy second',
-      renewsDeviationId: first.id,
     })
     await requestSpecificationLocalReview(db, next.id)
     await recordSpecificationLocalDecision(db, next.id, {

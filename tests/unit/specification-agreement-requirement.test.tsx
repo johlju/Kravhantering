@@ -1227,6 +1227,64 @@ describe('approval validity and follow-up in the selected agreement', () => {
     fetchMock.mockRestore()
   })
 
+  it.each([null, '2020-09-30'])(
+    'requires a fresh request after manual closure, including when validThrough is %s',
+    async validThrough => {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('{}'))
+      render(
+        <ConfirmModalProvider>
+          <SpecificationAgreementDeviations
+            item={item}
+            onChange={vi.fn()}
+            specificationId={5}
+            view={{
+              ...approvalView,
+              deviations: [{ ...approval, validThrough }],
+              deviationEndings: [
+                {
+                  id: 1,
+                  itemRef: item.itemRef,
+                  deviationId: approval.id,
+                  agreementId: null,
+                  endedAt: new Date('2021-01-01'),
+                  cancelledAt: null,
+                  endingKind: 'closed',
+                  reason: 'Resolved',
+                },
+              ],
+            }}
+          />
+        </ConfirmModalProvider>,
+      )
+      expect(
+        screen.queryByRole('button', { name: 'deviation.renewDeviation' }),
+      ).toBeNull()
+      const request = screen.getByRole('button', {
+        name: 'deviation.requestDeviation',
+      })
+      expect(request).toHaveAttribute(
+        'data-developer-mode-value',
+        'new request without renewal link',
+      )
+      await userEvent.click(request)
+      await userEvent.type(
+        screen.getByRole('textbox', { name: /deviation.motivation/ }),
+        'A new need for permission',
+      )
+      await userEvent.click(
+        screen.getByRole('button', { name: 'deviation.newDeviation' }),
+      )
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+        agreementId: 2,
+        motivation: 'A new need for permission',
+      })
+      fetchMock.mockRestore()
+    },
+  )
+
   it('keeps frozen approval applicable and shows later expiry separately', async () => {
     const frozen = {
       ...approvalView,

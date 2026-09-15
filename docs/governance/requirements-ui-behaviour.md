@@ -1260,6 +1260,10 @@ Avstegskorten visar godkännandets villkor, inkluderande slutdatum och gällande
 tillåtelse separat från det bevarade beslutet. Förnyelse är ett nytt länkat
 avsteg. Berörda avtal visas före förnyelsebeslut och manuellt avslut. Endast
 tilldelad kravunderlagsansvarig får avsluta godkännandet med motivering.
+Efter manuellt avslut visas **Begär ett avsteg**. Det nya ärendet saknar
+förnyelselänk och behöver en egen granskning och ett nytt beslut. Ett
+godkännande vars slutdatum har passerat kan fortfarande förnyas om det inte
+har avslutats manuellt.
 
 Giltighetens slutdatum visas som ett kalenderdatum och gäller hela den svenska
 dagen. Datumet förskjuts inte med webbläsarens tidszon. Klockslag för beslut

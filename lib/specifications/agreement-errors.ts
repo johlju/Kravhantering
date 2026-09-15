@@ -2,6 +2,7 @@ const reasonKeys = {
   deviation_date_invalid: 'deviationDateError',
   deviation_renewal_pending: 'renewalPendingError',
   deviation_renewal_target: 'renewalTargetError',
+  deviation_approval_closed: 'closedApprovalError',
   deviation_superseded: 'renewalTargetError',
   active_deviation_exists: 'activeDeviationError',
   specification_content_locked: 'contentLockedError',

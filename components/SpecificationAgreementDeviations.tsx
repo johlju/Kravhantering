@@ -122,6 +122,11 @@ export default function SpecificationAgreementDeviations({
         new Date(b.decidedAt ?? 0).getTime() -
           new Date(a.decidedAt ?? 0).getTime() || b.id - a.id,
     )[0]
+  const latestApprovalClosed =
+    !!latestApproval &&
+    endingsFor(latestApproval.id).some(
+      ending => ending.endingKind === 'closed' && ending.endedAt,
+    )
   const frozenCase = (id: number) =>
     item.deviationStateSnapshot?.find(deviation => deviation.id === id)
   const changedAfterFreeze = (deviation: (typeof cases)[number]) => {
@@ -421,6 +426,7 @@ export default function SpecificationAgreementDeviations({
               })}
             >
               {view.canAuthor &&
+                !latestApprovalClosed &&
                 !cases.some(value => value.decision === null) && (
                   <button
                     className="btn-secondary"
@@ -556,7 +562,7 @@ export default function SpecificationAgreementDeviations({
   }
 
   const createAction = active &&
-    !latestApproval &&
+    (!latestApproval || latestApprovalClosed) &&
     view.canAuthor &&
     !cases.some(
       deviation =>
@@ -566,8 +572,14 @@ export default function SpecificationAgreementDeviations({
       <button
         className="min-h-11 w-full text-center rounded-xl border border-amber-500 bg-amber-500 px-3 py-2 text-sm font-semibold text-secondary-950 shadow-sm hover:border-amber-600 hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-50 dark:border-amber-500 dark:bg-amber-500 dark:text-secondary-950 dark:hover:bg-amber-400"
         disabled={busy}
+        {...devMarker({
+          name: 'deviation request',
+          value: 'new request without renewal link',
+          priority: 350,
+        })}
         onClick={() => {
           setError(null)
+          setRenewing(null)
           setCreating(true)
         }}
         type="button"

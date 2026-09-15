@@ -2216,12 +2216,16 @@ Knapparna Stäng och Avsluta utan beslut har mellanrum även i smal vy.
 förnyelse och kontrollera berörda avtal. Begär granskning. Granskaren anger nya
 villkor och giltighet samt godkänner. Som tilldelad kravunderlagsansvarig,
 avsluta det nya godkännandet med motivering. Ta bort avtalsutkastet.
+Kontrollera att **Begär förnyelse** inte visas och registrera i stället ett
+nytt avsteg med **Begär ett avsteg**.
 
 **Förväntat resultat:** Det tidigare godkännandet ersätts för hela det
 gemensamma sammanhanget. Avslutet kvarstår i aktuellt avtal efter borttagning
 av utkastet. Originalbeslut och historiska tillstånd bevaras. Medförfattare
 eller Admin utan ansvarstilldelning får inte avsluta godkännandet. En obeslutad
-förnyelse måste avbrytas först.
+förnyelse måste avbrytas först. Efter manuellt avslut krävs ett nytt avsteg
+utan förnyelselänk och ett nytt granskningsbeslut. Det avslutade
+godkännandets historik bevaras.
 
 ### DEV-12: följ upp upphörd tillåtelse
 

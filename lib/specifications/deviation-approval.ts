@@ -34,9 +34,14 @@ export async function assertRenewalTarget(
   renewsDeviationId: number | undefined,
 ): Promise<void> {
   if (renewsDeviationId === undefined) return
-  const { cases, binding } = deviationTables(kind)
-  const latest = await db.query<Array<{ id: number }>>(
-    `SELECT TOP (1) id FROM ${cases} WHERE ${binding} = @0 AND decision = 1 ORDER BY decided_at DESC, id DESC`,
+  const { cases, binding, endingCase } = deviationTables(kind)
+  const latest = await db.query<Array<{ id: number; isClosed: number }>>(
+    `SELECT TOP (1) approval.id,
+       CASE WHEN EXISTS (SELECT 1 FROM specification_deviation_endings ending
+         WHERE ending.${endingCase} = approval.id AND ending.ending_kind = 'closed'
+           AND ending.ended_at IS NOT NULL) THEN 1 ELSE 0 END AS isClosed
+     FROM ${cases} approval WHERE approval.${binding} = @0 AND approval.decision = 1
+     ORDER BY approval.decided_at DESC, approval.id DESC`,
     [itemId],
   )
   if (latest[0]?.id !== renewsDeviationId)
@@ -44,6 +49,10 @@ export async function assertRenewalTarget(
       'Renewal must refer to the latest approval of this exact content',
       { reason: 'deviation_renewal_target' },
     )
+  if (latest[0].isClosed)
+    throw conflictError('Closed approval requires a new deviation request', {
+      reason: 'deviation_approval_closed',
+    })
 }
 
 /** Replacement and inherited ending plans commit with the new decision. */

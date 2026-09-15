@@ -3999,6 +3999,7 @@
     "historyComparedWith": "Compared with {reference}",
     "deviationDateError": "The end date cannot be before the decision day.",
     "renewalPendingError": "Cancel the undecided renewal before closing this approval.",
-    "renewalTargetError": "The approval has changed. Refresh and select the latest approval."
+    "renewalTargetError": "The approval has changed. Refresh and select the latest approval.",
+    "closedApprovalError": "The approval has been closed. Refresh and request a new deviation."
   }
 }

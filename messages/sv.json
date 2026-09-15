@@ -3999,6 +3999,7 @@
     "historyComparedWith": "Jämfört med {reference}",
     "deviationDateError": "Slutdatum får inte vara före beslutsdagen.",
     "renewalPendingError": "Avbryt den obeslutade förnyelsen innan godkännandet avslutas.",
-    "renewalTargetError": "Godkännandet har ändrats. Uppdatera och välj det senaste godkännandet."
+    "renewalTargetError": "Godkännandet har ändrats. Uppdatera och välj det senaste godkännandet.",
+    "closedApprovalError": "Godkännandet har avslutats. Uppdatera och begär ett nytt avsteg."
   }
 }

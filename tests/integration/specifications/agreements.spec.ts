@@ -1553,6 +1553,46 @@ test('DEV-11/DEV-12: shared renewal and responsible closure survive draft discar
     await expect(
       status.getByRole('option', { name: 'Deviated', exact: true }),
     ).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: 'Request renewal', exact: true }),
+    ).toHaveCount(0)
+    const freshRequest = page.getByRole('button', {
+      name: 'Request a deviation',
+      exact: true,
+    })
+    await expect(freshRequest).toHaveAttribute(
+      'data-developer-mode-value',
+      'new request without renewal link',
+    )
+    await freshRequest.click()
+    const freshDialog = page.getByRole('dialog', {
+      name: 'Request a deviation',
+      exact: true,
+    })
+    await freshDialog
+      .locator('#deviation-motivation')
+      .fill('New permission after closure')
+    const freshResponse = page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname ===
+          `/api/specification-item-deviations/${encodeURIComponent(itemRef)}` &&
+        response.request().method() === 'POST',
+    )
+    await freshDialog
+      .getByRole('button', { name: 'Register deviation', exact: true })
+      .click()
+    const created = await freshResponse
+    expect(created.ok(), await created.text()).toBe(true)
+    expect(created.request().postDataJSON()).not.toHaveProperty(
+      'renewsDeviationId',
+    )
+    await expect(freshDialog).toBeHidden()
+    await expect(
+      page.getByRole('article', {
+        name: 'New permission after closure',
+        exact: true,
+      }),
+    ).toContainText('Review ↗')
   } finally {
     await reviewContext.close()
     await owner.dispose()
