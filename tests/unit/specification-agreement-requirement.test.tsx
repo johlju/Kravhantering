@@ -14,6 +14,7 @@ import SpecificationAgreementHistory from '@/components/SpecificationAgreementHi
 import SpecificationAgreementRequirement from '@/components/SpecificationAgreementRequirement'
 import { requirementContentChange } from '@/lib/specifications/agreement-history'
 import type { AgreementItem } from '@/lib/specifications/agreements'
+import enMessages from '@/messages/en.json'
 import { requireTestValue } from '@/tests/helpers/require-test-value'
 
 const { historyFetch } = vi.hoisted(() => ({ historyFetch: vi.fn() }))
@@ -27,7 +28,13 @@ vi.mock('@/lib/http/api-fetch', () => ({
 vi.mock('next-intl', () => ({
   useLocale: () => 'en',
   useTranslations: (namespace: string) => {
-    const t = (key: string) => `${namespace}.${key}`
+    const t = (key: string, values?: Record<string, unknown>) =>
+      namespace === 'deviation' && key === 'validThroughValue'
+        ? enMessages.deviation.validThroughValue.replace(
+            '{date}',
+            String(values?.date),
+          )
+        : `${namespace}.${key}`
     t.rich = t
     return t
   },
@@ -1155,6 +1162,10 @@ describe('approval validity and follow-up in the selected agreement', () => {
       screen.getByText('deviation.applicability.expired'),
     ).toBeInTheDocument()
     expect(screen.getByText(/Weekly access review/)).toBeInTheDocument()
+    expect(screen.getByText('Valid through 2020-09-30')).toHaveAttribute(
+      'data-developer-mode-value',
+      'inclusive calendar end date',
+    )
     expect(screen.getByText('deviation.endedFollowup')).toHaveAttribute(
       'role',
       'status',

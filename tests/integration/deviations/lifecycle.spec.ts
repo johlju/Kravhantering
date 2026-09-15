@@ -8,6 +8,7 @@ import {
   test,
 } from '@playwright/test'
 import { escapeRegExp } from '@/tests/helpers/common'
+import { requireTestValue } from '@/tests/helpers/require-test-value'
 import { DESKTOP_VIEWPORT } from '../../helpers/desktop-viewport'
 import { expectApiResponseStatus } from '../api-response-assertions'
 import { expectApiResponseOkWithRetry } from '../api-retry-helpers'
@@ -20,6 +21,7 @@ import {
 import { resolveIntegrationBaseUrl } from '../base-url'
 
 interface DeviationData {
+  decidedAt: string | null
   decision: number | null
   decisionMotivation: string | null
   id: number
@@ -247,10 +249,12 @@ async function newRolePage(
   testInfo: TestInfo,
   role: RoleContext,
   viewport: (typeof viewports)[number],
+  timezoneId?: string,
 ) {
   const context = await browser.newContext({
     baseURL: resolveIntegrationBaseUrl(testInfo),
     storageState: ROLE_STORAGE_STATE[role],
+    timezoneId,
     viewport: { height: viewport.height, width: viewport.width },
   })
   const page = await context.newPage()
@@ -341,6 +345,7 @@ for (const viewport of viewports) {
           testInfo,
           'reviewer',
           viewport,
+          'America/New_York',
         )
 
         try {
@@ -355,13 +360,15 @@ for (const viewport of viewports) {
               fixture.uniqueId,
             )
             await expect(
-              detailPane.getByRole('button', { name: 'Begär ett avsteg' }),
+              detailPane.getByRole('button', {
+                name: /^Begär (ett avsteg|förnyelse)$/,
+              }),
             ).toBeVisible()
           })
 
           await test.step('create a draft deviation', async () => {
             await detailPane
-              .getByRole('button', { name: 'Begär ett avsteg' })
+              .getByRole('button', { name: /^Begär (ett avsteg|förnyelse)$/ })
               .click()
 
             const dialog = page.getByRole('dialog', {
@@ -456,6 +463,30 @@ for (const viewport of viewports) {
               .getByRole('button', { name: 'Registrera beslut' })
               .click()
             await expect(decisionDialog).toBeHidden()
+
+            if (deviationCase.action === 'approve') {
+              const approved = reviewerDetailPane
+                .getByRole('article', { name: motivation, exact: true })
+                .first()
+              await expect(
+                approved.getByText('Gäller till och med 2099-09-30', {
+                  exact: true,
+                }),
+              ).toBeVisible()
+              await approved
+                .getByText('Registrerande information', { exact: true })
+                .click()
+              const decidedAt = requireTestValue(
+                (await listDeviations(reviewerRequest, fixture.itemRef)).at(-1)
+                  ?.decidedAt,
+              )
+              const localDecisionTime = new Intl.DateTimeFormat('sv', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+                timeZone: 'America/New_York',
+              }).format(new Date(decidedAt))
+              await expect(approved).toContainText(localDecisionTime)
+            }
 
             await assertDeviationStatus(
               reviewerDetailPane,

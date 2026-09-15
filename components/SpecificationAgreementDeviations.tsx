@@ -157,7 +157,6 @@ export default function SpecificationAgreementDeviations({
       ? new Intl.DateTimeFormat(locale, {
           dateStyle: 'medium',
           timeStyle: 'short',
-          timeZone: 'Europe/Stockholm',
         }).format(new Date(value))
       : ta('notRecorded')
   const actor = (value: string | null | undefined) =>
@@ -333,7 +332,13 @@ export default function SpecificationAgreementDeviations({
             })}
           >
             <p role="status">{t(`applicability.${state}`)}</p>
-            <p>
+            <p
+              {...devMarker({
+                name: 'approval validity',
+                value: 'inclusive calendar end date',
+                priority: 350,
+              })}
+            >
               {deviation.validThrough
                 ? t('validThroughValue', { date: deviation.validThrough })
                 : t('unlimitedValidity')}

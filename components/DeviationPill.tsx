@@ -128,7 +128,13 @@ function DeviationPillContent({
           })}
         >
           <p>{t(`applicability.${deviation.applicability}`)}</p>
-          <p>
+          <p
+            {...devMarker({
+              name: 'approval validity',
+              value: 'inclusive calendar end date',
+              priority: 350,
+            })}
+          >
             {deviation.validThrough
               ? t('validThroughValue', { date: deviation.validThrough })
               : t('unlimitedValidity')}

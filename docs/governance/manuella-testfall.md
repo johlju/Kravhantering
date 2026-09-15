@@ -2133,10 +2133,14 @@ gäller även för historiska sammanhang.
 ### DEV-04: godkänn avsteg
 
 **Steg:** Som behörig kravgranskare, godkänn avsteg med kommentar, valfria
-villkor och slutdatum. Prova även ingen tidsbegränsning.
+villkor och slutdatum. Begär förnyelse om kravet redan har ett godkännande.
+Prova även ingen tidsbegränsning. Öppna beslutets
+registrerande information med webbläsaren inställd på en annan tidszon.
 
 **Förväntat resultat:** Beslut, villkor och inkluderande slutdatum bevaras.
-Tillåtelsen börjar vid beslutet och gäller enligt Europe/Stockholm.
+Slutdatum visas som exempelvis "Gäller till och med 2026-09-30". Datumet
+gäller hela den svenska dagen och är detsamma i alla tidszoner. Registrerade
+klockslag visas i webbläsarens tidszon. Tillåtelsen börjar vid beslutet.
 
 ### DEV-05: avslå avsteg
 

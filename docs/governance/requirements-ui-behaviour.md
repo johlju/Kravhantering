@@ -1261,6 +1261,10 @@ tillåtelse separat från det bevarade beslutet. Förnyelse är ett nytt länkat
 avsteg. Berörda avtal visas före förnyelsebeslut och manuellt avslut. Endast
 tilldelad kravunderlagsansvarig får avsluta godkännandet med motivering.
 
+Giltighetens slutdatum visas som ett kalenderdatum och gäller hela den svenska
+dagen. Datumet förskjuts inte med webbläsarens tidszon. Klockslag för beslut
+och händelser i avstegshistoriken visas däremot i webbläsarens tidszon.
+
 När tillåtelsen upphör behålls användningsstatusen, även Avviken. Lista och
 detalj visar åtgärdsbehov tills Verifierad registreras eller ny tillåtelse
 gäller. Byte från Verifierad återställer flaggan. Frysta avtal behåller sitt
