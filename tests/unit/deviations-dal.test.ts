@@ -926,3 +926,96 @@ describe('deviations DAL (SQL Server path)', () => {
     },
   )
 })
+
+describe.each([
+  ['library', recordDecision],
+  ['local', recordSpecificationLocalDecision],
+] as const)('%s approval terms', (_kind, decide) => {
+  const decision = {
+    decision: DEVIATION_APPROVED,
+    decisionMotivation: 'Accepted',
+    decidedBy: 'Reviewer',
+    decidedByHsaId: 'SE5560000001-reviewer1',
+  }
+
+  it.each([
+    { validThrough: '2020-01-01' },
+    { validThrough: '2099-02-30' },
+    { conditions: 'x'.repeat(10001) },
+  ])('rejects invalid approval terms before writing (%#)', async terms => {
+    const { db, query } = createSqlServerDb()
+    await expect(
+      decide(db, 7, { ...decision, ...terms }),
+    ).rejects.toMatchObject({ code: 'validation' })
+    expect(query).not.toHaveBeenCalled()
+  })
+
+  it('persists trimmed conditions and the inclusive end date with the decision', async () => {
+    const { db, query } = createSqlServerDb()
+    query.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValue([])
+    await decide(db, 7, {
+      ...decision,
+      conditions: '  Weekly review  ',
+      validThrough: '2099-09-30',
+    })
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('conditions = @6'),
+      [
+        1,
+        'Accepted',
+        'Reviewer',
+        decision.decidedByHsaId,
+        expect.any(Date),
+        7,
+        'Weekly review',
+        '2099-09-30',
+      ],
+    )
+    expect(query).toHaveBeenCalledTimes(3)
+  })
+
+  it('normalizes blank approval conditions and excludes approval terms from rejection', async () => {
+    const { db, query } = createSqlServerDb()
+    query.mockResolvedValue([{ id: 7 }])
+    await decide(db, 7, { ...decision, conditions: '  ' })
+    expect(query.mock.calls[0][1]?.slice(-2)).toEqual([null, null])
+    query.mockClear()
+    await decide(db, 7, {
+      ...decision,
+      decision: DEVIATION_REJECTED,
+      conditions: 'Unused approval terms',
+      validThrough: '2020-01-01',
+    })
+    expect(query.mock.calls[0][1]?.slice(-2)).toEqual([null, null])
+    expect(query).toHaveBeenCalledOnce()
+  })
+})
+
+describe('persisted approval details', () => {
+  it.each([getDeviation, getSpecificationLocalDeviation])(
+    'returns conditions, calendar validity and the renewal link (%#)',
+    async get => {
+      const { db, query } = createSqlServerDb()
+      query.mockResolvedValue([
+        {
+          id: 10,
+          specificationItemId: 3,
+          specificationLocalRequirementId: 3,
+          isSpecificationLocal: get === getSpecificationLocalDeviation,
+          conditions: 'Weekly review',
+          validThrough: new Date('2026-09-30T00:00:00Z'),
+          renewsDeviationId: '7',
+          applicability: 'applicable',
+          decision: 1,
+        },
+      ])
+      expect(await get(db, 10)).toMatchObject({
+        conditions: 'Weekly review',
+        validThrough: '2026-09-30',
+        renewsDeviationId: 7,
+        applicability: 'applicable',
+      })
+    },
+  )
+})

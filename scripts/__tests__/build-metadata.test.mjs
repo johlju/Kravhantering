@@ -1,19 +1,18 @@
 import fs from 'node:fs'
-import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import buildMetadataTools from '../build-metadata.js'
 
 // cSpell:ignore FULLSEMVER showvariable
 
-const require = createRequire(import.meta.url)
 const {
   DEFAULT_MIGRATIONS_DIR,
   UNKNOWN_COMMIT_SHA,
   createBuildMetadata,
   readExpectedDatabaseSchemaVersion,
   writeBuildMetadata,
-} = require('../build-metadata.js')
+} = buildMetadataTools
 
 const tempDirs = []
 

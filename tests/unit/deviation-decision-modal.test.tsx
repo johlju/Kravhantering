@@ -161,4 +161,78 @@ describe('DeviationDecisionModal', () => {
       validThrough: '2099-09-30',
     })
   })
+  it('submits unlimited approval with empty conditions normalized to null', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <DeviationDecisionModal onClose={vi.fn()} onSubmit={onSubmit} open />,
+    )
+    await userEvent.type(
+      screen.getByLabelText(/Decision motivation/, { selector: 'textarea' }),
+      '  Accepted  ',
+    )
+    await userEvent.type(
+      screen.getByLabelText('conditions', { selector: 'textarea' }),
+      '   ',
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Record decision' }),
+    )
+    expect(onSubmit).toHaveBeenCalledWith(1, 'Accepted', {
+      conditions: null,
+      validThrough: null,
+    })
+  })
+
+  it('requires a future or current end date only while approval validity is limited', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <DeviationDecisionModal onClose={vi.fn()} onSubmit={onSubmit} open />,
+    )
+    await userEvent.type(
+      screen.getByLabelText(/Decision motivation/, { selector: 'textarea' }),
+      'Accepted',
+    )
+    const submit = screen.getByRole('button', { name: 'Record decision' })
+    await userEvent.click(screen.getByLabelText('limitedValidity'))
+    expect(submit).toBeDisabled()
+    await userEvent.type(
+      screen.getByLabelText('validThrough', { selector: 'input' }),
+      '2020-01-01',
+    )
+    expect(submit).toBeDisabled()
+    await userEvent.click(screen.getByLabelText('unlimitedValidity'))
+    expect(submit).toBeEnabled()
+    await userEvent.click(submit)
+    expect(onSubmit).toHaveBeenCalledWith(1, 'Accepted', {
+      conditions: null,
+      validThrough: null,
+    })
+  })
+
+  it('allows rejection without approval terms even after entering an expired end date', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <DeviationDecisionModal
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+        open
+        scopeNotice="Applies to agreements A and B"
+      />,
+    )
+    expect(screen.getByText('Applies to agreements A and B')).toBeVisible()
+    await userEvent.type(
+      screen.getByLabelText(/Decision motivation/, { selector: 'textarea' }),
+      'Rejected',
+    )
+    await userEvent.click(screen.getByLabelText('limitedValidity'))
+    await userEvent.type(
+      screen.getByLabelText('validThrough', { selector: 'input' }),
+      '2020-01-01',
+    )
+    await userEvent.click(screen.getByRole('radio', { name: 'Reject' }))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Record decision' }),
+    )
+    expect(onSubmit).toHaveBeenCalledWith(2, 'Rejected')
+  })
 })

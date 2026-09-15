@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest'
+import { agreementErrorMessage } from '@/lib/specifications/agreement-errors'
+
+describe('agreement mutation error messages', () => {
+  const translate = (key: string) => `agreement.${key}`
+
+  it.each([
+    ['deviation_date_invalid', 'deviationDateError'],
+    ['deviation_renewal_pending', 'renewalPendingError'],
+    ['deviation_renewal_target', 'renewalTargetError'],
+    ['deviation_approval_closed', 'closedApprovalError'],
+    ['deviation_superseded', 'renewalTargetError'],
+  ])('maps %s to actionable guidance', (reason, key) => {
+    expect(
+      agreementErrorMessage(
+        { code: 'conflict', details: { reason } },
+        translate,
+      ),
+    ).toBe(`agreement.${key}`)
+  })
+
+  it.each([
+    ['forbidden', 'permissionChangedError'],
+    ['not_found', 'contentChangedError'],
+    ['conflict', 'contentChangedError'],
+    ['validation', 'invalidInputError'],
+    ['internal', 'saveFailed'],
+  ])(
+    'uses the public %s error category when the reason is unknown',
+    (code, key) => {
+      expect(
+        agreementErrorMessage(
+          { code, details: { reason: 'Internal database message' } },
+          translate,
+        ),
+      ).toBe(`agreement.${key}`)
+    },
+  )
+
+  it('uses translated fallback text for an empty response', () => {
+    expect(agreementErrorMessage({}, translate, 'retryFailed')).toBe(
+      'agreement.retryFailed',
+    )
+  })
+})

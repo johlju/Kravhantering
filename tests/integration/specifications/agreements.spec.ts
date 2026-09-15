@@ -1502,6 +1502,61 @@ test('DEV-11/DEV-12: shared renewal and responsible closure survive draft discar
       return data
     })
     const itemRef = `local:${data.local.id}`
+    await test.step('Expired approval offers renewal without closure', async () => {
+      const reloadReady = async () => {
+        const refreshed = page.waitForResponse(
+          response =>
+            new URL(response.url()).pathname ===
+              `/api/requirements-specifications/${data.id}/items` &&
+            response.request().method() === 'GET',
+        )
+        await page.reload()
+        expect((await refreshed).ok()).toBe(true)
+        await expect(
+          page
+            .locator('[data-specification-detail-list-panel="items"] tbody')
+            .first(),
+        ).not.toHaveClass(/pointer-events-none/u)
+      }
+      await page.route(`**${data.endpoint}*`, async route => {
+        if (
+          route.request().method() !== 'GET' ||
+          route.request().url().includes('historyItemRef')
+        ) {
+          await route.continue()
+          return
+        }
+        const response = await route.fetch()
+        const body = await response.json()
+        await route.fulfill({
+          response,
+          json: {
+            ...body,
+            deviations: body.deviations.map((deviation: { itemRef: string }) =>
+              deviation.itemRef === itemRef
+                ? { ...deviation, validThrough: '2020-09-30' }
+                : deviation,
+            ),
+          },
+        })
+      })
+      await reloadReady()
+      await expand(page, data.local.uniqueId)
+      await expect(
+        page.getByRole('article', {
+          name: 'Original temporary permission',
+          exact: true,
+        }),
+      ).toContainText('Approval expired')
+      await expect(
+        page.getByRole('button', { name: 'Close approval', exact: true }),
+      ).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: 'Request renewal', exact: true }),
+      ).toBeEnabled()
+      await page.unroute(`**${data.endpoint}*`)
+      await reloadReady()
+    })
     await test.step('Renewal request', async () => {
       await expand(page, data.local.uniqueId)
       await page
@@ -1637,11 +1692,6 @@ test('DEV-11/DEV-12: shared renewal and responsible closure survive draft discar
       await leftPanel
         .getByRole('button', { name: 'Columns', exact: true })
         .click()
-      await leftPanel
-        .locator('[data-requirements-scroll-container="true"]')
-        .evaluate(node => {
-          node.scrollLeft = node.scrollWidth
-        })
       const status = page.getByRole('combobox', {
         name: 'Usage status',
         exact: true,

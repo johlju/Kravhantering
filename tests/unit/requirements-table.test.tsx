@@ -5108,4 +5108,16 @@ describe('RequirementsTable', () => {
       expect(requirementPackageCell?.textContent).toBe('—')
     })
   })
+  it('shows ended deviation follow-up beside the requirement description', () => {
+    render(
+      <RequirementsTable
+        locale="en"
+        rows={[makeRow({ deviationFollowup: true })]}
+        visibleColumns={DEFAULT_VISIBLE_REQUIREMENT_COLUMNS}
+      />,
+    )
+    const followup = screen.getByRole('status', { name: '' })
+    expect(followup).toHaveTextContent('endedFollowup')
+    expect(followup.closest('td')).toHaveTextContent('Testkrav')
+  })
 })

@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { SpecificationOutputData } from '@/lib/reports/data/specification-output'
 import type { SpecificationTraceabilityData } from '@/lib/reports/data/specification-traceability'
+import { getReportLabels } from '@/lib/reports/report-labels'
 import { createSpecificationCsvFormatter } from '@/lib/reports/specification-csv'
+import {
+  formatDeviationSignal,
+  formatQualityCharacteristic,
+} from '@/lib/reports/specification-output-format'
 import {
   canExportProcurementCsvForLifecycleStatus,
   getSpecificationReportProfileForLifecycleStatus,
 } from '@/lib/reports/specification-profiles'
 import { buildSpecificationProfileReport } from '@/lib/reports/templates/specification-profile-template'
 import { buildSpecificationTraceabilityReport } from '@/lib/reports/templates/specification-traceability-template'
+import { VERIFIED_SPECIFICATION_ITEM_STATUS_ID } from '@/lib/specification-item-status-constants'
 
 function outputData(): SpecificationOutputData {
   return {
@@ -578,5 +584,131 @@ describe('specification report profiles', () => {
       statusChangedAt: '',
       verification: 'Yes',
     })
+  })
+})
+
+describe('deviation signals in report output', () => {
+  const labels = getReportLabels('en')
+  const counts = {
+    total: 3,
+    pending: 1,
+    approved: 1,
+    rejected: 1,
+    applicable: 0,
+  }
+
+  it('combines pending, ended, follow-up and rejected signals for an unverified requirement', () => {
+    expect(
+      formatDeviationSignal(counts, labels, {
+        specificationItemStatusId: null,
+      }),
+    ).toBe(
+      [
+        labels.deviations.pending,
+        labels.deviations.ended,
+        labels.deviations.followup,
+        labels.deviations.rejected,
+      ].join(' · '),
+    )
+  })
+
+  it('keeps only current permission and follow-up when outcomes are suppressed', () => {
+    expect(
+      formatDeviationSignal(
+        counts,
+        labels,
+        { specificationItemStatusId: null },
+        { includeOutcomes: false },
+      ),
+    ).toBe(`${labels.deviations.ended} · ${labels.deviations.followup}`)
+    expect(
+      formatDeviationSignal({ ...counts, applicable: 1 }, labels, undefined, {
+        includeOutcomes: false,
+      }),
+    ).toBe(labels.deviations.applicable)
+  })
+
+  it('does not request follow-up for Verified usage, ended agreements, or missing item context', () => {
+    const ended = { ...counts, pending: 0, rejected: 0 }
+    expect(
+      formatDeviationSignal(ended, labels, {
+        specificationItemStatusId: VERIFIED_SPECIFICATION_ITEM_STATUS_ID,
+      }),
+    ).toBe(labels.deviations.ended)
+    expect(
+      formatDeviationSignal(ended, labels, {
+        specificationItemStatusId: null,
+        agreement: {
+          agreementReference: 'A',
+          id: 1,
+          state: 'ended',
+          effectiveDate: '2026-01-01',
+        },
+      }),
+    ).toBe(labels.deviations.ended)
+    expect(formatDeviationSignal(ended, labels)).toBe(labels.deviations.ended)
+  })
+
+  it('shows no permission signal when only unapproved requests exist and outcomes are suppressed', () => {
+    expect(
+      formatDeviationSignal({ ...counts, approved: 0 }, labels, undefined, {
+        includeOutcomes: false,
+      }),
+    ).toBe('')
+  })
+
+  it('retains outcome priority for counts without applicability', () => {
+    expect(
+      formatDeviationSignal(
+        { total: 1, pending: 1, approved: 0, rejected: 0 },
+        labels,
+      ),
+    ).toBe(labels.deviations.pending)
+    expect(
+      formatDeviationSignal(
+        { total: 1, pending: 0, approved: 1, rejected: 0 },
+        labels,
+      ),
+    ).toBe(labels.deviations.approved)
+    expect(
+      formatDeviationSignal(
+        { total: 1, pending: 0, approved: 0, rejected: 1 },
+        labels,
+      ),
+    ).toBe(labels.deviations.rejected)
+    expect(
+      formatDeviationSignal(
+        { total: 0, pending: 0, approved: 0, rejected: 0 },
+        labels,
+      ),
+    ).toBe('')
+    expect(
+      formatDeviationSignal(
+        { total: 1, pending: 1, approved: 0, rejected: 0 },
+        labels,
+        undefined,
+        { includeOutcomes: false },
+      ),
+    ).toBe('')
+  })
+
+  it('formats a quality name without inventing a missing chapter', () => {
+    const item = outputData().items[0]
+    expect(
+      formatQualityCharacteristic(
+        { ...item, qualityCharacteristicChapterId: null },
+        'en',
+      ),
+    ).toBe('Security')
+    expect(
+      formatQualityCharacteristic(
+        {
+          ...item,
+          qualityCharacteristicNameEn: null,
+          qualityCharacteristicNameSv: null,
+        },
+        'en',
+      ),
+    ).toBe('')
   })
 })

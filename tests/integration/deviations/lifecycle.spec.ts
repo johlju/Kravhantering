@@ -468,11 +468,9 @@ for (const viewport of viewports) {
               const approved = reviewerDetailPane
                 .getByRole('article', { name: motivation, exact: true })
                 .first()
-              await expect(
-                approved.getByText('Gäller till och med 2099-09-30', {
-                  exact: true,
-                }),
-              ).toBeVisible()
+              await expect(approved).toContainText(
+                'Gäller till och med 2099-09-30',
+              )
               await approved
                 .getByText('Registrerande information', { exact: true })
                 .click()

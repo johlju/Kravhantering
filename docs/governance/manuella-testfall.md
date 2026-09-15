@@ -2220,6 +2220,8 @@ Knapparna Stäng och Avsluta utan beslut har mellanrum även i smal vy.
 1. Skapa och godkänn ett första avsteg. Registrera aktuellt avtal och ett
    oförändrat avtalsutkast.
 2. Begär förnyelse och kontrollera berörda avtal. Begär granskning.
+   Kontrollera även ett utgånget godkännande: **Begär förnyelse** visas,
+   men **Avsluta godkännande** visas inte.
 3. Som granskare, ange nya villkor och giltighet samt godkänn.
 4. Som tilldelad kravunderlagsansvarig, avsluta det nya godkännandet med
    motivering.
