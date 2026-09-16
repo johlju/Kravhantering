@@ -363,3 +363,12 @@ rewrites earlier evidence.
 Binding intervals use inclusive `valid_from` and exclusive `valid_until` in UTC.
 Process lifecycle changes do not unlock agreement content. Requirement-version
 `edited_at` and publication dates retain their existing meanings.
+
+## Deviation approval dates
+
+An approval's `decided_at`, conditions and inclusive `valid_through` remain
+immutable. Expiry uses Europe/Stockholm and begins at midnight after the stated
+date, including daylight-saving changes. Renewal creates a new linked decision.
+Manual closure and replacement have separate ending events and do not rewrite
+requirement version dates or recorded usage status. Agreement date corrections
+do not shift the approval's own validity period.

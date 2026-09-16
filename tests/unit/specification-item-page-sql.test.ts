@@ -336,3 +336,45 @@ describe('specification item page SQL', () => {
     expect(query).not.toHaveBeenCalled()
   })
 })
+
+describe('deviation follow-up on paginated specification items', () => {
+  it.each([
+    { overrides: {}, expected: true },
+    { overrides: { deviationHistoricalApproved: 0 }, expected: false },
+    { overrides: { deviationApproved: 1 }, expected: false },
+    { overrides: { specificationItemStatusId: 4 }, expected: false },
+    { overrides: { isRemoved: true }, expected: false },
+    { overrides: { followupFrozenAt: '2026-09-01' }, expected: false },
+  ])(
+    'requires current, unverified content with ended permission (%#)',
+    async ({ overrides, expected }) => {
+      const query = vi.fn().mockResolvedValue([
+        {
+          sourceId: 31,
+          requirementId: 11,
+          uniqueId: 'REQ-001',
+          deviationHistoricalApproved: 1,
+          deviationApproved: 0,
+          specificationItemStatusId: 1,
+          isRemoved: false,
+          followupFrozenAt: null,
+          ...overrides,
+        },
+      ])
+      const result = await enrichSpecificationItemPage({ query } as never, 7, [
+        {
+          kindRank: 0,
+          nullRank: 0,
+          sortValue: 'REQ-001',
+          sourceId: 31,
+          uniqueId: 'REQ-001',
+        },
+      ])
+      expect(result[0]).toMatchObject({
+        itemRef: 'lib:31',
+        deviationFollowup: expected,
+        specificationItemStatusId: overrides.specificationItemStatusId ?? 1,
+      })
+    },
+  )
+})

@@ -44,6 +44,7 @@ import {
 import { useColumnState } from '@/components/_requirements-table/useColumnState'
 import { useFloatingRailPosition } from '@/components/_requirements-table/useFloatingRailPosition'
 import { useResizeHandles } from '@/components/_requirements-table/useResizeHandles'
+import DeviationFollowup from '@/components/DeviationFollowup'
 import RequirementPackagePurposeTooltip from '@/components/RequirementPackagePurposeTooltip'
 import RequirementsPackageFilter from '@/components/RequirementsPackageFilter'
 import StatusBadge from '@/components/StatusBadge'
@@ -2448,6 +2449,11 @@ export default function RequirementsTable({
             }
           >
             {row.version?.description ?? '—'}
+            {row.deviationFollowup && (
+              <span className="block whitespace-normal">
+                <DeviationFollowup />
+              </span>
+            )}
             {row.changeDate && (
               <span
                 className={`ml-2 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${row.isRemoved ? 'border-red-300 text-red-800 dark:border-red-700 dark:text-red-200' : 'border-primary-300 text-primary-800 dark:border-primary-700 dark:text-primary-200'}`}
@@ -2664,12 +2670,17 @@ export default function RequirementsTable({
       case 'needsReference':
         return (
           <td
-            className={`py-2 px-2 truncate text-secondary-600 dark:text-secondary-400 ${archivedContentClass} ${dividerClass}`}
+            className={`${onNeedsReferenceChange && row.itemRef ? 'py-1 px-1' : 'py-2 px-2'} truncate text-secondary-600 dark:text-secondary-400 ${archivedContentClass} ${dividerClass}`}
           >
             {onNeedsReferenceChange && row.itemRef ? (
               <select
                 aria-label={t('needsReference')}
-                className="min-h-11 w-full min-w-36 rounded-lg border border-secondary-200 bg-white px-2 py-1.5 text-sm text-secondary-700 focus:outline-none focus:ring-2 focus:ring-primary-400/50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-200"
+                className="w-auto max-w-full rounded-lg border border-gray-300 dark:border-secondary-600 bg-white dark:bg-secondary-800/50 py-1 px-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-400/50 dark:focus:ring-primary-400/50 transition-all duration-200"
+                {...devMarker({
+                  context: 'requirements specification detail',
+                  name: 'needs reference select',
+                  priority: 300,
+                })}
                 onChange={event => {
                   const value = event.target.value
                   onNeedsReferenceChange(

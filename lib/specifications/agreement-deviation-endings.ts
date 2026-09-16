@@ -8,6 +8,7 @@ import {
   notFoundError,
 } from '@/lib/requirements/errors'
 import { stockholmDate } from '@/lib/specifications/agreement-dates'
+import { applicableDeviationSql } from '@/lib/specifications/agreement-deviation-state'
 
 /** The caller holds the specification lock and saves content in this transaction. */
 export async function guardAgreementRequirementChange(
@@ -33,8 +34,7 @@ export async function guardAgreementRequirementChange(
     : 'specification_local_requirement_deviations'
   const cases = await db.query<Array<{ id: number; decision: number | null }>>(
     `SELECT id, decision FROM ${table} deviation WHERE ${column} = @0
-      AND (decision IS NULL OR (decision = 1 AND NOT EXISTS (SELECT 1 FROM specification_deviation_endings ending
-        WHERE ending.${caseColumn} = deviation.id AND ending.ended_at IS NOT NULL)))`,
+      AND (decision IS NULL OR ${applicableDeviationSql(library ? 'library' : 'local')})`,
     [ref.id],
   )
   if (cases.some(deviation => deviation.decision === null)) {

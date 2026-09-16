@@ -47,6 +47,8 @@ import { discardAgreementDraft } from '@/lib/specifications/agreement-discard'
 import { endCurrentAgreement } from '@/lib/specifications/agreement-end'
 import { readAgreementRequirementHistory } from '@/lib/specifications/agreement-history'
 import { assertSpecificationContentEditable } from '@/lib/specifications/agreement-policy'
+import { deviationApplicability } from '@/lib/specifications/deviation-applicability'
+import { closeApprovedDeviation } from '@/lib/specifications/deviation-closure'
 import {
   canReadSpecification,
   isSpecificationResponsible,
@@ -485,6 +487,27 @@ export function createSpecificationAgreementWorkflow(
                     : isApplicable(item, now),
                 )
                 .map(item => item.itemRef)
+        const caseData = await readAgreementCases(
+          manager,
+          specificationId,
+          visibleRefs,
+        )
+        const cutoff =
+          selectedAgreement?.cancelledAt ??
+          selectedAgreement?.endedAt ??
+          selectedAgreement?.replacedAt ??
+          now
+        const deviations: typeof caseData.deviations = caseData.deviations.map(
+          deviation => ({
+            ...deviation,
+            applicability: deviationApplicability(
+              deviation,
+              caseData.deviations,
+              caseData.deviationEndings,
+              new Date(cutoff),
+            ),
+          }),
+        )
         return {
           agreements: agreementContexts,
           selectedAgreement,
@@ -560,7 +583,8 @@ export function createSpecificationAgreementWorkflow(
           canDecide: isSpecificationResponsible(context, target),
           canReviewDeviations: specificationPermissions(context, target)
             .canReviewDecisions,
-          ...(await readAgreementCases(manager, specificationId, visibleRefs)),
+          ...caseData,
+          deviations,
         }
       })
     },
@@ -700,6 +724,14 @@ export function createSpecificationAgreementWorkflow(
             throw forbiddenError('Specification responsibility is required')
           }
           await activateDueAgreements(manager, specificationId, clock.now())
+          if (input.operation === 'close_deviation')
+            return closeApprovedDeviation(
+              manager,
+              specificationId,
+              context,
+              input,
+              clock.now(),
+            )
           if (input.operation === 'correct')
             return correctAgreement(
               manager,

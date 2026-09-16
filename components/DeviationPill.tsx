@@ -5,8 +5,11 @@ import { useFormatter, useTranslations } from 'next-intl'
 import { useState } from 'react'
 import { devMarker } from '@/lib/developer-mode-markers'
 import { formatActorDisplayName } from '@/lib/privacy/display-name'
+import type { DeviationApplicability } from '@/lib/specifications/deviation-applicability'
 
 interface DeviationData {
+  applicability?: DeviationApplicability
+  conditions?: string | null
   createdAt: string
   createdBy: string | null
   decidedAt: string | null
@@ -16,6 +19,8 @@ interface DeviationData {
   id: number
   isReviewRequested: number
   motivation: string
+  renewsDeviationId?: number | null
+  validThrough?: string | null
 }
 
 interface DeviationPillProps {
@@ -114,6 +119,36 @@ function DeviationPillContent({
           {statusChip.label}
         </span>
       </div>
+      {isApproved && deviation.applicability && (
+        <div
+          {...devMarker({
+            name: 'approval applicability',
+            value: deviation.applicability,
+            priority: 350,
+          })}
+        >
+          <p>{t(`applicability.${deviation.applicability}`)}</p>
+          <p
+            {...devMarker({
+              name: 'approval validity',
+              value: 'inclusive calendar end date',
+              priority: 350,
+            })}
+          >
+            {deviation.validThrough
+              ? t('validThroughValue', { date: deviation.validThrough })
+              : t('unlimitedValidity')}
+          </p>
+          {deviation.conditions && (
+            <p className="whitespace-pre-wrap">
+              {t('conditions')}: {deviation.conditions}
+            </p>
+          )}
+        </div>
+      )}
+      {deviation.renewsDeviationId && (
+        <p>{t('renewalOf', { id: deviation.renewsDeviationId })}</p>
+      )}
       <p className="text-secondary-700 dark:text-secondary-300 mb-1">
         {deviation.motivation}
       </p>

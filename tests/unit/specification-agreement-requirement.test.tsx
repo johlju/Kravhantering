@@ -14,6 +14,7 @@ import SpecificationAgreementHistory from '@/components/SpecificationAgreementHi
 import SpecificationAgreementRequirement from '@/components/SpecificationAgreementRequirement'
 import { requirementContentChange } from '@/lib/specifications/agreement-history'
 import type { AgreementItem } from '@/lib/specifications/agreements'
+import enMessages from '@/messages/en.json'
 import { requireTestValue } from '@/tests/helpers/require-test-value'
 
 const { historyFetch } = vi.hoisted(() => ({ historyFetch: vi.fn() }))
@@ -27,7 +28,13 @@ vi.mock('@/lib/http/api-fetch', () => ({
 vi.mock('next-intl', () => ({
   useLocale: () => 'en',
   useTranslations: (namespace: string) => {
-    const t = (key: string) => `${namespace}.${key}`
+    const t = (key: string, values?: Record<string, unknown>) =>
+      namespace === 'deviation' && key === 'validThroughValue'
+        ? enMessages.deviation.validThroughValue.replace(
+            '{date}',
+            String(values?.date),
+          )
+        : `${namespace}.${key}`
     t.rich = t
     return t
   },
@@ -173,6 +180,82 @@ describe('selected agreement requirement author workflow', () => {
     historyFetch.mockImplementation(() => new Promise(() => {}))
   })
   afterEach(() => vi.unstubAllGlobals())
+
+  it.each([true, false])(
+    'keeps future-ending approval consent and authorization safeguards (responsible: %s)',
+    async canDecide => {
+      const fetchMock = vi.fn(
+        async (_url: string, _init?: RequestInit) => new Response('{}'),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const onChange = vi.fn()
+      render(
+        <ConfirmModalProvider>
+          <SpecificationAgreementRequirement
+            item={{ ...item, currentAgreementReference: 'A' }}
+            needsReferencesResource={{
+              data: [],
+              loading: false,
+              error: null,
+              refreshing: false,
+              refreshError: null,
+              reload: async () => [],
+            }}
+            onChange={onChange}
+            specificationId={1}
+            view={{
+              ...view,
+              canDecide,
+              deviations: [
+                {
+                  id: 8,
+                  itemRef: item.itemRef,
+                  motivation: 'Permission',
+                  decision: 1,
+                  decisionMotivation: 'Approved',
+                  decidedAt: new Date('2020-01-01'),
+                },
+              ],
+              deviationEndings: [
+                {
+                  id: 1,
+                  itemRef: item.itemRef,
+                  deviationId: 8,
+                  agreementId: 2,
+                  endedAt: new Date('2099-01-01'),
+                  cancelledAt: null,
+                },
+              ],
+            }}
+          />
+        </ConfirmModalProvider>,
+      )
+      await userEvent.click(
+        screen.getByRole('button', { name: 'agreement.removeRequirement' }),
+      )
+      if (!canDecide) {
+        expect(
+          screen.getByText('agreement.responsibleEndingRequired'),
+        ).toBeInTheDocument()
+        expect(fetchMock).not.toHaveBeenCalled()
+        return
+      }
+      const confirmation = await screen.findByRole('alertdialog')
+      expect(confirmation).toHaveTextContent('agreement.plannedEndingWarning')
+      await userEvent.click(
+        within(confirmation).getByRole('button', {
+          name: 'agreement.saveAndPlanEnding',
+        }),
+      )
+      await waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+      expect(
+        JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+      ).toMatchObject({
+        operation: 'remove_requirement',
+        authorizeDeviationEndings: true,
+      })
+    },
+  )
 
   it('keeps history errors distinct from an unchanged requirement and offers retry', async () => {
     const reload = vi.fn(async () => undefined)
@@ -1124,4 +1207,579 @@ describe('selected agreement requirement author workflow', () => {
       })
     },
   )
+})
+
+describe('approval validity and follow-up in the selected agreement', () => {
+  const approval = {
+    id: 17,
+    itemRef: item.itemRef,
+    motivation: 'Temporary access exception',
+    decision: 1,
+    decisionMotivation: 'Accepted with controls',
+    decidedAt: new Date('2020-01-01'),
+    createdAt: new Date('2019-12-01'),
+    conditions: 'Weekly access review',
+    validThrough: '2020-09-30',
+    agreementReferences: 'A, B',
+  }
+  const approvalView = { ...view, deviations: [approval] }
+
+  it.each([
+    { validThrough: null, endedAt: null, canClose: true },
+    { validThrough: '2099-09-30', endedAt: null, canClose: true },
+    { validThrough: '2020-09-30', endedAt: null, canClose: false },
+    {
+      validThrough: null,
+      endedAt: new Date('2099-01-01'),
+      canClose: false,
+    },
+  ])(
+    'offers closure only for applicable approvals without recorded endings: %j',
+    ({ validThrough, endedAt, canClose }) => {
+      render(
+        <ConfirmModalProvider>
+          <SpecificationAgreementDeviations
+            item={item}
+            onChange={vi.fn()}
+            specificationId={5}
+            view={{
+              ...approvalView,
+              deviations: [{ ...approval, validThrough }],
+              deviationEndings: endedAt
+                ? [
+                    {
+                      id: 1,
+                      itemRef: item.itemRef,
+                      deviationId: approval.id,
+                      agreementId: 2,
+                      endedAt,
+                      cancelledAt: null,
+                    },
+                  ]
+                : [],
+            }}
+          />
+        </ConfirmModalProvider>,
+      )
+      const close = screen.queryByRole('button', {
+        name: 'deviation.closeApproval',
+      })
+      if (canClose) {
+        expect(close).toHaveAttribute(
+          'data-developer-mode-value',
+          'end applicable shared permission without pending renewal',
+        )
+      } else {
+        expect(close).toBeNull()
+      }
+      expect(
+        screen.getByRole('button', { name: 'deviation.renewDeviation' }),
+      ).toBeEnabled()
+    },
+  )
+
+  it.each([0, 1])(
+    'withholds closure and renewal while a renewal is pending with review requested %s',
+    isReviewRequested => {
+      render(
+        <ConfirmModalProvider>
+          <SpecificationAgreementDeviations
+            item={item}
+            onChange={vi.fn()}
+            specificationId={5}
+            view={{
+              ...approvalView,
+              deviations: [
+                { ...approval, validThrough: null },
+                {
+                  ...approval,
+                  id: 18,
+                  decision: null,
+                  decidedAt: null,
+                  isReviewRequested,
+                  renewsDeviationId: approval.id,
+                  motivation: 'Continued permission',
+                },
+              ],
+            }}
+          />
+        </ConfirmModalProvider>,
+      )
+      expect(
+        screen.getByRole('article', { name: 'Continued permission' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'deviation.closeApproval' }),
+      ).toBeNull()
+      expect(
+        screen.queryByRole('button', { name: 'deviation.renewDeviation' }),
+      ).toBeNull()
+    },
+  )
+
+  it('shows expiry beside the unchanged usage status and clears follow-up only for Verified', () => {
+    const props = { specificationId: 5, onChange: vi.fn(), view: approvalView }
+    const rendered = render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          {...props}
+          item={{ ...item, specificationItemStatusId: 5 }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(
+      screen.getByText('deviation.applicability.expired'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Weekly access review/)).toBeInTheDocument()
+    expect(screen.getByText('Valid through 2020-09-30')).toHaveAttribute(
+      'data-developer-mode-value',
+      'inclusive calendar end date',
+    )
+    expect(screen.getByText('deviation.endedFollowup')).toHaveAttribute(
+      'role',
+      'status',
+    )
+    rendered.rerender(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          {...props}
+          item={{ ...item, specificationItemStatusId: 4 }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(screen.queryByText('deviation.endedFollowup')).toBeNull()
+    rendered.rerender(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          {...props}
+          item={{ ...item, specificationItemStatusId: 3 }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(screen.getByText('deviation.endedFollowup')).toBeInTheDocument()
+  })
+
+  it('shows the shared scope when requesting renewal and sends the original approval link', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}'))
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={vi.fn()}
+          specificationId={5}
+          view={approvalView}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.renewDeviation' }),
+    )
+    expect(
+      screen.getByText('deviation.sharedApprovalScope'),
+    ).toBeInTheDocument()
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /deviation.motivation/ }),
+      'Continue the reviewed departure',
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.newDeviation' }),
+    )
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body).toMatchObject({
+      renewsDeviationId: 17,
+      agreementId: 2,
+      motivation: 'Continue the reviewed departure',
+    })
+    fetchMock.mockRestore()
+  })
+
+  it.each([null, '2020-09-30'])(
+    'requires a fresh request after manual closure, including when validThrough is %s',
+    async validThrough => {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('{}'))
+      render(
+        <ConfirmModalProvider>
+          <SpecificationAgreementDeviations
+            item={item}
+            onChange={vi.fn()}
+            specificationId={5}
+            view={{
+              ...approvalView,
+              deviations: [{ ...approval, validThrough }],
+              deviationEndings: [
+                {
+                  id: 1,
+                  itemRef: item.itemRef,
+                  deviationId: approval.id,
+                  agreementId: null,
+                  endedAt: new Date('2021-01-01'),
+                  cancelledAt: null,
+                  endingKind: 'closed',
+                  reason: 'Resolved',
+                },
+              ],
+            }}
+          />
+        </ConfirmModalProvider>,
+      )
+      expect(
+        screen.queryByRole('button', { name: 'deviation.renewDeviation' }),
+      ).toBeNull()
+      const request = screen.getByRole('button', {
+        name: 'deviation.requestDeviation',
+      })
+      expect(request).toHaveAttribute(
+        'data-developer-mode-value',
+        'new request without renewal link',
+      )
+      await userEvent.click(request)
+      await userEvent.type(
+        screen.getByRole('textbox', { name: /deviation.motivation/ }),
+        'A new need for permission',
+      )
+      await userEvent.click(
+        screen.getByRole('button', { name: 'deviation.newDeviation' }),
+      )
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+        agreementId: 2,
+        motivation: 'A new need for permission',
+      })
+      fetchMock.mockRestore()
+    },
+  )
+
+  it('keeps frozen approval applicable and shows later expiry separately', async () => {
+    const frozen = {
+      ...approvalView,
+      selectedAgreement: {
+        ...agreement,
+        state: 'previous',
+        replacedAt: new Date('2020-06-01'),
+      },
+    }
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={{
+            ...item,
+            deviationStateSnapshot: [
+              { id: 17, motivation: approval.motivation, isReviewRequested: 1 },
+            ],
+          }}
+          onChange={vi.fn()}
+          showLaterEvents
+          specificationId={5}
+          view={frozen}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(
+      screen.getByText('deviation.applicability.applicable'),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByText('agreement.laterEvents'))
+    expect(
+      screen.getByText('deviation.applicability.expired'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('deviation.endedFollowup')).toBeNull()
+  })
+  it('renders an anonymized closure actor without exposing the internal sentinel', () => {
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={vi.fn()}
+          specificationId={1}
+          view={{
+            ...view,
+            selectedAgreement: null,
+            deviations: [
+              {
+                id: 7,
+                itemRef: item.itemRef,
+                decision: 1,
+                decidedAt: new Date('2025-01-01'),
+                motivation: 'Temporary departure',
+                decisionMotivation: 'Approved',
+              },
+            ],
+            deviationEndings: [
+              {
+                id: 1,
+                itemRef: item.itemRef,
+                deviationId: 7,
+                agreementId: null,
+                endedAt: new Date('2025-02-01'),
+                cancelledAt: null,
+                endingKind: 'closed',
+                reason: 'Resolved',
+                recordedBy: 'no-user',
+              },
+            ],
+          }}
+        />
+      </ConfirmModalProvider>,
+    )
+    expect(screen.getByText(/Anonymous/)).toBeInTheDocument()
+    expect(screen.queryByText(/no-user/)).not.toBeInTheDocument()
+  })
+  it('closes shared approval with a reason and refreshes the agreement', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}'))
+    const onChange = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={onChange}
+          specificationId={5}
+          view={{
+            ...approvalView,
+            deviations: [{ ...approval, validThrough: null }],
+          }}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.closeApproval' }),
+    )
+    const dialog = screen.getByRole('dialog', {
+      name: 'deviation.closeApproval',
+    })
+    expect(
+      within(dialog).getByText('deviation.closeApprovalHelp'),
+    ).toBeVisible()
+    expect(
+      within(dialog).getByText('deviation.sharedApprovalScope'),
+    ).toBeVisible()
+    const submit = within(dialog).getByRole('button', {
+      name: 'deviation.closeApproval',
+    })
+    expect(submit).toBeDisabled()
+    await userEvent.type(
+      within(dialog).getByRole('textbox', { name: /agreement.reason/ }),
+      '  Controls are now implemented  ',
+    )
+    await userEvent.click(submit)
+    await waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/requirements-specifications/5/agreement',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          operation: 'close_deviation',
+          itemRef: item.itemRef,
+          deviationId: 17,
+          reason: 'Controls are now implemented',
+          agreementId: 2,
+        }),
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fetchMock.mockRestore()
+  })
+
+  it('keeps a failed closure open for retry and allows cancellation without a mutation', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Network unavailable'))
+    const onChange = vi.fn()
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={onChange}
+          specificationId={5}
+          view={{
+            ...approvalView,
+            deviations: [{ ...approval, validThrough: null }],
+          }}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.closeApproval' }),
+    )
+    const dialog = screen.getByRole('dialog', {
+      name: 'deviation.closeApproval',
+    })
+    await userEvent.type(
+      within(dialog).getByRole('textbox', { name: /agreement.reason/ }),
+      'Permission is no longer needed',
+    )
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'deviation.closeApproval' }),
+    )
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'deviation.saveFailed',
+    )
+    expect(onChange).not.toHaveBeenCalled()
+    await userEvent.click(
+      within(dialog).getAllByRole('button', { name: 'common.close' })[1],
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    fetchMock.mockRestore()
+  })
+
+  it('forwards renewal approval terms through the local review endpoint', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}'))
+    const onChange = vi.fn().mockResolvedValue(undefined)
+    const localItem = { ...item, itemRef: 'local:9' as const }
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={localItem}
+          onChange={onChange}
+          specificationId={5}
+          view={{
+            ...view,
+            canReviewDeviations: true,
+            deviations: [
+              {
+                ...approval,
+                itemRef: localItem.itemRef,
+                decision: null,
+                isReviewRequested: 1,
+                renewsDeviationId: 16,
+              },
+            ],
+          }}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.recordDecision' }),
+    )
+    const dialog = screen.getByRole('dialog', {
+      name: 'deviation.recordDecision',
+    })
+    expect(
+      within(dialog).getByText('deviation.sharedApprovalScope'),
+    ).toBeVisible()
+    await userEvent.type(
+      within(dialog).getByLabelText(/deviation.decisionMotivation/, {
+        selector: 'textarea',
+      }),
+      'Renewal accepted',
+    )
+    await userEvent.type(
+      within(dialog).getByLabelText('deviation.conditions', {
+        selector: 'textarea',
+      }),
+      'Monthly review',
+    )
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'deviation.recordDecision' }),
+    )
+    await waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/specification-local-deviations/17/decision',
+      expect.objectContaining({
+        body: JSON.stringify({
+          decision: 1,
+          decisionMotivation: 'Renewal accepted',
+          conditions: 'Monthly review',
+          validThrough: null,
+          agreementId: 2,
+        }),
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fetchMock.mockRestore()
+  })
+  it('cancels renewal without saving and restores the ordinary request state', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={vi.fn()}
+          specificationId={5}
+          view={approvalView}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.renewDeviation' }),
+    )
+    const dialog = screen.getByRole('dialog')
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'common.cancel' }),
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'deviation.renewDeviation' }),
+    ).toBeEnabled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    fetchMock.mockRestore()
+  })
+  it('requests review and confirms returning the shared request to draft', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('{}'))
+    const onChange = vi.fn().mockResolvedValue(undefined)
+    const pending = { ...approval, decision: null, isReviewRequested: 0 }
+    const rendered = render(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={onChange}
+          specificationId={5}
+          view={{ ...view, deviations: [pending] }}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.requestReview' }),
+    )
+    await waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/deviations/17/request-review',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ agreementId: 2 }),
+      }),
+    )
+    rendered.rerender(
+      <ConfirmModalProvider>
+        <SpecificationAgreementDeviations
+          item={item}
+          onChange={onChange}
+          specificationId={5}
+          view={{ ...view, deviations: [{ ...pending, isReviewRequested: 1 }] }}
+        />
+      </ConfirmModalProvider>,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'deviation.revertToDraft' }),
+    )
+    const confirmation = screen.getByRole('alertdialog', {
+      name: 'deviation.revertToDraftConfirmTitle',
+    })
+    expect(
+      within(confirmation).getByText('deviation.revertToDraftConfirm'),
+    ).toBeVisible()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await userEvent.click(
+      within(confirmation).getByRole('button', { name: 'common.confirm' }),
+    )
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2))
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/deviations/17/revert-to-draft',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ agreementId: 2 }),
+      }),
+    )
+    fetchMock.mockRestore()
+  })
 })

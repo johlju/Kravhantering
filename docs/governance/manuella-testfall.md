@@ -2034,7 +2034,8 @@ ett avtalsutkast. Prova att ändra ett krav med ett obeslutat avsteg. Avbryt
 ärendet med skäl och ändra kravet. Redigera också motiveringen i ett
 avstegsutkast och återta en granskningsbegäran. Prova sedan ett ärvt godkänt
 avsteg: spara en ändring med ansvarigs uttryckliga godkännande av planerat
-avslut. Ångra ändringen och upprepa den inför ikraftträdande. Kontrollera som
+avslut. Kontrollera att ett framtida avslut fortfarande kräver ansvarigs
+godkännande. Ångra ändringen och upprepa den inför ikraftträdande. Kontrollera som
 medförfattare, ansvarig, Reviewer, enbart Admin och otilldelad användare; följ
 även AUTHZ-04 och AUTHZ-05.
 
@@ -2093,7 +2094,9 @@ verifierade och avvikna krav samt historiska rapporter.
 
 **Förväntat resultat:** Väntande avtal blockerar avslut tills det hanterats.
 Slutdatum och registreringstid visas separat. Uppföljningen fryses, obeslutade
-avsteg avbryts och godkända avsteg får separata avslut vid registreringen.
+avsteg avbryts och endast gällande godkännanden får separata avslut vid
+registreringen. Utgångna godkännanden ingår inte i förhandsvisningen av
+berörda avsteg; deras historiska kopplingar bevaras.
 Förlängningen fortsätter samma kravunderlag. Verifierade resultat följer med,
 medan tidigare **Avviken** börjar som **Inkluderad** och kräver nytt godkänt
 avsteg. Tidigare avtal och eventuellt mellanrum bevaras.
@@ -2103,12 +2106,15 @@ avsteg. Tidigare avtal och eventuellt mellanrum bevaras.
 **Steg:** Exportera och skapa rapport för aktuellt avtal, utkast, kommande,
 tidigare och avbrutet avtal med samma listfilter. Ändra aktuell uppföljning och
 öppna en tidigare rapport igen. Granska aktuella och senare avstegshändelser.
+Kontrollera ett avslutat godkännande på ett krav som inte är Verifierat.
 
 **Förväntat resultat:** Varje utdata anger valt avtals referens, avtalsdatum och
 status samt använder dess krav och uppföljning. Utkast, kommande och avbrutet
 identifieras tydligt. Tidigare resultat påverkas inte av senare uppföljning;
 senare avstegshändelser visas separat. Behörighet och befintliga exportformat
 gäller även för historiska sammanhang.
+Tidigare, avslutade och avbrutna avtal visar upphörd tillåtelse utan att ange
+aktuellt behov av uppföljning.
 
 ## Avsteg
 
@@ -2132,9 +2138,15 @@ gäller även för historiska sammanhang.
 
 ### DEV-04: godkänn avsteg
 
-**Steg:** Som behörig kravgranskare, godkänn avsteg med kommentar.
+**Steg:** Som behörig kravgranskare, godkänn avsteg med kommentar, valfria
+villkor och slutdatum. Begär förnyelse om kravet redan har ett godkännande.
+Prova även ingen tidsbegränsning. Öppna beslutets
+registrerande information med webbläsaren inställd på en annan tidszon.
 
-**Förväntat resultat:** Avsteget markeras som godkänt och låses.
+**Förväntat resultat:** Beslut, villkor och inkluderande slutdatum bevaras.
+Slutdatum visas som exempelvis "Gäller till och med 2026-09-30". Datumet
+gäller hela den svenska dagen och är detsamma i alla tidszoner. Registrerade
+klockslag visas i webbläsarens tidszon. Tillåtelsen börjar vid beslutet.
 
 ### DEV-05: avslå avsteg
 
@@ -2142,14 +2154,14 @@ gäller även för historiska sammanhang.
 
 **Förväntat resultat:** Avsteget markeras som avslaget och låses.
 
-### DEV-06: beslutade avsteg är terminala
+### DEV-06: registrerade avstegsbeslut är oföränderliga
 
 **Steg:** Öppna godkänt eller avslaget avsteg för både bibliotekskrav och
 kravunderlagslokalt krav. Försök fatta ett andra beslut, redigera eller ta bort
 avsteget.
 
-**Förväntat resultat:** Inga åtgärder för ny beslutscykel, redigering eller
-borttagning visas. Motsvarande direkta anrop avvisas.
+**Förväntat resultat:** Originalbeslutet kan inte ändras eller tas bort.
+Förnyelse skapar ett nytt länkat avsteg. Avslut bevaras separat.
 
 ### DEV-07: endast kravgranskare kan besluta avsteg
 
@@ -2203,6 +2215,46 @@ aktör och tidpunkt. Det kan inte längre skickas till granskning och blockerar
 inte ett nytt avsteg. Ett delat ärende visar berörda avtalsreferenser före
 bekräftelsen. Fel visas vid åtgärden och dialogen behåller inmatningen.
 Knapparna Stäng och Avsluta utan beslut har mellanrum även i smal vy.
+
+### DEV-11: förnya och avsluta gemensam tillåtelse
+
+**Steg:**
+
+1. Skapa och godkänn ett första avsteg. Registrera aktuellt avtal och ett
+   oförändrat avtalsutkast.
+2. Begär förnyelse och kontrollera berörda avtal. Begär granskning.
+   Kontrollera att **Avsluta godkännande** och **Begär förnyelse** inte visas
+   medan förnyelsen väntar på beslut, även innan granskning begärs.
+   Kontrollera även ett utgånget godkännande: **Begär förnyelse** visas,
+   men **Avsluta godkännande** visas inte.
+3. Som granskare, ange nya villkor och giltighet samt godkänn.
+4. Som tilldelad kravunderlagsansvarig, avsluta det nya godkännandet med
+   motivering.
+5. Ta bort avtalsutkastet och kontrollera uppföljningen enligt DEV-12.
+   Kontrollera att **Begär förnyelse** inte visas och registrera i stället
+   ett nytt avsteg med **Begär ett avsteg**.
+
+**Förväntat resultat:** Det tidigare godkännandet ersätts för hela det
+gemensamma sammanhanget. Avslutet kvarstår i aktuellt avtal efter borttagning
+av utkastet. Originalbeslut och historiska tillstånd bevaras. Medförfattare
+eller Admin utan ansvarstilldelning får inte avsluta godkännandet. En obeslutad
+förnyelse måste avbrytas först. Utgånget godkännande kan inte avslutas igen;
+ett upprepat manuellt avslut skapar ingen extra historikpost. Efter manuellt
+avslut krävs ett nytt avsteg
+utan förnyelselänk och ett nytt granskningsbeslut. Det avslutade
+godkännandets historik bevaras.
+
+### DEV-12: följ upp upphörd tillåtelse
+
+**Steg:** Öppna ett krav med utgånget eller manuellt avslutat godkännande och
+användningsstatus Avviken. Kontrollera listan och detaljen. Sätt Verifierad,
+ändra sedan till Implementerad. Försök välja Avviken igen. Öppna ett fryst
+historiskt avtal och kontrollera beslutet samt Senare händelser.
+
+**Förväntat resultat:** Avviken behålls när tillåtelsen upphör. Åtgärdsflaggan
+visas i lista och detalj, släcks av Verifierad och återkommer efter ändring
+från Verifierad. Avviken kan inte väljas på nytt utan gällande tillåtelse.
+En obeslutad förnyelse förlänger inte tillåtelsen. Fryst historik behålls.
 
 ## Admincenter
 

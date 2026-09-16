@@ -39,6 +39,12 @@ export default function SpecificationDeviationRail({
 }: SpecificationDeviationRailProps) {
   const td = useTranslations('deviation')
   const ts = useTranslations('specification')
+  const hasApproval = [
+    workflow.latestDeviation,
+    ...workflow.deviationHistory,
+  ].some(deviation => deviation?.decision === 1)
+  const manageHere = canManageDeviationDrafts && !hasApproval
+  const reviewHere = canReviewDeviationDecisions && !hasApproval
 
   return (
     <div className="flex flex-col gap-2 shrink-0 sm:w-56">
@@ -57,9 +63,23 @@ export default function SpecificationDeviationRail({
           {workflow.deviationError}
         </p>
       )}
+      {hasApproval && (
+        <a
+          className="btn-secondary"
+          href={`/${locale}/specifications/${specificationId}#agreement-history`}
+          {...devMarker({
+            context: detailContext ?? 'requirement detail',
+            name: 'detail action',
+            value: 'manage shared approval and renewal',
+            priority: 291,
+          })}
+        >
+          {td('manageApproval')}
+        </a>
+      )}
       {(workflow.deviationStep === null ||
         workflow.deviationStep === 'decided') &&
-      canManageDeviationDrafts ? (
+      manageHere ? (
         <button
           className="w-full text-center rounded-xl border border-amber-500 bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-amber-600 hover:border-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-50 min-h-11 min-w-11"
           disabled={workflow.deviationSaving}
@@ -72,7 +92,7 @@ export default function SpecificationDeviationRail({
           />
           {td('requestDeviation')}
         </button>
-      ) : workflow.deviationStep === 'draft' && canManageDeviationDrafts ? (
+      ) : workflow.deviationStep === 'draft' && manageHere ? (
         <>
           <button
             className="w-full text-center rounded-xl border border-amber-500 bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-amber-600 hover:border-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-50 min-h-11 min-w-11"
@@ -98,7 +118,7 @@ export default function SpecificationDeviationRail({
         </>
       ) : workflow.deviationStep === 'review_requested' ? (
         <>
-          {canManageDeviationDrafts ? (
+          {manageHere ? (
             <button
               className="btn-secondary px-3 w-full text-center"
               disabled={workflow.deviationSaving}
@@ -108,7 +128,7 @@ export default function SpecificationDeviationRail({
               {td('revertToDraft')}
             </button>
           ) : null}
-          {canReviewDeviationDecisions ? (
+          {reviewHere ? (
             <button
               className="btn-primary px-3 w-full text-center"
               disabled={workflow.deviationSaving}

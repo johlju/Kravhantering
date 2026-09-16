@@ -221,6 +221,8 @@ newest preview release whose version is ahead of every published stable
 release. A stable `v0.7.0` supersedes `v0.7.0-preview.80` and previews of older
 versions, while `v0.8.0-preview.1` remains eligible. Version comparison uses
 numeric major, minor, and patch components, independent of publication time.
+Preview identifiers allow hyphens, including repeated or trailing hyphens;
+dot-separated identifiers must remain non-empty.
 Superseded previews are excluded before applying the preview count; the
 preview window can be empty. Unrecognized version formats remain eligible
 because supersession cannot be established safely.
@@ -228,6 +230,11 @@ because supersession cannot be established safely.
 Stable means supported and monitored. Preview means
 monitored, not supported. Change those bounded counts through normal review
 when the product support policy changes.
+
+Preview version comparison requires a numeric `vX.Y.Z` core followed by `-`
+and non-empty alphanumeric identifiers separated by single dots or hyphens,
+such as `v1.2.3-preview.4`. Leading, trailing, or consecutive suffix separators
+make the version unrecognized; these tags remain monitored conservatively.
 
 ### Trusted Input And Public Classification
 
@@ -553,7 +560,9 @@ Each trusted run also writes runtime evidence:
 - `hashes.sha256` contains checksums for saved runtime evidence.
 - `public/build.json` contains the app version, commit SHA, build time, image
   tag and expected database schema migration `name` embedded in the tested app
-  image.
+  image. The name comes from the exported migration class's leading `name`
+  field, falling back to the class name; SQL object names are not schema
+  version identifiers.
 - `api-docs/hsa-person-lookup/` contains the static Swagger UI for the
   HSA-person lookup REST contract. Its generated initializer and override
   stylesheet keep the UI compatible with the strict documentation CSP.

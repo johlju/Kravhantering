@@ -15,6 +15,7 @@ import { type ReactNode, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useConfirmModal } from '@/components/ConfirmModal'
 import DeviationDecisionModal from '@/components/DeviationDecisionModal'
+import DeviationFollowup from '@/components/DeviationFollowup'
 import DeviationFormModal, {
   type DeviationPriorityLevel,
 } from '@/components/DeviationFormModal'
@@ -30,6 +31,10 @@ import {
 } from '@/lib/specifications/agreement-errors'
 import type { AgreementRequirementHistory } from '@/lib/specifications/agreement-history'
 import type { AgreementItem } from '@/lib/specifications/agreements'
+import {
+  deviationApplicability,
+  deviationNeedsFollowup,
+} from '@/lib/specifications/deviation-applicability'
 
 export default function SpecificationAgreementDeviations({
   item,
@@ -59,6 +64,8 @@ export default function SpecificationAgreementDeviations({
   const { confirm } = useConfirmModal()
   const [editing, setEditing] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
+  const [renewing, setRenewing] = useState<number | null>(null)
+  const [closing, setClosing] = useState(false)
   const [deciding, setDeciding] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -92,6 +99,34 @@ export default function SpecificationAgreementDeviations({
       ending =>
         ending.itemRef === item.itemRef && ending.deviationId === deviationId,
     )
+  const applicability = (
+    deviation: (typeof cases)[number],
+    historical = !!frozenAt,
+  ) =>
+    deviationApplicability(
+      deviation,
+      cases,
+      view.deviationEndings,
+      historical && frozenAt ? new Date(frozenAt) : new Date(),
+    )
+  const states = cases.map(deviation => applicability(deviation))
+  const needsFollowup = deviationNeedsFollowup(
+    states,
+    item.specificationItemStatusId,
+    active,
+  )
+  const latestApproval = [...cases]
+    .filter(deviation => deviation.decision === 1)
+    .sort(
+      (a, b) =>
+        new Date(b.decidedAt ?? 0).getTime() -
+          new Date(a.decidedAt ?? 0).getTime() || b.id - a.id,
+    )[0]
+  const latestApprovalClosed =
+    !!latestApproval &&
+    endingsFor(latestApproval.id).some(
+      ending => ending.endingKind === 'closed' && ending.endedAt,
+    )
   const frozenCase = (id: number) =>
     item.deviationStateSnapshot?.find(deviation => deviation.id === id)
   const changedAfterFreeze = (deviation: (typeof cases)[number]) => {
@@ -109,6 +144,8 @@ export default function SpecificationAgreementDeviations({
           isLater(deviation.createdAt) ||
           changedAfterFreeze(deviation) ||
           isLater(deviation.decidedAt) ||
+          (applicability(deviation, true) === 'applicable' &&
+            applicability(deviation, false) === 'expired') ||
           endingsFor(deviation.id).some(
             ending =>
               isLater(ending.recordedAt) ||
@@ -125,7 +162,6 @@ export default function SpecificationAgreementDeviations({
       ? new Intl.DateTimeFormat(locale, {
           dateStyle: 'medium',
           timeStyle: 'short',
-          timeZone: 'Europe/Stockholm',
         }).format(new Date(value))
       : ta('notRecorded')
   const actor = (value: string | null | undefined) =>
@@ -151,6 +187,7 @@ export default function SpecificationAgreementDeviations({
       }
       await onChange()
       setCreating(false)
+      setRenewing(null)
       setEditing(null)
       setDeciding(null)
       setCancellingDeviationId(null)
@@ -195,8 +232,7 @@ export default function SpecificationAgreementDeviations({
     deviation =>
       deviation.decision === null ||
       isLater(deviation.decidedAt) ||
-      (deviation.decision === 1 &&
-        !endingState(deviation.id, !!frozenAt).ended),
+      (deviation.decision === 1 && applicability(deviation) === 'applicable'),
   )
   const shownCases = historyOnly
     ? visibleCases
@@ -240,7 +276,8 @@ export default function SpecificationAgreementDeviations({
     const decision =
       historical && isLater(deviation.decidedAt) ? null : deviation.decision
     const { ended, planned } = endingState(deviation.id, historical)
-    const muted = decision === 3 || !!ended
+    const state = applicability(current, historical)
+    const muted = decision === 3 || (decision === 1 && state !== 'applicable')
     const Icon = muted
       ? Ban
       : decision === 1
@@ -290,6 +327,37 @@ export default function SpecificationAgreementDeviations({
             </span>
           )}
         </p>
+        {decision === 1 && (
+          <div
+            className="space-y-1"
+            {...devMarker({
+              name: 'approval applicability',
+              value: state,
+              priority: 350,
+            })}
+          >
+            <p role="status">{t(`applicability.${state}`)}</p>
+            <p
+              {...devMarker({
+                name: 'approval validity',
+                value: 'inclusive calendar end date',
+                priority: 350,
+              })}
+            >
+              {deviation.validThrough
+                ? t('validThroughValue', { date: deviation.validThrough })
+                : t('unlimitedValidity')}
+            </p>
+            {deviation.conditions && (
+              <p className="whitespace-pre-wrap wrap-break-word">
+                {t('conditions')}: {deviation.conditions}
+              </p>
+            )}
+          </div>
+        )}
+        {deviation.renewsDeviationId && (
+          <p>{t('renewalOf', { id: deviation.renewsDeviationId })}</p>
+        )}
         <p className="whitespace-pre-wrap wrap-break-word">{motivation}</p>
         {!historical && frozenAt && changedAfterFreeze(current) && (
           <p>
@@ -298,17 +366,15 @@ export default function SpecificationAgreementDeviations({
         )}
         {deviation.decision !== null &&
           !(historical && isLater(deviation.decidedAt)) && (
-            <>
-              <p className="whitespace-pre-wrap wrap-break-word">
-                {deviation.decisionMotivation}
-              </p>
-            </>
+            <p className="whitespace-pre-wrap wrap-break-word">
+              {deviation.decisionMotivation}
+            </p>
           )}
         {endingsFor(deviation.id).map(ending => {
           const events = [
             {
               key: 'endingPlanned',
-              at: ending.recordedAt,
+              at: ending.endingKind ? null : ending.recordedAt,
               detail: ending.plannedEffectiveDate,
             },
             { key: 'deviationEnded', at: ending.endedAt, detail: null },
@@ -324,6 +390,11 @@ export default function SpecificationAgreementDeviations({
               {ta(event.key)} · {ending.agreementReference} ·{' '}
               {formatDate(event.at)}
               {event.detail ? ` · ${event.detail}` : ''}
+              {ending.endingKind && (
+                <> · {t(`applicability.${ending.endingKind}`)}</>
+              )}
+              {ending.reason && <> · {ending.reason}</>}
+              {ending.recordedBy && <> · {actor(ending.recordedBy)}</>}
             </p>
           ))
         })}
@@ -342,6 +413,59 @@ export default function SpecificationAgreementDeviations({
             </p>
           )}
         </details>
+        {active &&
+          !historical &&
+          deviation.id === latestApproval?.id &&
+          decision === 1 && (
+            <div
+              className="flex flex-wrap justify-end gap-2"
+              {...devMarker({
+                name: 'approval actions',
+                value: 'renew or close shared permission',
+                priority: 350,
+              })}
+            >
+              {view.canAuthor &&
+                !latestApprovalClosed &&
+                !cases.some(value => value.decision === null) && (
+                  <button
+                    className="btn-secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setRenewing(deviation.id)
+                      setCreating(true)
+                      setError(null)
+                    }}
+                    type="button"
+                  >
+                    {t('renewDeviation')}
+                  </button>
+                )}
+              {view.canDecide &&
+                !cases.some(value => value.decision === null) &&
+                applicability(deviation) === 'applicable' &&
+                !endingsFor(deviation.id).some(ending => ending.endedAt) && (
+                  <button
+                    className="btn-secondary"
+                    {...devMarker({
+                      name: 'close approval',
+                      value:
+                        'end applicable shared permission without pending renewal',
+                    })}
+                    disabled={busy}
+                    onClick={() => {
+                      setClosing(true)
+                      setCancellationReason('')
+                      setCancellingDeviationId(deviation.id)
+                      setError(null)
+                    }}
+                    type="button"
+                  >
+                    {t('closeApproval')}
+                  </button>
+                )}
+            </div>
+          )}
         {active && deviation.decision === null && (
           <div className="flex flex-wrap justify-end gap-2">
             {view.canAuthor && !deviation.isReviewRequested && (
@@ -410,6 +534,7 @@ export default function SpecificationAgreementDeviations({
                 disabled={busy}
                 onClick={() => {
                   setError(null)
+                  setClosing(false)
                   setCancellationReason('')
                   setCancellingDeviationId(deviation.id)
                 }}
@@ -444,18 +569,24 @@ export default function SpecificationAgreementDeviations({
   }
 
   const createAction = active &&
+    (!latestApproval || latestApprovalClosed) &&
     view.canAuthor &&
     !cases.some(
       deviation =>
         deviation.decision === null ||
-        (deviation.decision === 1 &&
-          !endingsFor(deviation.id).some(ending => ending.endedAt)),
+        (deviation.decision === 1 && applicability(deviation) === 'applicable'),
     ) && (
       <button
         className="min-h-11 w-full text-center rounded-xl border border-amber-500 bg-amber-500 px-3 py-2 text-sm font-semibold text-secondary-950 shadow-sm hover:border-amber-600 hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-50 dark:border-amber-500 dark:bg-amber-500 dark:text-secondary-950 dark:hover:bg-amber-400"
         disabled={busy}
+        {...devMarker({
+          name: 'deviation request',
+          value: 'new request without renewal link',
+          priority: 350,
+        })}
         onClick={() => {
           setError(null)
+          setRenewing(null)
           setCreating(true)
         }}
         type="button"
@@ -479,6 +610,9 @@ export default function SpecificationAgreementDeviations({
         priority: 350,
       })}
     >
+      {needsFollowup && (
+        <DeviationFollowup closed={states.includes('closed')} />
+      )}
       {frozenAt && item.deviationStateSnapshot == null && (
         <p className="text-sm">{ta('missingHistoricalHelp')}</p>
       )}
@@ -579,6 +713,7 @@ export default function SpecificationAgreementDeviations({
         loading={busy}
         onClose={() => {
           setCreating(false)
+          setRenewing(null)
           setEditing(null)
           setError(null)
         }}
@@ -587,20 +722,31 @@ export default function SpecificationAgreementDeviations({
             editing !== null
               ? `${path}/${editing}`
               : `/api/specification-item-deviations/${encodeURIComponent(item.itemRef)}`,
-            { motivation },
+            {
+              motivation,
+              ...(renewing !== null ? { renewsDeviationId: renewing } : {}),
+            },
             editing !== null ? 'PUT' : 'POST',
           )
         }
         open={creating || editing !== null}
         priorityLevel={priorityLevel}
         scopeNotice={
-          creating &&
-          item.currentAgreementReference &&
-          selected?.state !== 'current'
-            ? ta('sharedDeviationScope', {
-                reference: item.currentAgreementReference,
+          renewing !== null
+            ? t('sharedApprovalScope', {
+                references:
+                  cases.find(value => value.id === renewing)
+                    ?.agreementReferences ??
+                  selected?.agreementReference ??
+                  item.uniqueId,
               })
-            : undefined
+            : creating &&
+                item.currentAgreementReference &&
+                selected?.state !== 'current'
+              ? ta('sharedDeviationScope', {
+                  reference: item.currentAgreementReference,
+                })
+              : undefined
         }
         title={editing !== null ? t('editDeviation') : undefined}
       />
@@ -609,7 +755,7 @@ export default function SpecificationAgreementDeviations({
         developerModeValue="agreement deviation cancellation"
         onClose={() => setCancellingDeviationId(null)}
         open={cancellingDeviationId !== null}
-        title={ta('cancelDeviation')}
+        title={closing ? t('closeApproval') : ta('cancelDeviation')}
         titleId={`cancel-deviation-${item.itemRef}`}
       >
         <form
@@ -620,7 +766,7 @@ export default function SpecificationAgreementDeviations({
             await mutate(
               `/api/requirements-specifications/${specificationId}/agreement`,
               {
-                operation: 'cancel_deviation',
+                operation: closing ? 'close_deviation' : 'cancel_deviation',
                 itemRef: item.itemRef,
                 deviationId: cancellingDeviationId,
                 reason: cancellationReason.trim(),
@@ -628,12 +774,20 @@ export default function SpecificationAgreementDeviations({
             )
           }}
         >
-          <p>{ta('cancelDeviationExplanation')}</p>
+          <p>
+            {closing
+              ? t('closeApprovalHelp')
+              : ta('cancelDeviationExplanation')}
+          </p>
           {cancellingCase?.agreementReferences && (
             <p>
-              {ta('cancelDeviationSharedScope', {
-                references: cancellingCase.agreementReferences,
-              })}
+              {closing
+                ? t('sharedApprovalScope', {
+                    references: cancellingCase.agreementReferences,
+                  })
+                : ta('cancelDeviationSharedScope', {
+                    references: cancellingCase.agreementReferences,
+                  })}
             </p>
           )}
           <p className="whitespace-pre-wrap wrap-break-word">
@@ -680,7 +834,11 @@ export default function SpecificationAgreementDeviations({
               disabled={busy || !cancellationReason.trim()}
               type="submit"
             >
-              {busy ? ta('working') : ta('cancelDeviation')}
+              {busy
+                ? ta('working')
+                : closing
+                  ? t('closeApproval')
+                  : ta('cancelDeviation')}
             </button>
           </div>
         </form>
@@ -692,13 +850,25 @@ export default function SpecificationAgreementDeviations({
           setDeciding(null)
           setError(null)
         }}
-        onSubmit={(decision, decisionMotivation) =>
+        onSubmit={(decision, decisionMotivation, terms) =>
           void mutate(`${path}/${deciding}/decision`, {
             decision,
             decisionMotivation,
+            ...terms,
           })
         }
         open={deciding !== null}
+        scopeNotice={
+          cases.find(value => value.id === deciding)?.renewsDeviationId
+            ? t('sharedApprovalScope', {
+                references:
+                  cases.find(value => value.id === deciding)
+                    ?.agreementReferences ??
+                  selected?.agreementReference ??
+                  item.uniqueId,
+              })
+            : undefined
+        }
       />
     </section>
   )

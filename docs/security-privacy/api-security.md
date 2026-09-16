@@ -531,3 +531,20 @@ Strict request schemas reject unknown fields. Allowed agreement actions use the
 existing transactional action log. Corrections record old/new values without a
 reason prompt. HSA-id-based privacy export and erasure include agreement and
 ending actors while preserving business decisions and timestamps.
+
+### Approval validity and shared closure
+
+The existing focused deviation decision routes accept optional `conditions`
+(maximum 10000 characters) and `validThrough` (an ISO calendar date). Approval
+validity is independent of agreement start. The item-deviation creation route
+accepts `renewsDeviationId`, checked against the latest approval of the same
+exact content under the specification lock. These focused routes retain their
+existing session, CSRF and role tests outside the Schemathesis contract.
+
+The covered agreement mutation adds `close_deviation` with item reference,
+approval identity, optional agreement identity and a required reason. Only the
+assigned responsible person can commit closure. An undecided request, including
+a renewal draft, blocks closure. The mutation preserves decision terms and
+records an independent ending with actor and time. Retries cannot duplicate the
+closure. Reviewer-only approval and the existing author/follow-up permissions
+remain in effect. Dates and request state are checked while holding the lock.

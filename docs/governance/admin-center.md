@@ -907,3 +907,11 @@ anonymiseras tillsammans medan rättelsernas verksamhetshistorik bevaras.
 Aktuella avtal och väntande utkast eller kommande avtal skyddas från gallring.
 Efter avslut gäller ordinarie regler och undantag, med obligatorisk JSON-export
 inklusive bevarade avtal, kravuppsättningar, uppföljning och avstegshistorik.
+
+### Dataskydd för avstegsavslut
+
+Dataskyddets grupp för registrerade avstegsavslut omfattar både HSA-id och
+namnögonblicksbild för den ansvariga aktören. Exakt HSA-id styr förhandsvisning,
+registerutdrag och anonymisering. Avstegets beslut, villkor, slutdatum och
+avslutsmotivering bevaras; fritext granskas enligt ordinarie process. Utgång och
+avslut ändrar inte Arkiveringens policy eller bevarandeskydd.

@@ -55,6 +55,9 @@ describe('deviations DAL (SQL Server path)', () => {
     query.mockResolvedValue([
       {
         id: 7,
+        conditions: null,
+        validThrough: null,
+        renewsDeviationId: null,
         specificationItemId: 3,
         motivation: 'Needs waiver',
         isReviewRequested: true,
@@ -92,6 +95,9 @@ describe('deviations DAL (SQL Server path)', () => {
     expect(result).toEqual([
       {
         id: 7,
+        conditions: null,
+        validThrough: null,
+        renewsDeviationId: null,
         specificationItemId: 3,
         specificationLocalRequirementId: null,
         motivation: 'Needs waiver',
@@ -118,7 +124,10 @@ describe('deviations DAL (SQL Server path)', () => {
 
   it('creates a deviation after validating requirement application existence', async () => {
     const { db, query } = createSqlServerDb()
-    query.mockResolvedValueOnce([{ id: 3 }]).mockResolvedValueOnce([{ id: 42 }])
+    query
+      .mockResolvedValueOnce([{ id: 3 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 42 }])
 
     const result = await createDeviation(db, {
       specificationItemId: 3,
@@ -129,7 +138,7 @@ describe('deviations DAL (SQL Server path)', () => {
 
     expect(result).toEqual({ id: 42 })
     expect(query).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.stringContaining('INSERT INTO deviations'),
       [
         3,
@@ -137,6 +146,7 @@ describe('deviations DAL (SQL Server path)', () => {
         'tester',
         'SE5560000001-tester1',
         expect.any(Date),
+        null,
       ],
     )
   })
@@ -294,7 +304,11 @@ describe('deviations DAL (SQL Server path)', () => {
 
   it('records decisions using an atomic review-requested guard', async () => {
     const { db, query } = createSqlServerDb()
-    query.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValueOnce([{ id: 9 }])
+    query
+      .mockResolvedValueOnce([{ id: 7 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 9 }])
 
     await recordDecision(db, 7, {
       decidedBy: 'reviewer',
@@ -321,22 +335,26 @@ describe('deviations DAL (SQL Server path)', () => {
       'SE5560000001-reviewer1',
       expect.any(Date),
       7,
+      null,
+      null,
     ])
 
-    const localSql = compactSql(query.mock.calls[1][0])
+    const localSql = compactSql(query.mock.calls[3][0])
     expect(localSql).toContain(
       'UPDATE specification_local_requirement_deviations',
     )
     expect(localSql).toContain('OUTPUT INSERTED.id AS id')
     expect(localSql).toContain('AND decision IS NULL')
     expect(localSql).toContain('AND is_review_requested = 1')
-    expect(query.mock.calls[1][1]).toEqual([
+    expect(query.mock.calls[3][1]).toEqual([
       DEVIATION_REJECTED,
       'Rejected',
       'local reviewer',
       'SE5560000001-reviewer2',
       expect.any(Date),
       9,
+      null,
+      null,
     ])
   })
 
@@ -551,6 +569,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const success = createSqlServerDb()
     success.query
       .mockResolvedValueOnce([{ id: 9 }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: '51' }])
     await expect(
       createSpecificationLocalDeviation(success.db, {
@@ -558,12 +577,13 @@ describe('deviations DAL (SQL Server path)', () => {
         motivation: '  Local reason  ',
       }),
     ).resolves.toEqual({ id: 51 })
-    expect(success.query.mock.calls[1][1]).toEqual([
+    expect(success.query.mock.calls[2][1]).toEqual([
       9,
       'Local reason',
       null,
       null,
       expect.any(Date),
+      null,
     ])
 
     const missing = createSqlServerDb()
@@ -595,6 +615,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const failed = createSqlServerDb()
     failed.query
       .mockResolvedValueOnce([{ id: 3 }])
+      .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error('SQL insert failed'))
     await expect(
       createDeviation(failed.db, {
@@ -608,6 +629,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const library = createSqlServerDb()
     library.query
       .mockResolvedValueOnce([{ id: 3 }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 31 }])
     await expect(
       createDeviationForItemRef(library.db, {
@@ -622,6 +644,7 @@ describe('deviations DAL (SQL Server path)', () => {
     const local = createSqlServerDb()
     local.query
       .mockResolvedValueOnce([{ id: 9 }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 32 }])
     await expect(
       createDeviationForItemRef(local.db, {
@@ -900,6 +923,99 @@ describe('deviations DAL (SQL Server path)', () => {
           .mockResolvedValueOnce(state ? [state] : [])
         await expect(operation(current.db, 7)).rejects.toMatchObject(expected)
       }
+    },
+  )
+})
+
+describe.each([
+  ['library', recordDecision],
+  ['local', recordSpecificationLocalDecision],
+] as const)('%s approval terms', (_kind, decide) => {
+  const decision = {
+    decision: DEVIATION_APPROVED,
+    decisionMotivation: 'Accepted',
+    decidedBy: 'Reviewer',
+    decidedByHsaId: 'SE5560000001-reviewer1',
+  }
+
+  it.each([
+    { validThrough: '2020-01-01' },
+    { validThrough: '2099-02-30' },
+    { conditions: 'x'.repeat(10001) },
+  ])('rejects invalid approval terms before writing (%#)', async terms => {
+    const { db, query } = createSqlServerDb()
+    await expect(
+      decide(db, 7, { ...decision, ...terms }),
+    ).rejects.toMatchObject({ code: 'validation' })
+    expect(query).not.toHaveBeenCalled()
+  })
+
+  it('persists trimmed conditions and the inclusive end date with the decision', async () => {
+    const { db, query } = createSqlServerDb()
+    query.mockResolvedValueOnce([{ id: 7 }]).mockResolvedValue([])
+    await decide(db, 7, {
+      ...decision,
+      conditions: '  Weekly review  ',
+      validThrough: '2099-09-30',
+    })
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('conditions = @6'),
+      [
+        1,
+        'Accepted',
+        'Reviewer',
+        decision.decidedByHsaId,
+        expect.any(Date),
+        7,
+        'Weekly review',
+        '2099-09-30',
+      ],
+    )
+    expect(query).toHaveBeenCalledTimes(3)
+  })
+
+  it('normalizes blank approval conditions and excludes approval terms from rejection', async () => {
+    const { db, query } = createSqlServerDb()
+    query.mockResolvedValue([{ id: 7 }])
+    await decide(db, 7, { ...decision, conditions: '  ' })
+    expect(query.mock.calls[0][1]?.slice(-2)).toEqual([null, null])
+    query.mockClear()
+    await decide(db, 7, {
+      ...decision,
+      decision: DEVIATION_REJECTED,
+      conditions: 'Unused approval terms',
+      validThrough: '2020-01-01',
+    })
+    expect(query.mock.calls[0][1]?.slice(-2)).toEqual([null, null])
+    expect(query).toHaveBeenCalledOnce()
+  })
+})
+
+describe('persisted approval details', () => {
+  it.each([getDeviation, getSpecificationLocalDeviation])(
+    'returns conditions, calendar validity and the renewal link (%#)',
+    async get => {
+      const { db, query } = createSqlServerDb()
+      query.mockResolvedValue([
+        {
+          id: 10,
+          specificationItemId: 3,
+          specificationLocalRequirementId: 3,
+          isSpecificationLocal: get === getSpecificationLocalDeviation,
+          conditions: 'Weekly review',
+          validThrough: new Date('2026-09-30T00:00:00Z'),
+          renewsDeviationId: '7',
+          applicability: 'applicable',
+          decision: 1,
+        },
+      ])
+      expect(await get(db, 10)).toMatchObject({
+        conditions: 'Weekly review',
+        validThrough: '2026-09-30',
+        renewsDeviationId: 7,
+        applicability: 'applicable',
+      })
     },
   )
 })

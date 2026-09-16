@@ -101,6 +101,7 @@ import {
   type RequirementRow,
   type RequirementSortState,
 } from '@/lib/requirements/list-view'
+import { deviationApplicability } from '@/lib/specifications/deviation-applicability'
 import {
   type AvailableRequirementsData,
   type NormReferenceOption,
@@ -3771,7 +3772,12 @@ export default function KravunderlagDetailClient({
                               approvedDeviationEndingRequired={agreementContext?.deviations.some(
                                 deviation =>
                                   deviation.itemRef === item.itemRef &&
-                                  deviation.decision === 1 &&
+                                  deviationApplicability(
+                                    deviation,
+                                    agreementContext.deviations,
+                                    agreementContext.deviationEndings,
+                                    new Date(),
+                                  ) === 'applicable' &&
                                   !agreementContext.deviationEndings.some(
                                     ending =>
                                       ending.itemRef === deviation.itemRef &&

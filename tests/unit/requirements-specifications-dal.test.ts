@@ -2177,7 +2177,13 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
     expect(query).toHaveBeenNthCalledWith(2, expect.any(String), [5, 1, 2, 41])
     expect(result).toEqual([
       expect.objectContaining({
-        deviationCounts: { approved: 0, pending: 0, rejected: 0, total: 0 },
+        deviationCounts: {
+          applicable: 0,
+          approved: 0,
+          pending: 0,
+          rejected: 0,
+          total: 0,
+        },
         itemRef: 'local:41',
         kind: 'specificationLocal',
         needsReferenceId: null,
@@ -2188,7 +2194,13 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
         versionNumber: null,
       }),
       expect.objectContaining({
-        deviationCounts: { approved: 1, pending: 1, rejected: 1, total: 3 },
+        deviationCounts: {
+          applicable: 0,
+          approved: 1,
+          pending: 1,
+          rejected: 1,
+          total: 3,
+        },
         itemRef: 'lib:31',
         kind: 'library',
         needsReference: 'IAM-42',
@@ -2231,7 +2243,13 @@ describe('requirements-specifications DAL (SQL Server path)', () => {
       ]),
     ).resolves.toEqual([
       expect.objectContaining({
-        deviationCounts: { approved: 0, pending: 0, rejected: 0, total: 0 },
+        deviationCounts: {
+          applicable: 0,
+          approved: 0,
+          pending: 0,
+          rejected: 0,
+          total: 0,
+        },
         itemRef: 'lib:31',
         specificationItemStatusId: null,
         uniqueId: '',

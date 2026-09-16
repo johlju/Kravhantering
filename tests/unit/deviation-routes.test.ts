@@ -529,6 +529,7 @@ describe('deviation mutation routes', () => {
           {
             body: JSON.stringify({
               motivation: 'A valid deviation motivation',
+              renewsDeviationId: 3,
             }),
             headers: { 'Content-Type': 'application/json' },
             method: 'POST',
@@ -545,6 +546,7 @@ describe('deviation mutation routes', () => {
           createdByHsaId: 'SE5560000001-reviewer1',
           itemRef,
           motivation: 'A valid deviation motivation',
+          renewsDeviationId: 3,
         },
       )
     },
@@ -732,6 +734,8 @@ describe('deviation mutation routes', () => {
         body: JSON.stringify({
           decision: 1,
           decisionMotivation: 'Looks good',
+          conditions: 'Review access weekly',
+          validThrough: '2099-09-30',
         }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
@@ -746,6 +750,8 @@ describe('deviation mutation routes', () => {
       decidedByHsaId: 'SE5560000001-reviewer1',
       decision: 1,
       decisionMotivation: 'Looks good',
+      conditions: 'Review access weekly',
+      validThrough: '2099-09-30',
     })
   })
 
@@ -1207,6 +1213,50 @@ describe('deviation mutation routes', () => {
       } finally {
         consoleErrorSpy.mockRestore()
       }
+    },
+  )
+  it.each([{ conditions: 'x'.repeat(10001) }, { validThrough: '2099-02-30' }])(
+    'rejects malformed approval terms before the DAL',
+    async invalid => {
+      const { POST } = await import('@/app/api/deviations/[id]/decision/route')
+      const response = await POST(
+        new Request('https://example.test/api/deviations/7/decision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            decision: 1,
+            decisionMotivation: 'Permission',
+            ...invalid,
+          }),
+        }) as never,
+        params({ id: '7' }),
+      )
+      expect(response.status).toBe(400)
+      expect(routeState.recordDecision).not.toHaveBeenCalled()
+    },
+  )
+  it.each([0, -1, 1.5, '3'])(
+    'rejects invalid renewal reference %s before creation',
+    async renewsDeviationId => {
+      const { POST } = await import(
+        '@/app/api/specification-item-deviations/[itemId]/route'
+      )
+      const response = await POST(
+        new Request(
+          'https://example.test/api/specification-item-deviations/local%3A8',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              motivation: 'Continued permission',
+              renewsDeviationId,
+            }),
+          },
+        ) as never,
+        params({ itemId: 'local%3A8' }),
+      )
+      expect(response.status).toBe(400)
+      expect(routeState.createDeviationForItemRef).not.toHaveBeenCalled()
     },
   )
 })

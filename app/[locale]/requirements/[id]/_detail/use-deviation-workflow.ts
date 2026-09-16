@@ -57,7 +57,11 @@ export interface UseDeviationWorkflowResult {
     event?: MouseEvent<HTMLButtonElement>,
   ) => Promise<void>
   handleEditDeviation: (motivation: string) => Promise<void>
-  handleRecordDecision: (decision: 1 | 2, motivation: string) => Promise<void>
+  handleRecordDecision: (
+    decision: 1 | 2,
+    motivation: string,
+    terms?: { conditions: string | null; validThrough: string | null },
+  ) => Promise<void>
   handleRequestReview: () => Promise<void>
   handleRevertToDraft: (event?: MouseEvent<HTMLButtonElement>) => Promise<void>
   latestDeviation: DeviationData | null
@@ -283,7 +287,11 @@ export function useDeviationWorkflow({
   )
 
   const handleRecordDecision = useCallback(
-    async (decision: 1 | 2, motivation: string) => {
+    async (
+      decision: 1 | 2,
+      motivation: string,
+      terms?: { conditions: string | null; validThrough: string | null },
+    ) => {
       if (!latestDeviation) return
       setDeviationSaving(true)
       try {
@@ -295,6 +303,7 @@ export function useDeviationWorkflow({
             body: JSON.stringify({
               decision,
               decisionMotivation: motivation,
+              ...terms,
             }),
           },
         )

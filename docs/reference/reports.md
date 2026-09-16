@@ -537,3 +537,18 @@ RFI PDF shows the same evidence under each current question and in a separate
 history section, including questions removed from the list. Actor names use
 localized anonymous display after privacy erasure. CSV cells retain the shared
 formula-injection protection. No document is uploaded or fetched by the export.
+
+## Deviation permission and follow-up
+
+The management PDF, application traceability PDF and Full CSV distinguish
+recorded approval outcomes from applicable permission. Traceability cells show
+each outcome label and count once, followed by applicability and follow-up
+state. Dated permission is
+inclusive in Europe/Stockholm. Pending renewal grants no extension. An ended
+approval without replacement shows action required until the current usage
+status is Verified. Previous, ended, and cancelled agreements retain history
+without current follow-up work.
+Selected historical agreements use their preserved cutoff. Compact outputs
+exclude full conditions and closure reasons; mandatory archive JSON preserves
+these terms. The deviation review report used before a decision keeps its
+existing purpose.

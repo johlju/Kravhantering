@@ -1,19 +1,18 @@
 import fs from 'node:fs'
-import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import buildMetadataTools from '../build-metadata.js'
 
 // cSpell:ignore FULLSEMVER showvariable
 
-const require = createRequire(import.meta.url)
 const {
   DEFAULT_MIGRATIONS_DIR,
   UNKNOWN_COMMIT_SHA,
   createBuildMetadata,
   readExpectedDatabaseSchemaVersion,
   writeBuildMetadata,
-} = require('../build-metadata.js')
+} = buildMetadataTools
 
 const tempDirs = []
 
@@ -198,6 +197,47 @@ describe('build metadata generator', () => {
     )
   })
 
+  it.each([
+    [
+      "name = 'DeclaredMigration1713800000000'",
+      'DeclaredMigration1713800000000',
+    ],
+    ['', 'ExportedMigration1713800000000'],
+  ])(
+    'uses the migration identity instead of SQL object names (%s)',
+    (field, expected) => {
+      const { dir } = makeProject()
+      fs.writeFileSync(
+        path.join(dir, DEFAULT_MIGRATIONS_DIR, '0002_indexes.mjs'),
+        [
+          "const sql = `SELECT 1 FROM sys.indexes WHERE name = 'idx_before_class'`",
+          'export class ExportedMigration1713800000000 {',
+          `  ${field}`,
+          '  async up(queryRunner) {',
+          '    await queryRunner.query(sql)',
+          "    await queryRunner.query(`SELECT 1 FROM sys.indexes WHERE name = 'idx_inside_method'`)",
+          '  }',
+          '}',
+        ].join('\n'),
+      )
+
+      expect(readExpectedDatabaseSchemaVersion({ cwd: dir, env: {} })).toBe(
+        expected,
+      )
+    },
+  )
+
+  it('rejects migration files without an exported migration class', () => {
+    const { dir } = makeProject()
+    fs.writeFileSync(
+      path.join(dir, DEFAULT_MIGRATIONS_DIR, '0002_invalid.mjs'),
+      "const sql = `SELECT 1 FROM sys.indexes WHERE name = 'idx_only'`",
+    )
+    expect(() =>
+      readExpectedDatabaseSchemaVersion({ cwd: dir, env: {} }),
+    ).toThrow('Unable to determine TypeORM migration name')
+  })
+
   it('writes public build metadata as formatted JSON', () => {
     const { dir, packageJsonPath } = makeProject('0.3.0')
     const outputPath = path.join(dir, 'public', 'build.json')
@@ -214,6 +254,80 @@ describe('build metadata generator', () => {
     const raw = fs.readFileSync(outputPath, 'utf8')
     expect(raw.endsWith('\n')).toBe(true)
     expect(JSON.parse(raw)).toEqual(metadata)
+  })
+
+  it('fails closed when the migrations directory is absent or unreadable', () => {
+    const { dir } = makeProject()
+    expect(() =>
+      readExpectedDatabaseSchemaVersion({
+        cwd: dir,
+        env: {},
+        migrationsDir: path.join(dir, 'missing'),
+      }),
+    ).toThrow('No TypeORM migration files found')
+
+    const denied = Object.assign(new Error('Permission denied'), {
+      code: 'EACCES',
+    })
+    expect(() =>
+      readExpectedDatabaseSchemaVersion({
+        cwd: dir,
+        env: {},
+        fsImpl: {
+          readdirSync: () => {
+            throw denied
+          },
+        },
+      }),
+    ).toThrow(denied)
+  })
+
+  it('rejects missing package versions when build version sources are unavailable', () => {
+    const { dir } = makeProject('  ')
+    expect(() =>
+      createBuildMetadata({ cwd: dir, env: { BUILD_COMMIT_SHA: 'abc123' } }),
+    ).toThrow('Missing version')
+  })
+
+  it('writes the default metadata path with explicit fallback environment values', () => {
+    const { dir } = makeProject()
+    const metadata = writeBuildMetadata({
+      cwd: dir,
+      env: {
+        GITVERSION_SEMVER: '1.2.3',
+        GITHUB_SHA: 'abc123',
+        EXPECTED_DATABASE_SCHEMA_VERSION: 'Schema1713800000000',
+      },
+      fsImpl: fs,
+    })
+    expect(
+      JSON.parse(
+        fs.readFileSync(path.join(dir, 'public', 'build.json'), 'utf8'),
+      ),
+    ).toEqual(metadata)
+    expect(metadata).toMatchObject({
+      version: '1.2.3',
+      commitSha: 'abc123',
+      expectedDatabaseSchemaVersion: 'Schema1713800000000',
+    })
+  })
+
+  it('falls back through unavailable or empty GitVersion commands', () => {
+    const { dir } = makeProject('1.2.3')
+    addDotnetToolManifest(dir)
+    const metadata = createBuildMetadata({
+      cwd: dir,
+      env: {
+        DOTNET_HOST_PATH: '/missing/dotnet',
+        DOTNET_ROOT: '/empty',
+        BUILD_COMMIT_SHA: 'abc123',
+      },
+      execFileSync: command => {
+        if (command === '/missing/dotnet') throw new Error('Not installed')
+        return ''
+      },
+    })
+    expect(metadata.version).toBe('1.2.3')
   })
 
   it('resolves relative output paths from the configured cwd', () => {

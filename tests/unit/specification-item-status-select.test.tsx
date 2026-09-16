@@ -85,4 +85,21 @@ describe('SpecificationItemStatusSelect', () => {
     expect(onChange).toHaveBeenCalledWith('local:8', 5)
     document.body.removeEventListener('click', parentClick)
   })
+  it('displays recorded Deviated use after permission ends while preventing a new selection', () => {
+    render(
+      <SpecificationItemStatusSelect
+        ariaLabel="Usage status"
+        hasApprovedDeviation={false}
+        itemRef="lib:7"
+        locale="en"
+        onChange={vi.fn()}
+        statuses={statuses}
+        statusId={5}
+      />,
+    )
+    expect(screen.getByRole('combobox', { name: 'Usage status' })).toHaveValue(
+      '5',
+    )
+    expect(screen.getByRole('option', { name: 'Deviated' })).toBeDisabled()
+  })
 })

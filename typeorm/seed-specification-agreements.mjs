@@ -396,6 +396,142 @@ export function applySpecificationAgreementSeed(data, order, now = new Date()) {
     recorded_by_hsa_id: owner(5),
     ended_at: changed,
   })
+  // Approval validity examples use independent local content in the editable demo.
+  const validityExamples = [
+    ['Daterat godkännande', 1, '2099-09-30', null],
+    ['Godkännande utan tidsgräns', 1, null, null],
+    ['Utgånget godkännande med Avviken', 5, '2026-05-31', null],
+    ['Verifierad uppföljning efter utgång', 4, '2026-05-31', null],
+    ['Utgånget godkännande med väntande förnyelse', 5, '2026-05-31', 'pending'],
+    ['Gällande godkännande med avslagen förnyelse', 5, null, 'rejected'],
+    ['Ersatt godkännande vars efterföljare har löpt ut', 5, null, 'approved'],
+    ['Manuellt avslutad tillåtelse', 5, null, 'closed'],
+  ]
+  validityExamples.forEach(
+    ([description, status, validThrough, renewal], index) => {
+      const id = 132501 + index
+      const requirement = local(id, 8, null, `GILTIGHET: ${description}`)
+      put('specification_local_requirements', {
+        ...requirement,
+        valid_from: '2026-04-30T09:00:00.000Z',
+        created_at: '2026-04-30T09:00:00.000Z',
+        specification_item_status_id: status,
+      })
+      const original = {
+        id,
+        specification_local_requirement_id: id,
+        motivation: description,
+        is_review_requested: 1,
+        decision: 1,
+        decision_motivation:
+          'Tillfällig tillåtelse med bevarat originalbeslut.',
+        conditions: 'Kontrollera behörigheter varje vecka.',
+        valid_through: validThrough,
+        decided_by: 'Ada Admin',
+        decided_by_hsa_id: owner(8),
+        decided_at: '2026-05-01T10:00:00.000Z',
+        created_by: 'Ada Admin',
+        created_by_hsa_id: owner(8),
+        created_at: '2026-04-30T10:00:00.000Z',
+        updated_at: '2026-05-01T10:00:00.000Z',
+      }
+      put('specification_local_requirement_deviations', original)
+      if (renewal && renewal !== 'closed')
+        put('specification_local_requirement_deviations', {
+          ...original,
+          id: id + 50,
+          renews_deviation_id: id,
+          motivation: `Förnyelse: ${description}`,
+          conditions:
+            renewal === 'approved' ? 'Nya kompensationsvillkor.' : null,
+          valid_through: renewal === 'approved' ? '2026-05-31' : null,
+          decision:
+            renewal === 'pending' ? null : renewal === 'approved' ? 1 : 2,
+          decision_motivation:
+            renewal === 'pending'
+              ? null
+              : 'Separat granskarbeslut om fortsatt tillåtelse.',
+          decided_at: renewal === 'pending' ? null : '2026-05-15T10:00:00.000Z',
+          decided_by: renewal === 'pending' ? null : 'Ada Admin',
+          decided_by_hsa_id: renewal === 'pending' ? null : owner(8),
+          created_at: '2026-05-14T10:00:00.000Z',
+          updated_at: '2026-05-15T10:00:00.000Z',
+        })
+      if (renewal === 'closed' || renewal === 'approved')
+        put('specification_deviation_endings', {
+          id,
+          specification_id: 8,
+          local_deviation_id: id,
+          planned_effective_date: '2026-05-15',
+          recorded_at: '2026-05-15T10:00:00.000Z',
+          ended_at: '2026-05-15T10:00:00.000Z',
+          recorded_by_hsa_id: owner(8),
+          recorded_by_display_name: 'Ada Admin',
+          ending_kind: renewal === 'closed' ? 'closed' : 'superseded',
+          reason:
+            renewal === 'closed' ? 'Tillåtelsen behövs inte längre.' : null,
+        })
+    },
+  )
+  const endedSpecification = {
+    ...specifications.find(specification => specification.id === 8),
+    id: 1325,
+    specification_code: 'GILTIGHET-AVSLUT',
+    name: 'GILTIGHET: avslutat avtal',
+    local_requirement_next_sequence: 1,
+  }
+  specifications.push(endedSpecification)
+  put('requirements_specifications', endedSpecification)
+  agreement(132501, 1325, 'GILTIGHET-AVTAL-A', {
+    is_current: 0,
+    ended_at: changed,
+    end_date: '2026-06-01',
+    end_reason: 'Leveransen har upphört.',
+  })
+  const endedRequirement = local(
+    132520,
+    1325,
+    132501,
+    'GILTIGHET: historisk olöst avvikelse',
+  )
+  put('specification_local_requirements', {
+    ...endedRequirement,
+    valid_from: '2026-04-30T09:00:00.000Z',
+    created_at: '2026-04-30T09:00:00.000Z',
+    valid_until: changed,
+    specification_item_status_id: 5,
+  })
+  membership(132501, endedRequirement, true, {
+    has_followup_snapshot: 1,
+    specification_item_status_id: 5,
+  })
+  put('specification_local_requirement_deviations', {
+    id: 132520,
+    specification_local_requirement_id: 132520,
+    motivation: 'Historisk tillåtelse utan tidsgräns.',
+    decision: 1,
+    is_review_requested: 1,
+    decision_motivation: 'Godkänt innan avtalet upphörde.',
+    conditions: 'Veckovis kontroll.',
+    decided_at: '2026-05-01T10:00:00.000Z',
+    created_at: '2026-04-30T10:00:00.000Z',
+    created_by_hsa_id: owner(1325),
+    created_by: 'Ada Admin',
+    decided_by_hsa_id: owner(1325),
+    decided_by: 'Ada Admin',
+  })
+  put('specification_deviation_endings', {
+    id: 132520,
+    specification_id: 1325,
+    agreement_id: 132501,
+    agreement_reference: 'GILTIGHET-AVTAL-A',
+    local_deviation_id: 132520,
+    planned_effective_date: '2026-06-01',
+    recorded_at: changed,
+    ended_at: changed,
+    recorded_by_hsa_id: owner(1325),
+    ending_kind: 'agreement_ended',
+  })
   for (const member of records('specification_agreement_items')) {
     const local = member.specification_local_requirement_id != null
     const binding = local

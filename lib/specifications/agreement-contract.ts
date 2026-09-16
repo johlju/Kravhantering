@@ -24,6 +24,15 @@ const localContent = z
 export const agreementMutationSchema = z.discriminatedUnion('operation', [
   z
     .object({
+      operation: z.literal('close_deviation'),
+      agreementId: positiveIntegerSchema.optional(),
+      itemRef,
+      deviationId: positiveIntegerSchema,
+      reason,
+    })
+    .strict(),
+  z
+    .object({
       operation: z.literal('end'),
       agreementId: positiveIntegerSchema,
       endDate: effectiveDate,

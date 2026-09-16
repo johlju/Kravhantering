@@ -798,6 +798,9 @@ erDiagram
         datetime cancelled_at
         text cancelled_by_hsa_id
         datetime ended_at
+        nvarchar ending_kind
+        nvarchar reason
+        nvarchar recorded_by_display_name
     }
     requirements_specifications {
         integer id PK
@@ -869,6 +872,9 @@ erDiagram
         text created_by_hsa_id
         text created_at
         text updated_at
+        nvarchar conditions
+        date valid_through
+        integer renews_deviation_id FK
     }
 
     requirements_specification_items {
@@ -903,6 +909,9 @@ erDiagram
         text created_by_hsa_id
         text created_at
         text updated_at
+        nvarchar conditions
+        date valid_through
+        integer renews_deviation_id FK
     }
 
     requirement_area_co_authors {
@@ -1145,6 +1154,8 @@ erDiagram
     requirements_specifications ||--o{ specification_deviation_endings : "specification_id"
     specification_agreements ||--o{ specification_deviation_endings : "agreement_id"
     specification_agreement_items ||--o{ specification_deviation_endings : "agreement_item_id"
+    deviations |o--o{ deviations : "renews_deviation_id"
+    specification_local_requirement_deviations |o--o{ specification_local_requirement_deviations : "renews_deviation_id"
     deviations ||--o{ specification_deviation_endings : "deviation_id"
     specification_local_requirement_deviations ||--o{ specification_deviation_endings : "local_deviation_id"
 
@@ -3030,7 +3041,7 @@ remains separate.
 | `cancellation_reason` | nvarchar(MAX), nullable | Required reason for cancelling a confirmed upcoming agreement. |
 | `ended_at` | datetime2, nullable | Actual ending event time, separate from the stated agreement end date. |
 | `ended_by_hsa_id` | nvarchar(64), nullable | Assigned responsible person registering agreement end. |
-| `ended_by_display_name` | nvarchar(512), nullable | Actor display snapshot; anonymized together with the corresponding HSA identity. |
+| `ended_by_display_name` | nvarchar(512), nullable | Actor display snapshot; anonymized together with `ended_by_hsa_id`. |
 | `end_date` | date, nullable | Stated agreement end date, from effective date through today. |
 | `end_reason` | nvarchar(MAX), nullable | Required reason for agreement end. |
 | `is_pending` | bit, required | Draft or confirmed upcoming agreement; at most one per specification. |
@@ -3116,6 +3127,9 @@ preserves cancelled plans that concern shared current cases.
 | `cancelled_at` | datetime2, nullable | Actual cancellation time; preserves confirmed agreement or ending-plan history. |
 | `cancelled_by_hsa_id` | nvarchar(64), nullable | Cancelling actor; anonymizable. |
 | `ended_at` | datetime2, nullable | Actual ending event time, separate from the stated agreement end date. |
+| `ending_kind` | nvarchar(32), nullable | `closed`, `superseded` or `agreement_ended`; null denotes the existing content-change ending. |
+| `reason` | nvarchar(max), nullable | Required explanation for manual closure; application limit 10000 characters. |
+| `recorded_by_display_name` | nvarchar(max), nullable | Closure actor snapshot; anonymized together with `recorded_by_hsa_id`. |
 <!-- markdownlint-enable MD013 -->
 
 Agreement mutations and due activation serialize on the specification row.
@@ -3658,6 +3672,9 @@ ending separately in `specification_deviation_endings`.
 | `is_review_requested` | integer NOT NULL DEFAULT 0 | 0 = draft, 1 = submitted for review |
 | `decision` | integer | Null = pending, 1 = approved, 2 = rejected, 3 = cancelled |
 | `decision_motivation` | text | Decision rationale or required cancellation reason |
+| `conditions` | nvarchar(max), nullable | Optional immutable reviewer conditions (application limit 10000 characters). |
+| `valid_through` | date, nullable | Inclusive approval end date in Europe/Stockholm; null means no calendar expiry. |
+| `renews_deviation_id` | int, nullable FK → `specification_local_requirement_deviations.id` | Previous approval for the same exact content; NO ACTION deletion preserves links. |
 | `decided_by` | text | Display-name snapshot for the actor that recorded the decision or cancellation |
 | `decided_by_hsa_id` | text | HSA-id for the actor that recorded the decision or cancellation (nullable after privacy erasure) |
 | `decided_at` | text (ISO 8601) | When the decision or cancellation was recorded |
@@ -3673,6 +3690,12 @@ ending separately in `specification_deviation_endings`.
 `idx_specification_local_requirement_deviations_decided_by_hsa_id`.
 
 ---
+
+Permission is evaluated separately from the recorded decision. The most recent
+approval by `decided_at`, then `id`, is the only candidate; rejection does not
+replace it. Calendar expiry and separate endings remove permission without
+changing usage status. Legacy approvals have null conditions and end dates.
+No dates are extracted from motivations and no historical ending is fabricated.
 
 ### `deviations`
 
@@ -3694,6 +3717,9 @@ ending separately in `specification_deviation_endings`.
 | `is_review_requested` | integer NOT NULL DEFAULT 0 | 0 = draft, 1 = submitted for review |
 | `decision` | integer | Null = pending, 1 = approved, 2 = rejected, 3 = cancelled |
 | `decision_motivation` | text | Decision rationale or required cancellation reason |
+| `conditions` | nvarchar(max), nullable | Optional immutable reviewer conditions (application limit 10000 characters). |
+| `valid_through` | date, nullable | Inclusive approval end date in Europe/Stockholm; null means no calendar expiry. |
+| `renews_deviation_id` | int, nullable FK → `deviations.id` | Previous approval for the same exact content; NO ACTION deletion preserves links. |
 | `decided_by` | text | Display-name snapshot for the actor that recorded the decision or cancellation |
 | `decided_by_hsa_id` | text | HSA-id for the actor that recorded the decision or cancellation (nullable after privacy erasure) |
 | `decided_at` | text (ISO 8601) | When the decision or cancellation was recorded |
@@ -3706,6 +3732,12 @@ ending separately in `specification_deviation_endings`.
 **Indexes:** `idx_deviations_specification_item_id`,
 `idx_deviations_created_by_hsa_id`,
 `idx_deviations_decided_by_hsa_id`.
+
+Permission is evaluated separately from the recorded decision. The most recent
+approval by `decided_at`, then `id`, is the only candidate; rejection does not
+replace it. Calendar expiry and separate endings remove permission without
+changing usage status. Legacy approvals have null conditions and end dates.
+No dates are extracted from motivations and no historical ending is fabricated.
 
 ### `improvement_suggestions`
 
@@ -3949,6 +3981,8 @@ its purpose and the table/column(s) it covers.
 | `idx_requirements_specification_items_origin_agreement_item_id` | `requirements_specification_items` | `origin_agreement_item_id` | Exact content revision history lookup. |
 | `idx_specification_local_requirements_origin_agreement_item_id` | `specification_local_requirements` | `origin_agreement_item_id` | Exact content revision history lookup. |
 | `idx_specification_agreement_corrections_agreement_id` | `specification_agreement_corrections` | `agreement_id` | Agreement correction history lookup. |
+| `idx_deviations_renews_deviation_id` | `deviations` | `renews_deviation_id` | Renewal history lookup. |
+| `idx_specification_local_requirement_deviations_renews_deviation_id` | `specification_local_requirement_deviations` | `renews_deviation_id` | Renewal history lookup. |
 | `idx_specification_deviation_endings_agreement_id` | `specification_deviation_endings` | `agreement_id` | Agreement ending lookup. |
 <!-- markdownlint-enable MD013 -->
 
@@ -4068,6 +4102,8 @@ The following table lists every named FK constraint:
 | `fk_specification_local_requirements_origin_agreement_item_id` | `specification_local_requirements` | `origin_agreement_item_id` | `specification_agreement_items.id` | SET NULL | NO ACTION |
 | `fk_requirements_specification_items_owning_agreement_id` | `requirements_specification_items` | `owning_agreement_id` | `specification_agreements.id` | SET NULL | NO ACTION |
 | `fk_specification_local_requirements_owning_agreement_id` | `specification_local_requirements` | `owning_agreement_id` | `specification_agreements.id` | SET NULL | NO ACTION |
+| `fk_deviations_renews_deviation_id` | `deviations` | `renews_deviation_id` | `deviations.id` | NO ACTION | NO ACTION |
+| `fk_specification_local_requirement_deviations_renews_deviation_id` | `specification_local_requirement_deviations` | `renews_deviation_id` | `specification_local_requirement_deviations.id` | NO ACTION | NO ACTION |
 | `fk_specification_deviation_endings_specification_id` | `specification_deviation_endings` | `specification_id` | `requirements_specifications.id` | NO ACTION | NO ACTION |
 | `fk_specification_deviation_endings_agreement_id` | `specification_deviation_endings` | `agreement_id` | `specification_agreements.id` | SET NULL | NO ACTION |
 | `fk_specification_deviation_endings_agreement_item_id` | `specification_deviation_endings` | `agreement_item_id` | `specification_agreement_items.id` | NO ACTION | NO ACTION |
@@ -4388,6 +4424,8 @@ graph LR
     AGC[specification_agreement_corrections] -->|correction history lookup| AG
     AGI[specification_agreement_items] -->|unique binding per agreement| AG
     AGE[specification_deviation_endings] -->|agreement lookup| AG
+    DV[deviations] -->|renewal lookup| DV
+    LDV[specification_local_requirement_deviations] -->|renewal lookup| LDV
 
 ```
 <!-- markdownlint-enable MD013 -->
@@ -4431,3 +4469,12 @@ lacks `kravhantering_runtime` membership and verifies the restricted permission
 contract. If the user belongs to either broad read/write role, reconciliation
 removes that membership after the custom contract verifies. It does not change
 the migration login's `db_owner` privileges.
+
+## Approval validity demo scenarios
+
+The `GILTIGHET` examples in specification 8 include dated and undated approvals,
+expired Avviken, verified follow-up, pending and rejected renewals, an expired
+replacement without fallback, and manual closure. `GILTIGHET-AVSLUT` preserves
+an ended agreement with unresolved historical use. These use separate local
+content identities and retain the existing fixture identifiers. Renewal and
+closure do not grant verification, extend dates or trigger retention.

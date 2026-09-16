@@ -211,7 +211,11 @@ function buildManagementRows(
       ...row,
       cells: {
         ...row.cells,
-        deviationSignal: formatDeviationSignal(item.deviationCounts, labels),
+        deviationSignal: formatDeviationSignal(
+          item.deviationCounts,
+          labels,
+          item,
+        ),
         residualFromImplementation: formatReportBoolean(
           isResidualFromImplementation(item),
           labels,

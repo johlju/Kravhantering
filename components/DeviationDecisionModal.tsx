@@ -7,12 +7,14 @@ import { createPortal } from 'react-dom'
 import AnimatedHelpPanel from '@/components/AnimatedHelpPanel'
 import DirtyStateButton from '@/components/DirtyStateButton'
 import FieldHelpButton from '@/components/FieldHelpButton'
+import FieldLabelWithHelp from '@/components/FieldLabelWithHelp'
 import { modalResizableTextareaRows3ClassName } from '@/components/modal-textarea-class'
 import { useDiscardChangesConfirmation } from '@/hooks/useDiscardChangesConfirmation'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { devMarker } from '@/lib/developer-mode-markers'
 import { createDirtySnapshot } from '@/lib/forms/dirty-state'
 import { dialogPanelMotion, fadeMotion } from '@/lib/reduced-motion'
+import { stockholmDate } from '@/lib/specifications/agreement-dates'
 
 const textareaClassName = `w-full rounded-lg border border-secondary-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-secondary-600 dark:bg-secondary-900 ${modalResizableTextareaRows3ClassName}`
 
@@ -20,11 +22,17 @@ interface DeviationDecisionModalProps {
   error?: string | null
   loading?: boolean
   onClose: () => void
-  onSubmit: (decision: 1 | 2, motivation: string) => void
+  onSubmit: (
+    decision: 1 | 2,
+    motivation: string,
+    terms?: { conditions: string | null; validThrough: string | null },
+  ) => void
   open: boolean
+  scopeNotice?: string
 }
 
 export default function DeviationDecisionModal({
+  scopeNotice,
   error,
   loading,
   onClose,
@@ -35,8 +43,21 @@ export default function DeviationDecisionModal({
   const tc = useTranslations('common')
   const [decision, setDecision] = useState<1 | 2>(1)
   const [motivation, setMotivation] = useState('')
+  const [conditions, setConditions] = useState('')
+  const [limitedValidity, setLimitedValidity] = useState(false)
+  const [validThrough, setValidThrough] = useState('')
+  const dateInvalid =
+    decision === 1 &&
+    limitedValidity &&
+    (!validThrough || validThrough < stockholmDate(new Date()))
   const [baselineSignature, setBaselineSignature] = useState(() =>
-    createDirtySnapshot({ decision: 1, motivation: '' }),
+    createDirtySnapshot({
+      decision: 1,
+      motivation: '',
+      conditions: '',
+      limitedValidity: false,
+      validThrough: '',
+    }),
   )
   const [openHelp, setOpenHelp] = useState<Set<string>>(() => new Set())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -48,7 +69,18 @@ export default function DeviationDecisionModal({
     if (open) {
       setDecision(1)
       setMotivation('')
-      setBaselineSignature(createDirtySnapshot({ decision: 1, motivation: '' }))
+      setConditions('')
+      setLimitedValidity(false)
+      setValidThrough('')
+      setBaselineSignature(
+        createDirtySnapshot({
+          decision: 1,
+          motivation: '',
+          conditions: '',
+          limitedValidity: false,
+          validThrough: '',
+        }),
+      )
       setOpenHelp(new Set())
     }
   }, [open])
@@ -66,7 +98,14 @@ export default function DeviationDecisionModal({
   }
 
   const formDirty =
-    baselineSignature !== createDirtySnapshot({ decision, motivation })
+    baselineSignature !==
+    createDirtySnapshot({
+      decision,
+      motivation,
+      conditions,
+      limitedValidity,
+      validThrough,
+    })
 
   const requestClose = useCallback(
     async (anchorEl?: HTMLElement | null) => {
@@ -88,10 +127,24 @@ export default function DeviationDecisionModal({
   })
 
   const handleSubmit = useCallback(() => {
-    if (!motivation.trim()) return
+    if (!motivation.trim() || dateInvalid) return
     if (!formDirty) return
-    onSubmit(decision, motivation.trim())
-  }, [decision, formDirty, motivation, onSubmit])
+    if (decision === 1)
+      onSubmit(decision, motivation.trim(), {
+        conditions: conditions.trim() || null,
+        validThrough: limitedValidity ? validThrough : null,
+      })
+    else onSubmit(decision, motivation.trim())
+  }, [
+    decision,
+    formDirty,
+    motivation,
+    onSubmit,
+    conditions,
+    limitedValidity,
+    validThrough,
+    dateInvalid,
+  ])
 
   if (typeof window === 'undefined') return null
 
@@ -181,6 +234,71 @@ export default function DeviationDecisionModal({
                 />
               </div>
 
+              {scopeNotice && <p role="status">{scopeNotice}</p>}
+              {decision === 1 && (
+                <section
+                  className="space-y-3"
+                  {...devMarker({
+                    name: 'approval terms',
+                    value: 'deviation conditions and validity',
+                    priority: 420,
+                  })}
+                >
+                  <FieldLabelWithHelp
+                    help={td('conditionsHelp')}
+                    htmlFor="deviation-conditions"
+                    label={td('conditions')}
+                  />
+                  <textarea
+                    className={textareaClassName}
+                    id="deviation-conditions"
+                    maxLength={10000}
+                    onChange={event => setConditions(event.target.value)}
+                    value={conditions}
+                  />
+                  <FieldLabelWithHelp
+                    help={td('validityHelp')}
+                    htmlFor="deviation-limited-validity"
+                    label={td('validity')}
+                  />
+                  <label className="flex min-h-6 items-center gap-2">
+                    <input
+                      checked={!limitedValidity}
+                      name="deviation-validity"
+                      onChange={() => setLimitedValidity(false)}
+                      type="radio"
+                    />
+                    {td('unlimitedValidity')}
+                  </label>
+                  <label className="flex min-h-6 items-center gap-2">
+                    <input
+                      checked={limitedValidity}
+                      id="deviation-limited-validity"
+                      name="deviation-validity"
+                      onChange={() => setLimitedValidity(true)}
+                      type="radio"
+                    />
+                    {td('limitedValidity')}
+                  </label>
+                  {limitedValidity && (
+                    <>
+                      <FieldLabelWithHelp
+                        help={td('validThroughHelp')}
+                        htmlFor="deviation-valid-through"
+                        label={td('validThrough')}
+                      />
+                      <input
+                        className="min-h-6 w-full rounded-lg border border-secondary-300 bg-white px-3 py-2 dark:border-secondary-600 dark:bg-secondary-900"
+                        id="deviation-valid-through"
+                        min={stockholmDate(new Date())}
+                        onChange={event => setValidThrough(event.target.value)}
+                        type="date"
+                        value={validThrough}
+                      />
+                    </>
+                  )}
+                </section>
+              )}
               {error && (
                 <p
                   className="text-sm text-red-700 dark:text-red-300"
@@ -203,7 +321,7 @@ export default function DeviationDecisionModal({
                 <DirtyStateButton
                   className="btn-primary text-sm px-4 py-2"
                   dirty={formDirty}
-                  disabled={!motivation.trim() || loading}
+                  disabled={!motivation.trim() || dateInvalid || loading}
                   onClick={handleSubmit}
                   type="button"
                 >

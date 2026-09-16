@@ -30,6 +30,8 @@ const decisionBodySchema = z
       z.literal(DEVIATION_REJECTED),
     ]),
     decisionMotivation: businessTextSchema,
+    conditions: z.string().trim().max(10000).nullable().optional(),
+    validThrough: z.iso.date().nullable().optional(),
   })
   .strict()
 
@@ -49,6 +51,8 @@ export const POST = secureMutationRoute({
       const db = authorizedDb ?? (await getRequestSqlServerDataSource())
       await recordSpecificationLocalDecision(db, params.id, {
         agreementId: body.agreementId,
+        conditions: body.conditions,
+        validThrough: body.validThrough,
         decision: body.decision,
         decisionMotivation: body.decisionMotivation,
         decidedBy: actor.displayName,

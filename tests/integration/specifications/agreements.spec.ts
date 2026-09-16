@@ -487,8 +487,37 @@ test('SPEC-22/SPEC-23/SPEC-28: edit the complete agreement in the requirement li
   page,
 }, testInfo) => {
   const owner = await newRoleContext(testInfo, 'specificationResponsible')
+  const reviewer = await newRoleContext(testInfo, 'reviewer')
   try {
     const data = await fixture(owner)
+    const requested = await owner.post(
+      `/api/specification-item-deviations/${encodeURIComponent(`local:${data.local.id}`)}`,
+      { data: { motivation: 'Historical permission' } },
+    )
+    await expectOk(requested, 'create historical permission')
+    const deviation = (await requested.json()) as { id: number }
+    const deviationPath = `/api/specification-local-deviations/${deviation.id}`
+    await expectOk(
+      await owner.post(`${deviationPath}/request-review`),
+      'request historical permission review',
+    )
+    await expectOk(
+      await reviewer.post(`${deviationPath}/decision`, {
+        data: { decision: 1, decisionMotivation: 'Historical approval' },
+      }),
+      'approve historical permission',
+    )
+    await expectOk(
+      await owner.post(data.endpoint, {
+        data: {
+          operation: 'close_deviation',
+          itemRef: `local:${data.local.id}`,
+          deviationId: deviation.id,
+          reason: 'Historical permission no longer needed',
+        },
+      }),
+      'close historical permission',
+    )
     await page.setViewportSize(DESKTOP_VIEWPORT)
     await page.goto(`/en/specifications/${data.id}`)
     await register(page, 'Agreement A', '2020-01-01')
@@ -627,8 +656,11 @@ test('SPEC-22/SPEC-23/SPEC-28: edit the complete agreement in the requirement li
     expect(csv).toContain('Agreement A')
     expect(csv).toContain('Original agreed service')
     expect(csv).toContain('Previous')
+    expect(csv).toContain('Permission ended')
+    expect(csv).not.toContain('Action required')
   } finally {
     await owner.dispose()
+    await reviewer.dispose()
   }
 })
 
@@ -1071,52 +1103,62 @@ for (const locale of ['sv', 'en'] as const) {
   })
 }
 
+async function deviationFixture(
+  owner: APIRequestContext,
+  kind: 'library' | 'local',
+) {
+  const data = await fixture(owner)
+  let uniqueId = data.local.uniqueId
+  if (kind === 'library') {
+    const source = await withPlaywrightSqlServerDataSource(async db => {
+      const rows = (await db.query(
+        `SELECT TOP (1) requirement.id, requirement.unique_id AS uniqueId FROM requirements requirement INNER JOIN requirement_versions version ON version.requirement_id = requirement.id WHERE version.requirement_status_id = 3 ORDER BY requirement.id`,
+      )) as Array<{ id: number; uniqueId: string }>
+      return requireTestValue(rows[0])
+    })
+    await expectOk(
+      await owner.post(`/api/requirements-specifications/${data.id}/items`, {
+        data: { requirementIds: [source.id] },
+      }),
+      'link library requirement',
+    )
+    uniqueId = source.uniqueId
+  }
+  const itemPage = (await (
+    await owner.get(`/api/requirements-specifications/${data.id}/items`)
+  ).json()) as { items: Array<{ itemRef: string; uniqueId: string }> }
+  const item = requireTestValue(
+    itemPage.items.find(item => item.uniqueId === uniqueId),
+  )
+  const read = async () =>
+    (await (
+      await owner.get(
+        `${data.endpoint}?itemRefs=${encodeURIComponent(item.itemRef)}`,
+      )
+    ).json()) as {
+      deviations: Array<{
+        id: number
+        itemRef: string
+        decision: number | null
+        isReviewRequested: number
+      }>
+    }
+  const createEndpoint = `/api/specification-item-deviations/${encodeURIComponent(item.itemRef)}`
+  return { data, uniqueId, item, read, createEndpoint }
+}
+
+// Keep each workflow independent so their combined navigation and mutation
+// time does not exhaust a single test's timeout on CI.
 for (const kind of ['library', 'local'] as const) {
-  test(`DEV-08 DEV-09 DEV-10: ${kind} deviation errors, review and end without a decision`, async ({
+  test(`DEV-08 DEV-09: ${kind} deviation conflict recovery, editing and review`, async ({
     page,
     browser,
   }, testInfo) => {
     const owner = await newRoleContext(testInfo, 'specificationResponsible')
     const reviewer = await newRoleContext(testInfo, 'reviewer')
     try {
-      const data = await fixture(owner)
-      let uniqueId = data.local.uniqueId
-      if (kind === 'library') {
-        const source = await withPlaywrightSqlServerDataSource(async db => {
-          const rows = (await db.query(
-            `SELECT TOP (1) requirement.id, requirement.unique_id AS uniqueId FROM requirements requirement INNER JOIN requirement_versions version ON version.requirement_id = requirement.id WHERE version.requirement_status_id = 3 ORDER BY requirement.id`,
-          )) as Array<{ id: number; uniqueId: string }>
-          return requireTestValue(rows[0])
-        })
-        await expectOk(
-          await owner.post(
-            `/api/requirements-specifications/${data.id}/items`,
-            { data: { requirementIds: [source.id] } },
-          ),
-          'link library requirement',
-        )
-        uniqueId = source.uniqueId
-      }
-      const itemPage = (await (
-        await owner.get(`/api/requirements-specifications/${data.id}/items`)
-      ).json()) as { items: Array<{ itemRef: string; uniqueId: string }> }
-      const item = requireTestValue(
-        itemPage.items.find(item => item.uniqueId === uniqueId),
-      )
-      const read = async () =>
-        (await (
-          await owner.get(
-            `${data.endpoint}?itemRefs=${encodeURIComponent(item.itemRef)}`,
-          )
-        ).json()) as {
-          deviations: Array<{
-            id: number
-            itemRef: string
-            decision: number | null
-            isReviewRequested: number
-          }>
-        }
-      const createEndpoint = `/api/specification-item-deviations/${encodeURIComponent(item.itemRef)}`
+      const { data, uniqueId, item, read, createEndpoint } =
+        await deviationFixture(owner, kind)
       await page.goto(`/en/specifications/${data.id}`)
       await expect(
         page.getByRole('button', { name: 'Register agreement', exact: true }),
@@ -1251,6 +1293,50 @@ for (const kind of ['library', 'local'] as const) {
       ).toBeEnabled()
       await expand(page, uniqueId)
       await expect(box.getByRole('status')).toContainText('Review requested')
+    } finally {
+      await owner.dispose()
+      await reviewer.dispose()
+    }
+  })
+
+  test(`DEV-08 DEV-10: ${kind} deviation returns to draft and ends without a decision`, async ({
+    page,
+  }, testInfo) => {
+    const owner = await newRoleContext(testInfo, 'specificationResponsible')
+    try {
+      const { data, uniqueId, read, createEndpoint } = await deviationFixture(
+        owner,
+        kind,
+      )
+      const response = await owner.post(createEndpoint, {
+        data: { motivation: 'Edited request motivation' },
+      })
+      await expectOk(response, 'create deviation for cancellation')
+      const pending = (await response.json()) as { id: number }
+      const reviewEndpoint =
+        kind === 'local'
+          ? `/api/specification-local-deviations/${pending.id}/request-review`
+          : `/api/deviations/${pending.id}/request-review`
+      await expectOk(
+        await owner.post(reviewEndpoint),
+        'request deviation review',
+      )
+      await page.goto(`/en/specifications/${data.id}`)
+      await expect(
+        page.getByRole('button', { name: 'Register agreement', exact: true }),
+      ).toBeEnabled()
+      await expand(page, uniqueId)
+      const box = page.getByRole('article', {
+        name: 'Edited request motivation',
+        exact: true,
+      })
+      const create = page
+        .getByRole('group', {
+          name: 'Requirement actions',
+          exact: true,
+        })
+        .getByRole('button', { name: 'Request a deviation', exact: true })
+      await expect(box.getByRole('status')).toContainText('Review requested')
       await box.getByRole('button', { name: '← Draft', exact: true }).click()
       await page
         .getByRole('alertdialog')
@@ -1289,7 +1375,31 @@ for (const kind of ['library', 'local'] as const) {
       ).toBeEnabled()
       await expand(page, uniqueId)
       await expect(box.getByRole('status')).toContainText('Cancelled')
-      // Exercise the same creation/cancellation controls in a confirmed future agreement.
+    } finally {
+      await owner.dispose()
+    }
+  })
+
+  test(`DEV-08 DEV-10: ${kind} future-agreement deviation ends in a narrow viewport`, async ({
+    page,
+  }, testInfo) => {
+    const owner = await newRoleContext(testInfo, 'specificationResponsible')
+    try {
+      const { data, uniqueId } = await deviationFixture(owner, kind)
+      await page.goto(`/en/specifications/${data.id}`)
+      await expect(
+        page.getByRole('button', { name: 'Register agreement', exact: true }),
+      ).toBeEnabled()
+      const create = page
+        .getByRole('group', {
+          name: 'Requirement actions',
+          exact: true,
+        })
+        .getByRole('button', { name: 'Request a deviation', exact: true })
+      const form = page.getByRole('dialog', {
+        name: 'Request a deviation',
+        exact: true,
+      })
       await register(page, 'Future agreement', futureDate())
       await expand(page, uniqueId)
       await create.click()
@@ -1315,6 +1425,10 @@ for (const kind of ['library', 'local'] as const) {
       await upcoming
         .getByRole('button', { name: 'End without a decision', exact: true })
         .click()
+      const cancel = page.getByRole('dialog', {
+        name: 'End without a decision',
+        exact: true,
+      })
       await cancel.getByLabel(/^Reason/).fill('Upcoming request withdrawn')
       const cancellationActions = cancel.locator(
         '[data-developer-mode-value="end deviation without a decision"]',
@@ -1353,7 +1467,416 @@ for (const kind of ['library', 'local'] as const) {
       await expect(upcoming.getByRole('status')).toContainText('Cancelled')
     } finally {
       await owner.dispose()
-      await reviewer.dispose()
     }
   })
 }
+
+test('SPEC-24: future ending still requires consent to remove approved content', async ({
+  page,
+}, testInfo) => {
+  const owner = await newRoleContext(testInfo, 'specificationResponsible')
+  const reviewer = await newRoleContext(testInfo, 'reviewer')
+  try {
+    const data =
+      await test.step('Prepare approved content in an agreement draft', async () => {
+        const data = await fixture(owner)
+        const created = await owner.post(
+          `/api/specification-item-deviations/local:${data.local.id}`,
+          { data: { motivation: 'Temporary permission' } },
+        )
+        await expectOk(created, 'create permission request')
+        const approval = (await created.json()) as { id: number }
+        await expectOk(
+          await owner.post(
+            `/api/specification-local-deviations/${approval.id}/request-review`,
+          ),
+          'request review',
+        )
+        await expectOk(
+          await reviewer.post(
+            `/api/specification-local-deviations/${approval.id}/decision`,
+            { data: { decision: 1, decisionMotivation: 'Approved' } },
+          ),
+          'approve permission',
+        )
+        await page.goto(`/en/specifications/${data.id}`)
+        await register(page, 'Approval A', '2020-01-01')
+        await draft(page, 'Approval B', futureDate())
+        // Model a recorded ending whose effective time is still in the future.
+        await page.route(`**${data.endpoint}*`, async route => {
+          if (
+            route.request().method() !== 'GET' ||
+            route.request().url().includes('historyItemRef')
+          ) {
+            await route.continue()
+            return
+          }
+          const response = await route.fetch()
+          const body = await response.json()
+          await route.fulfill({
+            response,
+            json: {
+              ...body,
+              deviationEndings: [
+                {
+                  id: 1,
+                  itemRef: `local:${data.local.id}`,
+                  deviationId: approval.id,
+                  agreementId: body.selectedAgreement.id,
+                  endedAt: '2099-01-01T00:00:00Z',
+                  cancelledAt: null,
+                },
+              ],
+            },
+          })
+        })
+        const refreshed = page.waitForResponse(
+          response =>
+            new URL(response.url()).pathname ===
+              `/api/requirements-specifications/${data.id}/items` &&
+            response.request().method() === 'GET',
+        )
+        await page.reload()
+        expect((await refreshed).ok()).toBe(true)
+        await select(page, 'Approval B')
+        await expect(
+          page
+            .locator('[data-specification-detail-list-panel="items"] tbody')
+            .first(),
+        ).not.toHaveClass(/pointer-events-none/u)
+        await expand(page, data.local.uniqueId)
+        return data
+      })
+    await test.step('Require explicit approval-ending consent', async () => {
+      await page
+        .getByRole('button', { name: 'Remove requirement', exact: true })
+        .click()
+      const confirmation = page.getByRole('alertdialog')
+      await expect(confirmation).toContainText(data.local.uniqueId)
+      await expect(
+        confirmation.getByRole('button', {
+          name: 'Save and plan ending',
+          exact: true,
+        }),
+      ).toBeEnabled()
+      await confirmation
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await expect(confirmation).toBeHidden()
+    })
+  } finally {
+    await owner.dispose()
+    await reviewer.dispose()
+  }
+})
+
+test('DEV-11/DEV-12: shared renewal and responsible closure survive draft discard and use Verified for follow-up', async ({
+  page,
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000)
+  const owner = await newRoleContext(testInfo, 'specificationResponsible')
+  const reviewer = await newRoleContext(testInfo, 'reviewer')
+  const reviewContext = await browser.newContext({
+    storageState: ROLE_STORAGE_STATE.reviewer,
+  })
+  try {
+    const data = await test.step('Fixture and initial approval', async () => {
+      const data = await fixture(owner)
+      const itemRef = `local:${data.local.id}`
+      const create = await owner.post(
+        `/api/specification-item-deviations/${encodeURIComponent(itemRef)}`,
+        { data: { motivation: 'Original temporary permission' } },
+      )
+      await expectOk(create, 'create original request')
+      const original = (await create.json()) as { id: number }
+      await expectOk(
+        await owner.post(
+          `/api/specification-local-deviations/${original.id}/request-review`,
+        ),
+        'request initial review',
+      )
+      await expectOk(
+        await reviewer.post(
+          `/api/specification-local-deviations/${original.id}/decision`,
+          {
+            data: {
+              decision: 1,
+              decisionMotivation: 'Initial approval',
+              conditions: 'Original controls',
+            },
+          },
+        ),
+        'approve initial permission',
+      )
+      await page.goto(`/en/specifications/${data.id}`)
+      await register(page, 'Validity A', '2020-01-01')
+      await draft(page, 'Validity B', futureDate())
+      return data
+    })
+    const itemRef = `local:${data.local.id}`
+    await test.step('Expired approval offers renewal without closure', async () => {
+      const reloadReady = async () => {
+        const refreshed = page.waitForResponse(
+          response =>
+            new URL(response.url()).pathname ===
+              `/api/requirements-specifications/${data.id}/items` &&
+            response.request().method() === 'GET',
+        )
+        await page.reload()
+        expect((await refreshed).ok()).toBe(true)
+        await expect(
+          page
+            .locator('[data-specification-detail-list-panel="items"] tbody')
+            .first(),
+        ).not.toHaveClass(/pointer-events-none/u)
+      }
+      await page.route(`**${data.endpoint}*`, async route => {
+        if (
+          route.request().method() !== 'GET' ||
+          route.request().url().includes('historyItemRef')
+        ) {
+          await route.continue()
+          return
+        }
+        const response = await route.fetch()
+        const body = await response.json()
+        await route.fulfill({
+          response,
+          json: {
+            ...body,
+            deviations: body.deviations.map((deviation: { itemRef: string }) =>
+              deviation.itemRef === itemRef
+                ? { ...deviation, validThrough: '2020-09-30' }
+                : deviation,
+            ),
+          },
+        })
+      })
+      await reloadReady()
+      await expand(page, data.local.uniqueId)
+      await expect(
+        page.getByRole('article', {
+          name: 'Original temporary permission',
+          exact: true,
+        }),
+      ).toContainText('Approval expired')
+      await expect(
+        page.getByRole('button', { name: 'Close approval', exact: true }),
+      ).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: 'Request renewal', exact: true }),
+      ).toBeEnabled()
+      await page.unroute(`**${data.endpoint}*`)
+      await reloadReady()
+    })
+    await test.step('Renewal request', async () => {
+      await expand(page, data.local.uniqueId)
+      await page
+        .getByRole('button', { name: 'Request renewal', exact: true })
+        .click()
+      const renewal = page.getByRole('dialog', {
+        name: 'Request a deviation',
+        exact: true,
+      })
+      await expect(renewal).toContainText('Validity A, Validity B')
+      await renewal
+        .locator('#deviation-motivation')
+        .fill('Continued permission with new controls')
+      await renewal
+        .getByRole('button', { name: 'Register deviation', exact: true })
+        .click()
+      await expect(renewal).toBeHidden()
+      await expect(
+        page.getByRole('button', { name: 'Close approval', exact: true }),
+      ).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: 'Request renewal', exact: true }),
+      ).toHaveCount(0)
+      await page
+        .getByRole('article', {
+          name: 'Continued permission with new controls',
+          exact: true,
+        })
+        .getByRole('button', { name: 'Review ↗', exact: true })
+        .click()
+      await expect(
+        page.getByRole('button', { name: 'Close approval', exact: true }),
+      ).toHaveCount(0)
+    })
+    await test.step('Reviewer decision', async () => {
+      const reviewPage = await reviewContext.newPage()
+      const initialized = reviewPage.waitForResponse(
+        response =>
+          new URL(response.url()).pathname ===
+            `/api/requirements-specifications/${data.id}/items` &&
+          response.request().method() === 'GET',
+      )
+      await reviewPage.goto(
+        new URL(`/en/specifications/${data.id}`, page.url()).toString(),
+      )
+      expect((await initialized).ok()).toBe(true)
+      await expect(
+        reviewPage
+          .locator('[data-specification-detail-list-panel="items"] tbody')
+          .first(),
+      ).not.toHaveClass(/pointer-events-none/u)
+      await expand(reviewPage, data.local.uniqueId)
+      await reviewPage
+        .getByRole('button', { name: 'Record decision', exact: true })
+        .click()
+      const decision = reviewPage.getByRole('dialog', {
+        name: 'Record decision',
+        exact: true,
+      })
+      await expect(decision).toContainText('Validity A, Validity B')
+      await decision
+        .locator('#decision-motivation')
+        .fill('Separate renewal decision')
+      await decision
+        .getByLabel('Approval conditions', { exact: true })
+        .fill('New access controls')
+      await decision.getByLabel('Set an end date', { exact: true }).check()
+      await decision
+        .getByLabel('Valid through', { exact: true })
+        .fill('2099-09-30')
+      await decision
+        .getByRole('button', { name: 'Record decision', exact: true })
+        .click()
+      await expect(decision).toBeHidden()
+    })
+    await test.step('Closure', async () => {
+      const refreshed = page.waitForResponse(
+        response =>
+          new URL(response.url()).pathname ===
+            `/api/requirements-specifications/${data.id}/items` &&
+          response.request().method() === 'GET',
+      )
+      await page.reload()
+      expect((await refreshed).ok()).toBe(true)
+      await select(page, 'Validity B')
+      await expect(
+        page
+          .locator('[data-specification-detail-list-panel="items"] tbody')
+          .first(),
+      ).not.toHaveClass(/pointer-events-none/u)
+      await expand(page, data.local.uniqueId)
+      await page
+        .getByRole('button', { name: 'Close approval', exact: true })
+        .click()
+      const close = page.getByRole('dialog', {
+        name: 'Close approval',
+        exact: true,
+      })
+      await expect(close).toContainText('Validity A, Validity B')
+      await close.getByLabel(/^Reason/).fill('Departure no longer needed')
+      await close
+        .getByRole('button', { name: 'Close approval', exact: true })
+        .click()
+      await expect(close).toBeHidden()
+      await expect(
+        page.getByText('Deviation approval was closed – action required', {
+          exact: true,
+        }),
+      ).toHaveCount(1)
+    })
+    await test.step('Draft discard and status filtering', async () => {
+      await page
+        .getByRole('button', { name: 'Agreement details', exact: true })
+        .click()
+      await page
+        .getByRole('dialog', { name: 'Agreement details', exact: true })
+        .getByRole('button', { name: 'Discard draft', exact: true })
+        .click()
+      await page
+        .getByRole('alertdialog', {
+          name: 'Discard agreement draft',
+          exact: true,
+        })
+        .getByRole('button', { name: 'Discard draft', exact: true })
+        .click()
+      await expect(card(page)).toContainText('Validity A')
+      await expand(page, data.local.uniqueId)
+      await expect(
+        page.getByText('Departure no longer needed', { exact: false }),
+      ).toHaveCount(1)
+      const leftPanel = page.locator(
+        '[data-specification-detail-list-panel="items"]',
+      )
+      await leftPanel
+        .getByRole('button', { name: 'Columns', exact: true })
+        .click()
+      await page
+        .locator(
+          '[data-column-picker-option="specificationItemStatus"] input[type="checkbox"]',
+        )
+        .check()
+      await leftPanel
+        .getByRole('button', { name: 'Columns', exact: true })
+        .click()
+      const status = page.getByRole('combobox', {
+        name: 'Usage status',
+        exact: true,
+      })
+      await status.selectOption('4')
+      await expect(
+        page.getByText('Deviation approval was closed – action required', {
+          exact: true,
+        }),
+      ).toHaveCount(0)
+      await status.selectOption('3')
+      await expect(
+        page.getByText('Deviation approval was closed – action required', {
+          exact: true,
+        }),
+      ).toHaveCount(1)
+      await expect(
+        status.getByRole('option', { name: 'Deviated', exact: true }),
+      ).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: 'Request renewal', exact: true }),
+      ).toHaveCount(0)
+      const freshRequest = page.getByRole('button', {
+        name: 'Request a deviation',
+        exact: true,
+      })
+      await expect(freshRequest).toHaveAttribute(
+        'data-developer-mode-value',
+        'new request without renewal link',
+      )
+      await freshRequest.click()
+      const freshDialog = page.getByRole('dialog', {
+        name: 'Request a deviation',
+        exact: true,
+      })
+      await freshDialog
+        .locator('#deviation-motivation')
+        .fill('New permission after closure')
+      const freshResponse = page.waitForResponse(
+        response =>
+          new URL(response.url()).pathname ===
+            `/api/specification-item-deviations/${encodeURIComponent(itemRef)}` &&
+          response.request().method() === 'POST',
+      )
+      await freshDialog
+        .getByRole('button', { name: 'Register deviation', exact: true })
+        .click()
+      const created = await freshResponse
+      expect(created.ok(), await created.text()).toBe(true)
+      expect(created.request().postDataJSON()).not.toHaveProperty(
+        'renewsDeviationId',
+      )
+      await expect(freshDialog).toBeHidden()
+      await expect(
+        page.getByRole('article', {
+          name: 'New permission after closure',
+          exact: true,
+        }),
+      ).toContainText('Review ↗')
+    })
+  } finally {
+    await reviewContext.close()
+    await owner.dispose()
+    await reviewer.dispose()
+  }
+})

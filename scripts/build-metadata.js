@@ -109,11 +109,12 @@ function listMigrationFiles(directory, fsImpl) {
 
 function readMigrationName(filePath, fsImpl) {
   const content = fsImpl.readFileSync(filePath, 'utf8')
-  const nameMatch = content.match(/\bname\s*=\s*['"](?<name>[^'"]+)['"]/u)
-  if (nameMatch?.groups?.name) return nameMatch.groups.name
-
-  const classMatch = content.match(/export\s+class\s+(?<name>[A-Za-z0-9_]+)/u)
-  if (classMatch?.groups?.name) return classMatch.groups.name
+  const classMatch = content.match(
+    /export\s+class\s+(?<className>[A-Za-z0-9_]+)\s*\{\s*(?:name\s*=\s*['"](?<name>[^'"]+)['"])?/u,
+  )
+  if (classMatch?.groups) {
+    return classMatch.groups.name ?? classMatch.groups.className
+  }
 
   throw new Error(`Unable to determine TypeORM migration name in ${filePath}`)
 }
