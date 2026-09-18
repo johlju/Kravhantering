@@ -241,6 +241,12 @@ async function gotoSpecificationDetail(
       await expect(
         page.getByText(/^Det gick inte att läsa in tillgängliga krav:/),
       ).toBeHidden({ timeout: 10_000 })
+      const expandLibrary = page.getByRole('button', {
+        name: 'Öppna Kravbibliotek',
+        exact: true,
+      })
+      if (await expandLibrary.count()) await expandLibrary.click()
+      await page.mouse.move(0, 0)
       return
     } catch (error) {
       if (attempt === 2) throw error
@@ -1062,9 +1068,18 @@ for (const viewport of viewports) {
         const areaHeader = leftPanel.locator(
           '[data-requirement-header-label="area"]',
         )
+        const usageStatusHeader = leftPanel.locator(
+          '[data-requirement-header-label="specificationItemStatus"]',
+        )
 
         await expect(leftPanel).toHaveCount(1)
         await expect(areaHeader).toHaveCount(1)
+        await expect(usageStatusHeader).toHaveCount(1)
+        await expect(
+          page.locator(
+            '[data-specification-detail-list-panel="available"] [data-requirement-header-label="specificationItemStatus"]',
+          ),
+        ).toHaveCount(0)
 
         const popover = await openColumnPicker(page, leftPanel)
         const areaCheckbox = popover.locator(
@@ -1073,11 +1088,18 @@ for (const viewport of viewports) {
         await expect(areaCheckbox).toBeChecked({ timeout: 30_000 })
         await areaCheckbox.uncheck()
         await expect(areaHeader).toHaveCount(0)
+        const usageStatusCheckbox = popover.locator(
+          '[data-column-picker-option="specificationItemStatus"] input[type="checkbox"]',
+        )
+        await expect(usageStatusCheckbox).toBeChecked()
+        await usageStatusCheckbox.uncheck()
+        await expect(usageStatusHeader).toHaveCount(0)
 
         await popover
           .getByRole('button', { name: 'Återställ standardvy' })
           .click()
         await expect(areaHeader).toHaveCount(1)
+        await expect(usageStatusHeader).toHaveCount(1)
       })
 
       test('SPEC-12: answers requirement-selection questions and updates progress', async ({
@@ -1163,9 +1185,10 @@ for (const viewport of viewports) {
               name: 'Visa endast de som ingår i RFI',
             }),
           ).toHaveAttribute('aria-pressed', 'false', { timeout: 30_000 })
-          const areaSection = page
-            .locator('section')
-            .filter({ hasText: 'PWT-MANUAL Playwright manual cases' })
+          const areaSection = page.getByRole('region', {
+            name: 'PWT-MANUAL Playwright manual cases',
+            exact: true,
+          })
           await expect(areaSection).toContainText('PWM-RFI001')
           await expect(areaSection).toContainText('PWM-RFI002')
           await expect(areaSection).toContainText(
@@ -1177,9 +1200,10 @@ for (const viewport of viewports) {
         })
 
         await test.step('toggle question scope and included-only filter', async () => {
-          const areaSection = page
-            .locator('section')
-            .filter({ hasText: 'PWT-MANUAL Playwright manual cases' })
+          const areaSection = page.getByRole('region', {
+            name: 'PWT-MANUAL Playwright manual cases',
+            exact: true,
+          })
           const primaryQuestion = areaSection
             .locator('article')
             .filter({ hasText: 'PWM-RFI001' })
@@ -1247,9 +1271,10 @@ for (const viewport of viewports) {
         })
 
         await test.step('toggle area scope and verify export actions', async () => {
-          const areaSection = page
-            .locator('section')
-            .filter({ hasText: 'PWT-MANUAL Playwright manual cases' })
+          const areaSection = page.getByRole('region', {
+            name: 'PWT-MANUAL Playwright manual cases',
+            exact: true,
+          })
           const areaScopeSwitch = areaSection.getByRole('switch', {
             name: /Ändra om kravområdet .+ ingår i RFI/u,
           })
@@ -1292,6 +1317,14 @@ test.describe('Requirements specification deterministic manual cases', () => {
   test('SPEC-21: intent prefetch reuses one main request in both requirement lists', async ({
     page,
   }) => {
+    // Start with both lists open: clicking the collapsed rail can leave the
+    // pointer over a newly revealed row and prefetch it during setup.
+    await page.addInitScript(id => {
+      localStorage.setItem(
+        'specification-panel-layout-v1',
+        JSON.stringify({ specificationId: id, layout: 'both' }),
+      )
+    }, specificationId)
     await page.clock.install()
     const libraryDetailRequests = await countDetailRequests(
       page,
@@ -1367,6 +1400,8 @@ test.describe('Requirements specification deterministic manual cases', () => {
 
     await test.step('pointer hover cancels short intent and reuses held prefetches', async () => {
       await expect(localMarker).toBeVisible()
+      expect(libraryDetailRequests.count).toBe(0)
+      expect(localDetailRequests.count).toBe(0)
       // Control the intent timer so runner latency cannot turn a short hover
       // into a held hover while Playwright completes its mouse actions.
       await page.clock.pauseAt(Date.now() + 1_000)
@@ -2832,6 +2867,9 @@ test.describe('Requirements specification deterministic manual cases', () => {
           name: 'Filter requirements packages',
         }),
       ).toBeVisible()
+      // Hydration can still be refreshing items after the package controls
+      // appear. Finish those route handlers before Playwright closes the page.
+      await page.unrouteAll({ behavior: 'wait' })
     })
   })
 
@@ -4025,10 +4063,13 @@ test.describe('Requirements specification deterministic manual cases', () => {
           'Driften omfattas av befintligt avtal',
         )
         await expect(history).toContainText(questionCode)
-        const documentLinks = history.getByRole('link', {
-          name: 'https://example.org/agreement',
-          exact: true,
-        })
+        const documentLinks = history
+          .getByRole('listitem')
+          .filter({ hasText: questionCode })
+          .getByRole('link', {
+            name: 'https://example.org/agreement',
+            exact: true,
+          })
         await expect(documentLinks).toHaveCount(2)
         for (const link of await documentLinks.all()) {
           await expect(link).toHaveAttribute(

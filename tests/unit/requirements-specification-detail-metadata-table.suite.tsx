@@ -64,7 +64,7 @@ export function registerMetadataTableTests(context: SpecDetailWorkflowContext) {
       expect(splitPanel).toBeTruthy()
       expect(titleRow).toBeTruthy()
       expect(pageShell?.className).toContain('xl:h-[calc(100dvh-4rem)]')
-      expect(splitPanel?.className).toContain('xl:-mx-8')
+      expect(splitPanel?.className).toContain('xl:-mx-6')
       expect(splitPanel?.className).toContain('xl:flex-1')
       expect(
         screen.queryByRole('link', { name: 'nav.specifications' }),
@@ -424,7 +424,7 @@ export function registerMetadataTableTests(context: SpecDetailWorkflowContext) {
           name: 'specification.importLocalRequirements',
         }),
       ).toBeInTheDocument()
-      expect(screen.queryByRole('separator')).not.toBeInTheDocument()
+      expect(within(menu).queryByRole('separator')).not.toBeInTheDocument()
     })
 
     it('shows no empty-state actions to a read-only user', async () => {
@@ -482,6 +482,32 @@ export function registerMetadataTableTests(context: SpecDetailWorkflowContext) {
       renderRequirementsSpecificationDetailClient()
       await settleInitialEditorEffects()
 
+      expect(
+        within(context.requirementsTable('items')).getByRole('combobox', {
+          name: 'requirement.specificationItemStatus',
+        }),
+      ).toBeVisible()
+      expect(
+        JSON.parse(
+          window.localStorage.getItem(
+            'requirement-specifications.visibleColumns.left.v1',
+          ) ?? '[]',
+        ),
+      ).toEqual([
+        'uniqueId',
+        'description',
+        'area',
+        'needsReference',
+        'specificationItemStatus',
+      ])
+      expect(
+        JSON.parse(
+          window.localStorage.getItem(
+            'requirement-specifications.visibleColumns.right.v1',
+          ) ?? '[]',
+        ),
+      ).toEqual(['uniqueId', 'description', 'area'])
+
       context.changeRequirementColumns('items')
       context.changeRequirementColumns('available')
       await waitFor(() => {
@@ -533,7 +559,6 @@ export function registerMetadataTableTests(context: SpecDetailWorkflowContext) {
           ).length,
         ).toBeGreaterThan(itemsFetchCountBeforeRefresh)
       })
-      context.toggleRequirementColumn('items', 'specificationItemStatus')
       fireEvent.change(context.requirementStatusSelect('BEH0001'), {
         target: { value: '2' },
       })
@@ -587,7 +612,6 @@ export function registerMetadataTableTests(context: SpecDetailWorkflowContext) {
         ],
       })
 
-      context.toggleRequirementColumn('items', 'specificationItemStatus')
       fireEvent.change(context.requirementStatusSelect('BEH0001'), {
         target: { value: '2' },
       })
@@ -604,7 +628,6 @@ export function registerMetadataTableTests(context: SpecDetailWorkflowContext) {
     it('ignores a usage-status choice that is not in the specification catalog', async () => {
       renderRequirementsSpecificationDetailClient()
       await settleInitialEditorEffects()
-      context.toggleRequirementColumn('items', 'specificationItemStatus')
       const statusSelect = within(
         context.requirementRow('items', 'BEH0001'),
       ).getByRole('combobox', {

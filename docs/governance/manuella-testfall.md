@@ -1500,6 +1500,9 @@ historikposter.
 
 ## Kravunderlag
 
+Öppna den hopfällda panelen **Kravbibliotek** när ett testfall använder båda
+panelerna i kravunderlagets detaljvy.
+
 ### SPEC-01: lista, filtrera och rensa kravunderlag
 
 **Steg:** Öppna `/sv/specifications`, filtrera på `AUTHZ`, rensa filtret.
@@ -1736,9 +1739,13 @@ skickar filter- och sorteringsläget, inte en lista med kravtillämpningsreferen
 
 ### SPEC-11: återställ kolumnvyer för kravunderlag
 
-**Steg:** Ändra kolumner i kravunderlagslistan och återställ.
+**Steg:** Öppna ett kravunderlag utan sparade kolumnval. Kontrollera att
+Användningsstatus visas i `Krav i underlaget`. Dölj Kravområde och
+Användningsstatus via Kolumner och välj sedan Återställ standardvy.
 
-**Förväntat resultat:** Standardkolumner visas igen.
+**Förväntat resultat:** Krav-ID, Beskrivning, Kravområde, Behovsreferens och
+Användningsstatus visas som standard och efter återställning i
+`Krav i underlaget`. Kravbibliotekets standardkolumner är oförändrade.
 
 ### SPEC-12: svara på kravurvalsfrågor
 
@@ -1809,8 +1816,9 @@ tydligt behov av ny bekräftelse. Kontrollera att dokumentlänken kan öppnas
 även i väntande bedömning och bedömningshistorik. Bekräfta utan omskrivning
 och kontrollera att den nya versionen får en egen bedömning medan originalet
 finns kvar i historiken. Spara därefter Relevant med tomma frivilliga fält,
-ladda om och kontrollera både aktuell bedömning och bevarad historik. CSV/PDF
-ska skilja väntande bekräftelse och historik från aktuella utfall.
+ladda om och kontrollera både aktuell bedömning och bevarad historik för
+just den ändrade frågan. Andra frågors historik ska finnas kvar. CSV/PDF ska
+skilja väntande bekräftelse och historik från aktuella utfall.
 
 ### SPEC-16: skapa och hantera RFI-frågeförslag
 
@@ -2141,6 +2149,96 @@ aktuellt tillstånd; ett avvisat anrop ändrar varken innehåll, medlemskap elle
 avstegshistorik. Behörighet, avtalslåsning och avstegsbeslut gäller även med
 Inkluderad. Borttagningen kvarstår efter omladdning; bibliotekskravet finns
 kvar i kravbiblioteket. Ett borttaget utkastkrav markeras som Borttaget.
+
+### SPEC-30: fäll ihop paneler med tangentbord
+
+**Steg:** Öppna ett kravunderlag med krav och kontrollera att dess namn går
+att läsa ovanför panelerna. Öppna Kravbibliotek med tangentbord.
+Använd panelknappen före tabbarna för att fälla ihop höger panel och sedan
+den enda öppna vänsterpanelen. Upprepa åt
+andra hållet och öppna sedan båda. Prova Behovsreferenser, RFI-frågelista och
+Kravurvalsfrågor som aktiva tabbar. Fäll ihop och öppna varje panel. Ändra
+fönsterbredd medan en panel är hopfälld. Upprepa på engelska.
+
+**Förväntat resultat:** Minst en panel är alltid öppen. Öppningsknappen visar
+panelens grundnamn och eventuell aktiv sekundär tabb. RFI använder tillägget
+`RFI`. Rätt tabb återkommer vid öppning. Knapparna fungerar med Enter och
+blanksteg, fokus förblir synligt och hjälpmedel får öppet eller hopfällt
+tillstånd. Fönsterändring bevarar vald layout och aktiv tabb.
+
+### SPEC-31: kom ihåg senaste kravunderlagets layout
+
+**Steg:** Öppna underlag A med krav utan sparad layout. Öppna båda panelerna
+och ändra deras bredder. Välj endast höger
+panel och ladda om. Besök kravunderlagslistan och återvänd till A. Öppna ett
+tomt underlag B och återvänd därefter till A. Prova även med blockerad
+webbläsarlagring och med en ogiltig sparad layout.
+
+**Förväntat resultat:** A börjar med endast vänster panel. Omladdning och
+återbesök via listan återställer det manuella valet. B börjar med båda
+panelerna. Återkomsten från B använder A:s grundlayout och lika panelbredder.
+Omladdning och återbesök via listan bevarar även vald breddfördelning.
+Otillgänglig eller
+ogiltig lagring hindrar inte hopfällning och öppning. Bibliotekskrav och
+kravunderlagslokala krav räknas båda som innehåll.
+
+### SPEC-32: bevara panelens arbete under sidbesöket
+
+**Steg:** Öppna Kravbibliotek, markera ett krav och ange ett krav-ID-filter.
+Scrolla i listan och dra avdelaren för att ändra panelbredderna. Fäll ihop
+panelen, ändra fönsterbredd åt båda hållen och
+öppna panelen igen. Prova också sortering, expanderade rader och pågående
+inmatning på en sekundär tabb. Sök efter något som inte ger träffar.
+
+**Förväntat resultat:** Markeringar, filter, sortering, expanderade rader,
+inmatning och scrollposition finns kvar. Inga krav läggs till eller tas bort
+och ingen redigering sparas av hopfällningen. Nollträffar ändrar inte layout.
+
+### SPEC-33: ändra panelbredder med pekare
+
+**Steg:** Öppna båda panelerna i ett kravunderlag på en bred skärm. Dra
+avdelaren mellan panelerna åt båda hållen. Dubbelklicka på avdelaren.
+
+**Förväntat resultat:** Panelerna ändrar bredd under dragningen och behåller
+sitt innehåll. Dubbelklick återställer lika breda paneler.
+
+### SPEC-34: ändra och bevara panelbredder med tangentbord
+
+**Steg:** Öppna båda panelerna och fokusera avdelaren med Tab. Använd
+vänster- och högerpil, även tillsammans med Shift. Ladda om, byt tabb,
+fäll ihop och öppna en panel och ändra fönsterbredd. Tryck Enter på avdelaren.
+
+**Förväntat resultat:** Piltangenterna ändrar bredd, med större steg med
+Shift. Valet bevaras vid omladdning, tabbbyte och hopfällning. Smala fönster
+visar staplade paneler utan avdelare; breda fönster återställer valt läge.
+Enter återställer lika breda paneler. Piltangenter fäller inte ihop paneler.
+
+### SPEC-35: förhandsvisa och avbryt hopfällning vid dragning
+
+**Steg:** Öppna båda panelerna och ändra deras bredder. Dra en panel så smal
+att uppmaningen att fortsätta dra visas. Fortsätt tills panelen tonas ned.
+Dra tillbaka och prova Escape. Dra sedan tills panelen tonas ned igen och
+släpp. Öppna panelen med tangentbord. Upprepa för den andra panelen.
+
+**Förväntat resultat:** Panelen förblir öppen tills pekaren släpps i läget
+för hopfällning. Texten förklarar vad fortsatt dragning eller släpp gör.
+Återdragning avbryter förhandsvisningen och Escape återställer bredderna
+från dragningens start. Efter hopfällning har öppningsknappen fokus. När
+panelen öppnas återkommer bredderna från före dragningen.
+
+### SPEC-36: bevara breddval vid avbrutna gester och fönsterändringar
+
+**Steg:** Ändra panelernas bredder och gör fönstret smalare och sedan bredare.
+Starta en dragning och gör fönstret så smalt att panelerna staplas. Prova
+även dragning med touch eller penna på en bred skärm och avbryt en gest.
+Gör därefter en fullständig dragning med samma inmatningssätt.
+
+**Förväntat resultat:** Smalare fönster begränsar bredderna utan att skriva
+över valet eller fälla ihop paneler. Mer utrymme återställer valet.
+Avbrutna dragningar återställer föregående bredder. Om stapling döljer den
+fokuserade avdelaren flyttas fokus till vänster panels hopfällningsknapp.
+Slutförda gester med
+touch och penna ändrar bredderna på samma sätt som med mus.
 
 ## Avsteg
 

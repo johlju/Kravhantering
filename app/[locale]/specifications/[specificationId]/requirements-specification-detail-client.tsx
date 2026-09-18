@@ -67,6 +67,9 @@ import SpecificationLocalRequirementDetailClient from '@/components/Specificatio
 import SpecificationLocalRequirementForm, {
   type SpecificationLocalRequirementSubmitPayload,
 } from '@/components/SpecificationLocalRequirementForm'
+import SpecificationPanels, {
+  SpecificationPanelToggle,
+} from '@/components/SpecificationPanels'
 import { useAsyncResource } from '@/hooks/useAsyncResource'
 import { useDiscardChangesConfirmation } from '@/hooks/useDiscardChangesConfirmation'
 import { useModalFocus } from '@/hooks/useModalFocus'
@@ -199,6 +202,7 @@ const DEFAULT_LEFT_COLS: RequirementColumnId[] = [
   'description',
   'area',
   'needsReference',
+  'specificationItemStatus',
 ]
 const DEFAULT_RIGHT_COLS: RequirementColumnId[] = [
   'uniqueId',
@@ -1611,15 +1615,26 @@ export default function KravunderlagDetailClient({
   // Persist visible columns to localStorage after hydration has read them.
   useEffect(() => {
     if (!columnPreferencesLoaded) return
-    localStorage.setItem(LEFT_VISIBLE_COLS_KEY, JSON.stringify(leftVisibleCols))
+    try {
+      localStorage.setItem(
+        LEFT_VISIBLE_COLS_KEY,
+        JSON.stringify(leftVisibleCols),
+      )
+    } catch {
+      // Column choices remain usable when browser storage is unavailable.
+    }
   }, [columnPreferencesLoaded, leftVisibleCols])
 
   useEffect(() => {
     if (!columnPreferencesLoaded) return
-    localStorage.setItem(
-      RIGHT_VISIBLE_COLS_KEY,
-      JSON.stringify(rightVisibleCols),
-    )
+    try {
+      localStorage.setItem(
+        RIGHT_VISIBLE_COLS_KEY,
+        JSON.stringify(rightVisibleCols),
+      )
+    } catch {
+      // Column choices remain usable when browser storage is unavailable.
+    }
   }, [columnPreferencesLoaded, rightVisibleCols])
 
   // Open add modal
@@ -2972,9 +2987,7 @@ export default function KravunderlagDetailClient({
   const splitPanelHeaderClassName = `sticky ${specificationDetailStickyTopOffsetClassName} z-20 flex flex-wrap items-center justify-between gap-3 border-b bg-white/80 px-3 py-2 backdrop-blur-sm sm:flex-nowrap dark:bg-secondary-900/80`
   const specificationDetailPageShellClassName = `${specificationDetailPagePaddingClassName} xl:flex xl:h-[calc(100dvh-4rem)] xl:flex-col xl:overflow-hidden`
   const specificationDetailContainerClassName =
-    'container-custom max-w-none xl:flex xl:min-h-0 xl:flex-1 xl:flex-col'
-  const specificationDetailSplitPanelClassName =
-    'grid grid-cols-1 gap-6 items-start xl:-mx-8 xl:min-h-0 xl:flex-1 xl:grid-cols-2 xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:gap-4 xl:overflow-hidden'
+    'container-custom max-w-none xl:flex xl:min-h-0 xl:w-full xl:flex-1 xl:flex-col'
   const responsibleDisplayName = formatActorDisplayNameForLocale(
     spec.responsibleDisplayName,
     locale,
@@ -3047,68 +3060,90 @@ export default function KravunderlagDetailClient({
   }
   const renderLeftPanelTabs = () => (
     <div
-      aria-label={t('leftPanelTabs')}
-      className={splitPanelTabsClassName}
-      role="tablist"
+      className="flex min-w-0 max-w-full flex-1 items-center gap-2"
+      {...devMarker({
+        name: 'panel header',
+        context: 'requirements specification detail',
+        value: 'left panel',
+      })}
     >
-      <button
-        aria-selected={leftTab === 'items'}
-        className={splitPanelTabClassName(leftTab === 'items')}
-        onClick={() => handleLeftTabChange('items')}
-        role="tab"
-        type="button"
+      <SpecificationPanelToggle />
+      <div
+        aria-label={t('leftPanelTabs')}
+        className={splitPanelTabsClassName}
+        role="tablist"
       >
-        <span className="truncate">{t('itemsInSpecification')}</span>
-      </button>
-      <button
-        aria-selected={leftTab === 'needs-references'}
-        className={splitPanelTabClassName(leftTab === 'needs-references')}
-        onClick={() => handleLeftTabChange('needs-references')}
-        role="tab"
-        type="button"
-      >
-        <span className="truncate">{t('needsReferences')}</span>
-        <span className="text-xs opacity-80">{availableNeedsRefs.length}</span>
-      </button>
-      <button
-        aria-selected={leftTab === 'rfi'}
-        className={splitPanelTabClassName(leftTab === 'rfi')}
-        onClick={() => handleLeftTabChange('rfi')}
-        role="tab"
-        type="button"
-      >
-        <span className="truncate">{t('rfiList')}</span>
-      </button>
+        <button
+          aria-selected={leftTab === 'items'}
+          className={splitPanelTabClassName(leftTab === 'items')}
+          onClick={() => handleLeftTabChange('items')}
+          role="tab"
+          type="button"
+        >
+          <span className="truncate">{t('itemsInSpecification')}</span>
+        </button>
+        <button
+          aria-selected={leftTab === 'needs-references'}
+          className={splitPanelTabClassName(leftTab === 'needs-references')}
+          onClick={() => handleLeftTabChange('needs-references')}
+          role="tab"
+          type="button"
+        >
+          <span className="truncate">{t('needsReferences')}</span>
+          <span className="text-xs opacity-80">
+            {availableNeedsRefs.length}
+          </span>
+        </button>
+        <button
+          aria-selected={leftTab === 'rfi'}
+          className={splitPanelTabClassName(leftTab === 'rfi')}
+          onClick={() => handleLeftTabChange('rfi')}
+          role="tab"
+          type="button"
+        >
+          <span className="truncate">{t('rfiList')}</span>
+        </button>
+      </div>
     </div>
   )
   const renderRightPanelTabs = () => (
     <div
-      aria-label={t('rightPanelTabs')}
-      className={splitPanelTabsClassName}
-      role="tablist"
+      className="flex min-w-0 max-w-full flex-1 items-center gap-2"
+      {...devMarker({
+        name: 'panel header',
+        context: 'requirements specification detail',
+        value: 'right panel',
+      })}
     >
-      <button
-        aria-controls="right-panel-available"
-        aria-selected={rightPanelTab === 'available'}
-        className={splitPanelTabClassName(rightPanelTab === 'available')}
-        id="right-panel-tab-available"
-        onClick={() => setRightPanelTab('available')}
-        role="tab"
-        type="button"
+      <SpecificationPanelToggle />
+      <div
+        aria-label={t('rightPanelTabs')}
+        className={splitPanelTabsClassName}
+        role="tablist"
       >
-        <span className="truncate">{t('availableRequirements')}</span>
-      </button>
-      <button
-        aria-controls="right-panel-questions"
-        aria-selected={rightPanelTab === 'questions'}
-        className={splitPanelTabClassName(rightPanelTab === 'questions')}
-        id="right-panel-tab-questions"
-        onClick={() => setRightPanelTab('questions')}
-        role="tab"
-        type="button"
-      >
-        <span className="truncate">{t('requirementSelectionQuestions')}</span>
-      </button>
+        <button
+          aria-controls="right-panel-available"
+          aria-selected={rightPanelTab === 'available'}
+          className={splitPanelTabClassName(rightPanelTab === 'available')}
+          id="right-panel-tab-available"
+          onClick={() => setRightPanelTab('available')}
+          role="tab"
+          type="button"
+        >
+          <span className="truncate">{t('availableRequirements')}</span>
+        </button>
+        <button
+          aria-controls="right-panel-questions"
+          aria-selected={rightPanelTab === 'questions'}
+          className={splitPanelTabClassName(rightPanelTab === 'questions')}
+          id="right-panel-tab-questions"
+          onClick={() => setRightPanelTab('questions')}
+          role="tab"
+          type="button"
+        >
+          <span className="truncate">{t('requirementSelectionQuestions')}</span>
+        </button>
+      </div>
     </div>
   )
   const leftPanelMoreActionMenuItems = buildMoreActionMenuItems({
@@ -3147,10 +3182,17 @@ export default function KravunderlagDetailClient({
             >
               <div className="min-w-0">
                 <div
-                  className="flex items-start gap-3"
+                  className="flex items-center gap-3"
                   data-specification-detail-title-row="true"
                 >
-                  <h1 className="min-w-0 text-2xl font-bold text-secondary-900 dark:text-secondary-100 xl:text-[2rem] xl:leading-tight">
+                  <h1
+                    className="min-w-0 text-xl font-bold text-secondary-900 dark:text-secondary-100"
+                    {...devMarker({
+                      context: 'requirements specification detail',
+                      name: 'heading',
+                      value: 'specification name',
+                    })}
+                  >
                     {specName}
                   </h1>
                   {canMutateSpecification ? (
@@ -3158,7 +3200,7 @@ export default function KravunderlagDetailClient({
                       aria-expanded={showEditSpecificationForm}
                       aria-haspopup="dialog"
                       aria-label={t('editSpecification')}
-                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-secondary-200 bg-white/80 text-secondary-700 shadow-sm transition-colors hover:bg-secondary-50 focus-visible:ring-2 focus-visible:ring-primary-400/50 focus-visible:ring-offset-2 dark:border-secondary-700 dark:bg-secondary-900/70 dark:text-secondary-200 dark:hover:bg-secondary-800"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-secondary-200 bg-white/80 text-secondary-700 shadow-sm transition-colors hover:bg-secondary-50 focus-visible:ring-2 focus-visible:ring-primary-400/50 focus-visible:ring-offset-2 dark:border-secondary-700 dark:bg-secondary-900/70 dark:text-secondary-200 dark:hover:bg-secondary-800"
                       {...devMarker({
                         context: 'requirements specification detail',
                         name: 'detail action',
@@ -3249,12 +3291,39 @@ export default function KravunderlagDetailClient({
           </div>
 
           {/* Split panel */}
-          <div
-            className={specificationDetailSplitPanelClassName}
-            data-specification-detail-split-panel="true"
+          <SpecificationPanels
+            initialHasItems={
+              initialData.errors.some(
+                error =>
+                  error.key ===
+                  SPECIFICATION_PRELOAD_ERROR_KEYS.specificationItems,
+              )
+                ? null
+                : initialData.specificationItems.items.length > 0
+            }
+            key={specificationId}
+            leftLabel={
+              leftTab === 'items'
+                ? t('itemsInSpecification')
+                : t('panelWithTab', {
+                    panel: t('itemsInSpecification'),
+                    tab: t(
+                      leftTab === 'rfi' ? 'rfiPanelTab' : 'needsReferences',
+                    ),
+                  })
+            }
+            rightLabel={
+              rightPanelTab === 'available'
+                ? t('libraryPanel')
+                : t('panelWithTab', {
+                    panel: t('libraryPanel'),
+                    tab: t('requirementSelectionQuestions'),
+                  })
+            }
+            specificationId={specificationId}
           >
             {/* Left panel: Krav i underlaget / Behovsreferenser */}
-            <div className="flex flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
+            <div className="flex min-w-0 flex-col gap-3 xl:min-h-0 xl:flex-1 xl:overflow-hidden">
               {leftTab === 'needs-references' ? (
                 <div
                   className={desktopSplitPanelCardClassName}
@@ -4185,7 +4254,7 @@ export default function KravunderlagDetailClient({
             </div>
 
             {/* Right panel: Tillgängliga krav / Kravurvalsfrågor */}
-            <div className="flex flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
+            <div className="flex min-w-0 flex-col gap-3 xl:min-h-0 xl:flex-1 xl:overflow-hidden">
               <div
                 aria-labelledby={
                   rightPanelTab === 'available'
@@ -4366,7 +4435,7 @@ export default function KravunderlagDetailClient({
                 )}
               </div>
             </div>
-          </div>
+          </SpecificationPanels>
         </div>
       </div>
       <SpecificationFormModal

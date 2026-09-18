@@ -507,7 +507,114 @@ retain their existing semantics.
   pill appears as its own final action group once the table top has moved above
   the sticky offset. Selecting it scrolls the page back to the table top.
 
+## Specification Panel Layout
+
+The specification name above the panels uses 20px bold text at every
+viewport width.
+
+Both specification panels can be collapsed from any active tab. Hiding a
+panel keeps its subtree mounted: active tab, search, filters, sorting,
+selection, expanded rows, unsaved input and scroll position survive within
+the visit. Collapsing never saves edits or changes included requirements.
+
+Exactly three layouts are available: both open, left only, and right only.
+Collapsing the sole open panel opens the other. Expanding a collapsed panel
+opens both. Collapse controls sit before the tabs in each panel’s sticky
+header and use the navigation rail’s panel icons, mirrored for the right
+panel. Focus moves between the header control and the collapsed opening
+control. Both expose state with `aria-expanded` and `aria-controls`.
+
+At the existing `xl` breakpoint, a collapsed panel occupies a narrow vertical
+control at its outer workspace edge; the other panel takes the remaining
+width. Below that breakpoint the panels stack and the collapsed control is a
+compact horizontal button in its panel's position. Resizing preserves state.
+
+Collapsed labels retain the base name `Krav i underlaget` or `Kravbibliotek`.
+An active secondary tab adds `– Behovsreferenser`, `– RFI`, or
+`– Kravurvalsfrågor`, respectively. English controls use the corresponding
+English names.
+
+Without a matching saved layout, the opening, unfiltered preload chooses
+left only if it contains a library or specification-local requirement, and
+both if it is empty. Later data changes never choose another layout. Failed
+item loading is unknown: both panels remain available provisionally, without
+persisting an empty-content default. Any previous specification’s saved
+layout is cleared. A manual choice can still be saved.
+
+The single `localStorage` entry `specification-panel-layout-v1` contains the
+stable numeric `specificationId` and `layout` (`both`, `left`, or `right`).
+A valid matching entry takes precedence over content. Opening another
+specification replaces the entry with its default; A → B → A therefore uses
+A's default on return. Other pages do not clear the entry. Invalid JSON,
+invalid identity or layout, and denied storage access fall back gracefully.
+Every manual transition stores the resulting layout. Storage is local to the
+browser, independent of accounts; this adds no persistence for other work
+state across reloads.
+
+### Resizing Specification Panels
+
+When both panels are open side by side at the `xl` breakpoint, a thin
+vertical divider fills their existing 16px gap. The workspace keeps an 8px
+outer gutter beside the global navigation and the right viewport edge.
+Hover, focus and dragging
+highlight the line; the pointer uses `ew-resize`. The full gap accepts
+mouse, pen and touch dragging. Resizing updates both panel widths live,
+without changing their combined width, table-column widths or mounted
+content. Every tab uses the same panel ratio. The divider is hidden when
+either panel is collapsed or the panels stack below `xl`.
+
+Each open panel stops shrinking at 400px. At that boundary the divider
+shows a prompt to continue dragging to collapse that panel. After another
+80px of outward pointer movement, the panel dims and the prompt changes to
+release to collapse. Releasing commits that collapse. Moving back before
+release removes the collapse preview. Reopening restores the ratio from
+before the drag that collapsed it. Existing collapse buttons preserve the
+ratio in the same way.
+
+Left and Right resize by 8px; Shift increases the step to 32px. Keyboard
+resizing stops at the minimum width and never collapses a panel. Enter or
+double-click restores equal widths. Escape cancels a drag. Pointer
+cancellation, loss of capture, loss of window focus or a workspace width change
+during dragging also cancels it. Only a completed resize changes the saved
+ratio. The focusable vertical separator exposes its current ratio and
+limits to assistive technology. Dragging closed transfers focus to the
+collapsed panel's opening button. If stacking hides a focused divider,
+focus moves to the left panel's collapse button.
+
+The browser stores one width preference in `specification-panel-width-v1`:
+`{specificationId, leftRatio}`. It belongs only to the latest specification,
+independently of its open/collapsed layout. Refresh and visits to other page
+types retain it. Opening another specification replaces it with 50/50;
+A → B → A therefore uses 50/50 on return. Invalid or unavailable storage
+falls back to equal widths without disabling resizing. A smaller desktop
+workspace clamps displayed widths to the minimum without overwriting the
+preferred ratio; more space restores that ratio. Window resizing never
+collapses a panel.
+
+### Accepted Divider Accessibility Deviation
+
+The user explicitly approved a 16px grab area without additional pointer
+controls on 2026-09-17, after the accessibility limitations were explained.
+This decision is limited to the specification panel divider. It is a
+documented deviation, not a qualifying exception or a claim of WCAG
+conformance. It does not change target-size rules for other controls.
+
+The divider does not meet SC 2.5.8's 24px target width, and adjacent table
+rows and scrollbars prevent relying on its spacing exception. Keyboard
+operation does not supply an equivalent pointer control. Without a
+non-drag pointer alternative for arbitrary resizing, it also does not meet
+SC 2.5.7. See the W3C guidance for
+[target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)
+and [dragging movements](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html).
+Visible focus, keyboard resizing, reset, cancellation and the existing
+collapse controls remain available, but do not remove these deviations.
+
 ## Admin Defaults vs Personal Overrides
+
+`Krav i underlaget` defaults to requirement ID, description, requirement
+area, needs reference and usage status. This applies on first use and when
+resetting its column view. Saved personal column choices still take
+precedence. The available-requirements list retains its separate defaults.
 
 - Admin settings define the organization-wide baseline for:
   - column order
