@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const enabled = process.env.KRAVHANTERING_NGINX_INTEGRATION === '1'
-const nginxImage = 'nginx:1.31.5-alpine'
+const nginxImage = 'nginx:1.31.6-alpine'
 const workspace = process.cwd()
 const runId = `kh-client-ip-${process.pid}`
 const networkName = `${runId}-network`
@@ -30,11 +30,15 @@ function publishedPort(containerName, containerPort) {
   return match[1]
 }
 
-function requestHeaders(port, protocol, forwardedFor, canonicalIp) {
+function waitForProxy(port, protocol) {
   childProcess.execFileSync('curl', [
     '--fail',
     '--silent',
     '--insecure',
+    '--connect-timeout',
+    '2',
+    '--max-time',
+    '5',
     '--retry',
     '10',
     '--retry-all-errors',
@@ -42,6 +46,10 @@ function requestHeaders(port, protocol, forwardedFor, canonicalIp) {
     '0',
     `${protocol}://127.0.0.1:${port}/probe-ready`,
   ])
+}
+
+function requestHeaders(port, protocol, forwardedFor, canonicalIp) {
+  waitForProxy(port, protocol)
   return childProcess.execFileSync(
     'curl',
     [
@@ -169,7 +177,9 @@ function startLoadBalancedEdge(
     nginxImage,
   )
   edgeContainers.push(name)
-  return { name, port: publishedPort(name, 8080) }
+  const port = publishedPort(name, 8080)
+  waitForProxy(port, 'http')
+  return { name, port }
 }
 
 function startTlsEdge(templateName, readinessProbeConfig) {
@@ -241,6 +251,10 @@ function startTlsEdge(templateName, readinessProbeConfig) {
       '--silent',
       '--show-error',
       '--insecure',
+      '--connect-timeout',
+      '2',
+      '--max-time',
+      '5',
       '--retry',
       '10',
       '--retry-all-errors',
