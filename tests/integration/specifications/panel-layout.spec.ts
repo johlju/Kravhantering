@@ -5,6 +5,61 @@ import { expectApiResponseOk } from '../api-response-assertions'
 
 const storageKey = 'specification-panel-layout-v1'
 
+test('SPEC-30: reads the locked RFI mode without overlapping actions in a narrow panel', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.route(
+    '**/api/requirements-specifications/8/rfi-list',
+    async route => {
+      const response = await route.fetch()
+      const json = await response.json()
+      json.list.isLocked = true
+      json.list.lockedAt = '2026-09-19T12:00:00.000Z'
+      await route.fulfill({ json })
+    },
+  )
+  await openSpecification(page, 8, 'en')
+  await page
+    .getByRole('button', { name: 'Expand Requirements Library', exact: true })
+    .click()
+  const divider = page.getByRole('separator', {
+    name: 'Resize specification panels',
+  })
+  for (let step = 0; step < 20; step++) await divider.press('Shift+ArrowLeft')
+  await page.getByRole('tab', { name: 'RFI question list' }).click()
+  const explanation = page.getByRole('button', {
+    name: 'Locked 2026-09-19T12:00:00.000Z',
+    exact: true,
+  })
+  await expect(explanation).toBeVisible()
+  const toolbar = page.locator(
+    '#specification-left-panel [data-developer-mode-name="panel toolbar"]',
+  )
+  const mode = toolbar.getByText('Locked for export and relevance assessment', {
+    exact: true,
+  })
+  const filter = toolbar.getByRole('button', {
+    name: 'Show only RFI questions included in RFI',
+    exact: true,
+  })
+  const bounds = requireTestValue(await mode.boundingBox())
+  const actionBounds = requireTestValue(await filter.boundingBox())
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(actionBounds.x)
+  const explanationBounds = requireTestValue(await explanation.boundingBox())
+  expect(explanationBounds.x + explanationBounds.width).toBeLessThanOrEqual(
+    actionBounds.x,
+  )
+  expect(requireTestValue(await toolbar.boundingBox()).height).toBe(37)
+  await page.getByRole('tab', { name: 'RFI question list' }).press('Tab')
+  await expect(page.getByRole('tooltip')).toContainText(
+    'Locked for export and relevance assessment',
+  )
+  await expect(page.getByRole('tooltip')).toContainText(
+    '2026-09-19T12:00:00.000Z',
+  )
+})
+
 test('SPEC-30: reads the full RFI mode explanation with the keyboard', async ({
   page,
 }) => {
@@ -33,7 +88,7 @@ test('SPEC-30: reads the full RFI mode explanation with the keyboard', async ({
   await expect(rfiTab).toBeFocused()
   await page.getByRole('tab', { name: 'RFI-frågelista' }).press('Tab')
   await expect(explanation).toBeFocused()
-  await expect(page.getByRole('tooltip')).toHaveText(
+  await expect(page.getByRole('tooltip')).toContainText(
     'Listan följer aktiva RFI-frågor tills den låses.',
   )
   await page.keyboard.press('Escape')
@@ -46,6 +101,13 @@ test('SPEC-30: reads the full RFI mode explanation with the keyboard', async ({
       exact: true,
     }),
   ).toBeFocused()
+  await explanation.hover()
+  const tooltip = page.getByRole('tooltip')
+  await expect(tooltip).toBeVisible()
+  await tooltip.hover()
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toBeHidden()
 })
 
 test('SPEC-06 SPEC-30: keeps multiple package selections and toolbar actions usable at narrow widths', async ({

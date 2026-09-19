@@ -2222,8 +2222,11 @@ panelens grundnamn och eventuell aktiv sekundär tabb. RFI använder tillägget
 blanksteg, fokus förblir synligt och hjälpmedel får öppet eller hopfällt
 tillstånd. Fönsterändring bevarar vald layout och aktiv tabb.
 Flikarnas åtgärder går att nå med tangentbord under flikarna.
-Hela RFI-förklaringen visas vid tangentbordsfokus eller hovring, även när
-texten är för lång för raden. Escape stänger förklaringen och behåller fokus.
+Hela RFI-läget och förklaringen visas vid tangentbordsfokus eller hovring,
+även när texten är för lång för raden. Texten förblir öppen när pekaren
+flyttas till förklaringen. Escape stänger förklaringen och behåller fokus.
+Även i låst läge med smal panel går texten att läsa och exportknapparna
+att använda utan att text och knappar täcker varandra.
 Åtgärder för grupper och enskilda rader finns kvar vid respektive innehåll.
 
 ### SPEC-31: kom ihåg senaste kravunderlagets layout

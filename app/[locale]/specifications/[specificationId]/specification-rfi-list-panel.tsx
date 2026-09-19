@@ -526,30 +526,31 @@ export default function SpecificationRfiListPanel({
     ? targetContextText(viewSuggestionsTarget)
     : ''
 
+  const modeLabel = list.isLocked ? t('lockedMode') : t('prepareMode')
   const modeHint =
     list.isLocked && list.lockedAt
       ? t('lockedAt', { date: list.lockedAt })
       : t('dynamicHint')
   const toolbar = (
     <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 xl:flex-nowrap">
-      <div className="flex min-w-0 items-center gap-2" role="status">
-        <p className="shrink-0 text-xs font-medium text-secondary-900 dark:text-secondary-100">
-          {list.isLocked ? t('lockedMode') : t('prepareMode')}
-        </p>
+      <div className="min-w-0 flex-1" role="status">
         <RequirementPackagePurposeTooltip
-          purposeAndScope={modeHint}
-          wrapperClassName="inline-flex min-w-0"
+          purposeAndScope={`${modeLabel}\n${modeHint}`}
+          wrapperClassName="flex min-w-0"
         >
           <button
             aria-label={modeHint}
-            className="min-w-0 truncate rounded text-left text-xs text-secondary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:text-secondary-300"
+            className="flex min-w-0 items-center gap-2 rounded text-left text-xs text-secondary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:text-secondary-300"
             type="button"
             {...devMarker({
               name: 'rfi mode explanation',
               value: 'full text on hover or keyboard focus',
             })}
           >
-            {modeHint}
+            <span className="min-w-0 truncate font-medium text-secondary-900 dark:text-secondary-100">
+              {modeLabel}
+            </span>
+            <span className="min-w-0 truncate">{modeHint}</span>
           </button>
         </RequirementPackagePurposeTooltip>
       </div>
