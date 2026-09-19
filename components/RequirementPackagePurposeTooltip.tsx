@@ -143,6 +143,15 @@ export default function RequirementPackagePurposeTooltip({
   )
 
   useEffect(() => {
+    if (!isOpen) return
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeTooltip()
+    }
+    document.addEventListener('keydown', dismiss)
+    return () => document.removeEventListener('keydown', dismiss)
+  }, [closeTooltip, isOpen])
+
+  useEffect(() => {
     setSupportsPopover(typeof HTMLElement.prototype.showPopover === 'function')
   }, [])
 
