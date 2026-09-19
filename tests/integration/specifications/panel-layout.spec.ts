@@ -29,7 +29,7 @@ test('SPEC-30: reads the locked RFI mode without overlapping actions in a narrow
   for (let step = 0; step < 20; step++) await divider.press('Shift+ArrowLeft')
   await page.getByRole('tab', { name: 'RFI question list' }).click()
   const explanation = page.getByRole('button', {
-    name: 'Locked 2026-09-19T12:00:00.000Z',
+    name: 'Locked for export and relevance assessment Locked 2026-09-19T12:00:00.000Z',
     exact: true,
   })
   await expect(explanation).toBeVisible()
@@ -81,7 +81,7 @@ test('SPEC-30: reads the full RFI mode explanation with the keyboard', async ({
   await rfiTab.focus()
   finishLoading()
   const explanation = page.getByRole('button', {
-    name: 'Listan följer aktiva RFI-frågor tills den låses.',
+    name: 'Förbered Listan följer aktiva RFI-frågor tills den låses.',
     exact: true,
   })
   await expect(explanation).toBeVisible()

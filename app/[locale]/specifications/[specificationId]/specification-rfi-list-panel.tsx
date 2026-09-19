@@ -539,7 +539,7 @@ export default function SpecificationRfiListPanel({
           wrapperClassName="flex min-w-0"
         >
           <button
-            aria-label={modeHint}
+            aria-label={`${modeLabel} ${modeHint}`}
             className="flex min-w-0 items-center gap-2 rounded text-left text-xs text-secondary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:text-secondary-300"
             type="button"
             {...devMarker({
