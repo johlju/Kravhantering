@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom'
 
 interface ComponentProps {
   children: ReactNode
+  disabled?: boolean
   maxWidth?: number
   purposeAndScope?: string | null
   wrapperClassName?: string
@@ -39,6 +40,7 @@ interface TooltipPosition {
 }
 
 const HOVER_OPEN_DELAY_MS = 1000
+const HOVER_CLOSE_DELAY_MS = 150
 
 function describedByWithTooltip(
   existing: string | undefined,
@@ -59,6 +61,7 @@ function composeEventHandler<Event>(
 
 export default function RequirementPackagePurposeTooltip({
   children,
+  disabled = false,
   maxWidth = 360,
   purposeAndScope,
   wrapperClassName = 'inline-flex min-w-0 shrink-0',
@@ -67,10 +70,11 @@ export default function RequirementPackagePurposeTooltip({
   const rootRef = useRef<HTMLSpanElement>(null)
   const tooltipRef = useRef<HTMLSpanElement>(null)
   const hoverOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [position, setPosition] = useState<TooltipPosition | null>(null)
   const [supportsPopover, setSupportsPopover] = useState(false)
-  const text = purposeAndScope?.trim()
+  const text = disabled ? undefined : purposeAndScope?.trim()
 
   const updatePosition = useCallback(() => {
     if (!rootRef.current || typeof window === 'undefined') return
@@ -108,15 +112,24 @@ export default function RequirementPackagePurposeTooltip({
     }
   }, [])
 
+  const clearHoverCloseTimer = useCallback(() => {
+    if (hoverCloseTimerRef.current) {
+      clearTimeout(hoverCloseTimerRef.current)
+      hoverCloseTimerRef.current = null
+    }
+  }, [])
+
   const openTooltip = useCallback(() => {
     clearHoverOpenTimer()
+    clearHoverCloseTimer()
     if (!text) return
     updatePosition()
     setIsOpen(true)
-  }, [clearHoverOpenTimer, text, updatePosition])
+  }, [clearHoverCloseTimer, clearHoverOpenTimer, text, updatePosition])
 
   const scheduleTooltipOpen = useCallback(() => {
     clearHoverOpenTimer()
+    clearHoverCloseTimer()
     if (!text) return
 
     hoverOpenTimerRef.current = setTimeout(() => {
@@ -124,12 +137,24 @@ export default function RequirementPackagePurposeTooltip({
       updatePosition()
       setIsOpen(true)
     }, HOVER_OPEN_DELAY_MS)
-  }, [clearHoverOpenTimer, text, updatePosition])
+  }, [clearHoverCloseTimer, clearHoverOpenTimer, text, updatePosition])
 
   const closeTooltip = useCallback(() => {
     clearHoverOpenTimer()
+    clearHoverCloseTimer()
     setIsOpen(false)
-  }, [clearHoverOpenTimer])
+  }, [clearHoverCloseTimer, clearHoverOpenTimer])
+
+  useEffect(() => {
+    if (!text) closeTooltip()
+  }, [closeTooltip, text])
+
+  const scheduleTooltipClose = useCallback(() => {
+    clearHoverOpenTimer()
+    clearHoverCloseTimer()
+    if (rootRef.current?.contains(document.activeElement)) return
+    hoverCloseTimerRef.current = setTimeout(closeTooltip, HOVER_CLOSE_DELAY_MS)
+  }, [clearHoverCloseTimer, clearHoverOpenTimer, closeTooltip])
 
   const handleFocus = useCallback(
     (event: ReactFocusEvent<Element>) => {
@@ -143,14 +168,24 @@ export default function RequirementPackagePurposeTooltip({
   )
 
   useEffect(() => {
+    if (!isOpen) return
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeTooltip()
+    }
+    document.addEventListener('keydown', dismiss)
+    return () => document.removeEventListener('keydown', dismiss)
+  }, [closeTooltip, isOpen])
+
+  useEffect(() => {
     setSupportsPopover(typeof HTMLElement.prototype.showPopover === 'function')
   }, [])
 
   useEffect(
     () => () => {
       clearHoverOpenTimer()
+      clearHoverCloseTimer()
     },
-    [clearHoverOpenTimer],
+    [clearHoverCloseTimer, clearHoverOpenTimer],
   )
 
   useEffect(() => {
@@ -208,7 +243,10 @@ export default function RequirementPackagePurposeTooltip({
         child.props.onMouseEnter,
         scheduleTooltipOpen,
       ),
-      onMouseLeave: composeEventHandler(child.props.onMouseLeave, closeTooltip),
+      onMouseLeave: composeEventHandler(
+        child.props.onMouseLeave,
+        scheduleTooltipClose,
+      ),
     })
   })()
 
@@ -218,8 +256,10 @@ export default function RequirementPackagePurposeTooltip({
       {text && isOpen && position
         ? createPortal(
             <span
-              className="pointer-events-none fixed z-90 m-0 whitespace-pre-wrap wrap-break-word rounded-lg border border-secondary-200 bg-white px-3 py-2 text-left text-xs leading-5 text-secondary-700 shadow-lg dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-200"
+              className="fixed z-90 m-0 whitespace-pre-wrap wrap-break-word rounded-lg border border-secondary-200 bg-white px-3 py-2 text-left text-xs leading-5 text-secondary-700 shadow-lg dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-200"
               id={tooltipId}
+              onMouseEnter={clearHoverCloseTimer}
+              onMouseLeave={scheduleTooltipClose}
               popover={supportsPopover ? 'manual' : undefined}
               ref={tooltipRef}
               role="tooltip"
