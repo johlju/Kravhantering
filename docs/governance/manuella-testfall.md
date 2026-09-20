@@ -529,7 +529,8 @@ också 403 för tilldelningsstyrning och global Admin.
 1. Logga in som `petra.specresp`.
 1. Öppna `/sv/specifications` och filtrera fram `AUTHZ-SPEC-2026`.
 1. Öppna redigeringsåtgärden och ändra ett säkert metadatafält, till exempel
-   verksamhetsbehovsreferens.
+   verksamhetsbehovsreferens. Fäll ut sidhuvudet och kontrollera ändringen,
+   även efter omladdning.
 1. Stäng redigeringen och öppna radåtgärden `Hantera medförfattare`.
 1. Kontrollera att tilläggsfältet ligger över den sparade tabellen och lägg
    till en tillfällig kravunderlagsmedförfattare i dialogen.
@@ -558,7 +559,8 @@ inte delegera ansvar.
 1. Logga in som `signe.speccoauthor`.
 1. Öppna `/sv/specifications/910400` eller `/sv/specifications/AUTHZ-SPEC-2026`.
 1. Gör en liten tillåten innehållsändring.
-1. Ladda om sidan och verifiera att ändringen finns kvar.
+1. Fäll ut sidhuvudet och kontrollera ändringen. Ladda om sidan, fäll ut
+   sidhuvudet igen och verifiera att ändringen finns kvar.
 1. Öppna kravunderlagslistan och försök hitta radåtgärden för att hantera
    medförfattare, och försök ändra kravunderlagsansvarig.
 
@@ -1561,22 +1563,31 @@ listan vid rensning. Hjälpen förklarar sökningen. Omladdning öppnar tabellvy
 
 **Steg:** Öppna skapa-dialogen och kontrollera att Spara är inaktiverad. Fyll
 unikt ID och namn och kontrollera att kravunderlagets livscykelstatus och
-ansvarig person är obligatoriska fält i formuläret.
+ansvarig person är obligatoriska fält i formuläret. Prova titel med 150 och
+151 tecken samt beskrivning med 300 och 301 tecken, också med omgivande
+blanksteg och på båda språken. Prova tom titel och tom beskrivning.
 
 **Förväntat resultat:** Spara är inaktiverad tills användaren har gjort en
 normaliserad metadataändring. Skapa-dialogen visar obligatorisk
-livscykelstatus och ansvarig person innan kravunderlag kan sparas.
+livscykelstatus och ansvarig person innan kravunderlag kan sparas. Titel är
+obligatorisk och beskrivning valfri. Efter trimning godtas högst 150 respektive
+300 tecken; längre värden ger begripliga fältfel.
 
 ### SPEC-03: redigera kravunderlag från titelåtgärd
 
-**Steg:** Öppna detalj, använd titelns redigeringsåtgärd och kontrollera att
+**Steg:** Öppna detalj med hopfällt sidhuvud. Fäll ut och in med mus och
+tangentbord och kontrollera att fokus syns. Kontrollera livscykelstatus och
+avtal i båda lägena. Använd titelns redigeringsåtgärd i båda lägena och
+kontrollera att
 Spara är inaktiverad innan ändring. Ändra text, klicka X och avbryt
 förkastandet. Kontrollera ansvarig persons HSA-id-fält och att klick utanför
-dialogen inte stänger formuläret.
+dialogen inte stänger formuläret. Prova samma textgränser som i SPEC-02.
 
 **Förväntat resultat:** Spara aktiveras först efter metadataändringen. X visar
 bekräftelse innan formulär med osparade ändringar förkastas. HSA-id för
 ansvarig person visas i formuläret och dialogen ligger kvar vid klick utanför.
+Sidhuvudet börjar hopfällt med livscykelstatus och avtal. Utfällt visas även
+beskrivning och samtliga metadata. Textgränserna gäller även redigering.
 
 ### SPEC-04: ta bort kravunderlag med bekräftelse
 
@@ -1610,7 +1621,10 @@ verifieringsmetod, före metadata. Områdesinformationen visar beskrivning och
 **Steg:** Lägg till ett krav och kontrollera att det syns. Kontrollera att
 underlagets kravlista har individuella markeringsrutor men ingen Markera alla.
 Kontrollera att båda kravlistorna använder det kompakta kravpaketsbandet och
-att vänster och höger paketval är oberoende. Välj flera paket och minska
+att vänster och höger paketval är oberoende. Hovra över respektive filter,
+flytta pekaren till ett paket i väljaren och kontrollera att väljaren är kvar.
+Stäng med Escape och kontrollera att fokus återgår till rätt filterknapp.
+Välj flera paket och minska
 fönsterbredden. Paketvalen går fortfarande att läsa och ta bort, och övriga
 knappar i knappraden går att använda. Höger väljare ska visa hela den
 aktiva katalogen, även paket utan tillgängliga träffar. Vänster väljare ska
@@ -2033,7 +2047,8 @@ expanderingen; ingen extra stängning och öppning ska behövas.
 ### SPEC-22: bekräfta hela kravunderlaget och välj avtal
 
 **Steg:** Skapa ett kravunderlag med ett bibliotekskrav och ett lokalt krav som
-kravunderlagsansvarig. Öppna pennan vid **Inget** i rutan **Avtal** till vänster
+kravunderlagsansvarig. Fäll ut sidhuvudet och öppna pennan vid **Inget** i
+rutan **Avtal**
 om **Styrningsobjektstyp**. Ange avtalsreferens och avtalsdatum, lämna beskrivningen
 tom och bekräfta. Prova även ett första avtal med framtida datum. Öppna dialogens
 registreringsuppgifter och byt mellan tillgängliga avtal. Kontrollera
@@ -2115,6 +2130,12 @@ uttryckliga godkännande av planerat avslut för ett nytt godkänt avsteg. Skapa
 ett avsteg direkt från kravraden i ett kommande avtal. En begäran eller ett
 beslut från en tidigare avtalsvy ska avvisas även om samma innehåll finns kvar
 i aktuellt avtal.
+
+Fäll in sidhuvudet. Endast avtalsdatum och status visas efter etiketten Avtal.
+Öppna väljaren med pilen och välj ett tidigare avtal med tangentbordet.
+Kontrollera att fokus återgår till pilen, att valt avtal bevaras när sidhuvudet
+fälls ut och att fullständiga avtalsuppgifter och tillåtna åtgärder går att nå.
+Utan avtal är Inget en text utan pil i hopfällt läge.
 
 ### SPEC-25: rätta referens och datum
 
@@ -2241,7 +2262,8 @@ webbläsarlagring och med en ogiltig sparad layout.
 
 **Förväntat resultat:** A börjar med endast vänster panel. Omladdning och
 återbesök via listan återställer det manuella valet. B börjar med båda
-panelerna. Återkomsten från B använder A:s grundlayout och lika panelbredder.
+panelerna. Återkomsten från B använder A:s grundlayout och standardfördelningen
+60/40 mellan panelerna.
 Omladdning och återbesök via listan bevarar även vald breddfördelning.
 Otillgänglig eller
 ogiltig lagring hindrar inte hopfällning och öppning. Bibliotekskrav och
@@ -2265,7 +2287,7 @@ och ingen redigering sparas av hopfällningen. Nollträffar ändrar inte layout.
 avdelaren mellan panelerna åt båda hållen. Dubbelklicka på avdelaren.
 
 **Förväntat resultat:** Panelerna ändrar bredd under dragningen och behåller
-sitt innehåll. Dubbelklick återställer lika breda paneler.
+sitt innehåll. Dubbelklick återställer förvalda panelproportioner.
 
 ### SPEC-34: ändra och bevara panelbredder med tangentbord
 
@@ -2276,7 +2298,7 @@ fäll ihop och öppna en panel och ändra fönsterbredd. Tryck Enter på avdelar
 **Förväntat resultat:** Piltangenterna ändrar bredd, med större steg med
 Shift. Valet bevaras vid omladdning, tabbbyte och hopfällning. Smala fönster
 visar staplade paneler utan avdelare; breda fönster återställer valt läge.
-Enter återställer lika breda paneler. Piltangenter fäller inte ihop paneler.
+Enter återställer förvalda panelproportioner. Piltangenter fäller inte ihop paneler.
 
 ### SPEC-35: förhandsvisa och avbryt hopfällning vid dragning
 

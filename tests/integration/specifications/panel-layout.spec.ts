@@ -170,6 +170,117 @@ test('SPEC-06 SPEC-30: keeps multiple package selections and toolbar actions usa
   ).toBeVisible()
 })
 
+for (const theme of ['light', 'dark'] as const) {
+  for (const width of [320, 1440, 1920]) {
+    test(`SPEC-06: package choosers match the library and span each panel at ${width}, ${theme}`, async ({
+      page,
+      request,
+    }) => {
+      const created = await request.post('/api/requirements-specifications', {
+        data: {
+          name: 'Package chooser layout',
+          specificationCode: `CHOOSER-${Date.now()}`,
+          specificationLifecycleStatusId: 1,
+        },
+      })
+      await expectApiResponseOk(created, 'create package chooser specification')
+      const { id } = (await created.json()) as { id: number }
+      try {
+        // The manual-case seed publishes this requirement in the source package.
+        await expectApiResponseOk(
+          await request.post(`/api/requirements-specifications/${id}/items`, {
+            data: { requirementIds: [920004] },
+          }),
+          'add packaged requirement to chooser fixture',
+        )
+        const catalog = await request.get(
+          `/api/requirements-specifications/${id}/requirement-packages`,
+        )
+        await expectApiResponseOk(
+          catalog,
+          'read chooser fixture package catalog',
+        )
+        expect(
+          (await catalog.json()).requirementPackages.length,
+        ).toBeGreaterThan(0)
+        await page.setViewportSize({ width, height: 900 })
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        await page.addInitScript(
+          theme => localStorage.setItem('theme', theme),
+          theme,
+        )
+        await page.goto('/sv/requirements')
+        await page
+          .getByRole('button', { name: 'Filtrera kravpaket', exact: true })
+          .hover()
+        const chooser = page.getByRole('group', {
+          name: 'Tillgängliga kravpaket',
+          exact: true,
+        })
+        await expect(chooser).toBeVisible()
+        await expect(chooser).toHaveCSS('opacity', '1')
+        const surface = () =>
+          chooser.evaluate(node => {
+            const style = getComputedStyle(node)
+            return {
+              background: style.backgroundColor,
+              padding: style.padding,
+              border: style.borderBottomWidth,
+            }
+          })
+        const librarySurface = await surface()
+        expect(librarySurface.background).not.toBe('rgba(0, 0, 0, 0)')
+        await page.keyboard.press('Escape')
+        await openSpecification(page, id)
+        await page
+          .getByRole('button', { name: 'Öppna Kravbibliotek', exact: true })
+          .click()
+        for (const side of ['left', 'right']) {
+          const panel = page.locator(`#specification-${side}-panel`)
+          const trigger = panel.getByRole('button', {
+            name: 'Filtrera kravpaket',
+            exact: true,
+          })
+          await trigger.scrollIntoViewIfNeeded()
+          await trigger.hover()
+          await expect(chooser).toBeVisible()
+          await expect(chooser).toHaveCSS('opacity', '1')
+          expect(await surface()).toEqual(librarySurface)
+          const toolbar = panel.locator(
+            '[data-developer-mode-name="panel toolbar"]',
+          )
+          await expect
+            .poll(async () => {
+              const menu = requireTestValue(await chooser.boundingBox())
+              const bar = requireTestValue(await toolbar.boundingBox())
+              const band = requireTestValue(
+                await panel
+                  .locator('[data-requirement-package-filter-band]')
+                  .boundingBox(),
+              )
+              return (
+                Math.abs(menu.x - bar.x) < 1 &&
+                Math.abs(menu.width - bar.width) < 1 &&
+                Math.abs(menu.y - band.y - band.height) < 1
+              )
+            })
+            .toBe(true)
+          await chooser.getByRole('button').first().hover()
+          await expect(chooser).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(chooser).toBeHidden()
+          await expect(trigger).toBeFocused()
+        }
+      } finally {
+        await expectApiResponseOk(
+          await request.delete(`/api/requirements-specifications/${id}`),
+          'delete package chooser specification',
+        )
+      }
+    })
+  }
+}
+
 test('SPEC-33: resizes both panels live without changing their gap or table columns', async ({
   page,
 }) => {
@@ -232,13 +343,13 @@ test('SPEC-33: resizes both panels live without changing their gap or table colu
       )
       .toBe(80)
   })
-  await test.step('Reset to equal widths', async () => {
+  await test.step('Reset to the default proportions', async () => {
     await divider.dblclick()
     await expect
       .poll(async () =>
         Math.abs(
           requireTestValue(await left.boundingBox()).width -
-            requireTestValue(await right.boundingBox()).width,
+            requireTestValue(await right.boundingBox()).width * 1.5,
         ),
       )
       .toBeLessThan(1)
@@ -800,7 +911,7 @@ test('SPEC-31: keeps only the latest specification layout across reloads and oth
         .click()
       await expect(
         page.getByRole('separator', { name: 'Ändra panelbredder' }),
-      ).toHaveAttribute('aria-valuenow', '50')
+      ).toHaveAttribute('aria-valuenow', '60')
     })
   } finally {
     await expectApiResponseOk(
@@ -1090,6 +1201,15 @@ for (const width of [1440, 1920]) {
           }
         }
         await test.step('Give the lists space without page overflow or smaller row text', async () => {
+          const needsReference = left
+            .locator('[data-developer-mode-name="column header"]')
+            .filter({ hasText: 'Behovsreferens' })
+          const referenceBounds = await bounds(needsReference)
+          const leftBounds = await bounds(left)
+          expect(referenceBounds.x + referenceBounds.width).toBeLessThanOrEqual(
+            leftBounds.x + leftBounds.width,
+          )
+
           const footer = await bounds(page.getByRole('contentinfo'))
           expect(footer.height).toBe(41)
           for (const panel of [left, right]) {
@@ -1100,10 +1220,10 @@ for (const width of [1440, 1920]) {
               '[data-developer-mode-name="panel toolbar"]',
             )
             const toolbarBounds = await bounds(toolbar)
-            // The empty-filter message can wrap to three lines beside the
-            // selection filter in the narrow, expanded-navigation layout.
+            // The compact right panel wraps filters and actions onto two rows
+            // when its 40% share cannot fit them beside one another.
             expect(toolbarBounds.height).toBeLessThanOrEqual(
-              width === 1440 && expanded ? 55 : 37,
+              width === 1440 && panel === right ? 67 : 37,
             )
             expect(
               row.y - panelBounds.y - toolbarBounds.height,
@@ -1155,6 +1275,7 @@ for (const width of [1440, 1920]) {
           }
         })
         await test.step('Scroll each list while keeping its tabs, filter and table header fixed', async () => {
+          await page.setViewportSize({ width, height: 650 })
           await left.getByRole('button', { name: /^BEH0001\b/ }).click()
           for (const [panel, other] of [
             [left, right],
