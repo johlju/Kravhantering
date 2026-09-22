@@ -525,6 +525,7 @@ describe('RequirementSelectionQuestionsClient', () => {
     { isActive: true, isArchived: false, status: 'Active' },
     { isActive: false, isArchived: false, status: 'Inactive' },
     { isActive: false, isArchived: true, status: 'Archived' },
+    { isActive: true, isArchived: true, status: 'Archived' },
   ])(
     'exposes question facts and announced $status status in the compact summary',
     async ({ isActive, isArchived, status }) => {
@@ -533,7 +534,23 @@ describe('RequirementSelectionQuestionsClient', () => {
 
       await screen.findByText(sampleQuestion.text)
       const disclosure = getQuestionDisclosure(sampleQuestion.text)
-      expect(within(disclosure).getByRole('status')).toHaveTextContent(status)
+      const badge = within(disclosure).getByText(status, { exact: true })
+      const announcement = within(
+        disclosure.closest('li') as HTMLElement,
+      ).getByRole('status')
+      expect(announcement).toHaveTextContent(status)
+      expect(announcement).toHaveAttribute('aria-live', 'polite')
+      expect(announcement.closest('button')).toBeNull()
+      expect(disclosure.nextElementSibling).toBe(announcement)
+      expect(badge).toHaveTextContent(status)
+      expect(badge).toHaveAttribute(
+        'data-developer-mode-name',
+        'question status',
+      )
+      expect(badge.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+      expect(badge.classList.contains('bg-emerald-100')).toBe(
+        isActive && !isArchived,
+      )
       const metadata = within(disclosure)
         .getByText(sampleQuestion.questionCode)
         .closest('[data-developer-mode-name="question metadata"]')
@@ -550,6 +567,44 @@ describe('RequirementSelectionQuestionsClient', () => {
       )
     },
   )
+
+  it('updates the persistent question live region after successful lifecycle actions', async () => {
+    let question = { ...sampleQuestion }
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === '/api/requirement-areas')
+        return okJson({ areas: [sampleArea] })
+      if (url === '/api/requirement-packages')
+        return okJson({ requirementPackages: [] })
+      if (url === '/api/requirement-selection-questions?includeArchived=true')
+        return okJson({ questions: [question] })
+      if (init?.method === 'POST') {
+        const action = url.split('/').at(-1)
+        question = {
+          ...question,
+          isActive: action === 'activate' || action === 'reactivate',
+          isArchived: action === 'archive',
+        }
+        return okJson(question)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    render(<RequirementSelectionQuestionsClient />)
+    await screen.findByText(question.text)
+    const card = expandQuestion(question.text)
+    const announcement = within(card).getByRole('status')
+    expect(announcement).toHaveTextContent('Active')
+    for (const [action, status] of [
+      ['Deactivate', 'Inactive'],
+      ['Activate', 'Active'],
+      ['Archive', 'Archived'],
+      ['Reactivate', 'Active'],
+    ]) {
+      fireEvent.click(within(card).getByRole('button', { name: action }))
+      await waitFor(() => expect(announcement).toHaveTextContent(status))
+      expect(announcement).toBeInTheDocument()
+      expect(within(card).getByRole('status')).toBe(announcement)
+    }
+  })
 
   it('groups questions by requirement area and keeps question details collapsed by default', async () => {
     const architectureArea = {

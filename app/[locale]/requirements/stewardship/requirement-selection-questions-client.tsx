@@ -623,7 +623,14 @@ function QuestionSummary({
               ? copy.multiple
               : copy.single}
           </span>
-          <span className="inline-flex items-center gap-1" role="status">
+          <span
+            className={`inline-flex items-center gap-1 ${question.isActive && !question.isArchived ? 'rounded-md bg-emerald-100 px-2 py-1 font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : ''}`}
+            {...devMarker({
+              context: 'requirementSelectionQuestions',
+              name: 'question status',
+              value: question.questionCode,
+            })}
+          >
             <StatusIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             {statusText(question, copy)}
           </span>
@@ -3760,7 +3767,7 @@ export default function RequirementSelectionQuestionsClient() {
 
         <div className="grid grid-cols-1 gap-6" ref={listAnchorRef}>
           <div className="space-y-4">
-            {loading ? (
+            {loading && questions.length === 0 ? (
               <p
                 className="text-secondary-600 dark:text-secondary-400"
                 role="status"
@@ -3945,6 +3952,18 @@ export default function RequirementSelectionQuestionsClient() {
                                 />
                               </div>
                             </button>
+                            <span
+                              aria-live="polite"
+                              className="sr-only"
+                              role="status"
+                              {...devMarker({
+                                context: 'requirementSelectionQuestions',
+                                name: 'question status announcement',
+                                value: question.questionCode,
+                              })}
+                            >
+                              {statusText(question, copy)}
+                            </span>
                             <div
                               className="flex w-full shrink-0 items-center pb-2 pl-11 pr-3 empty:hidden min-[601px]:w-32 min-[601px]:py-2 min-[601px]:pl-0 min-[601px]:empty:flex"
                               {...devMarker({

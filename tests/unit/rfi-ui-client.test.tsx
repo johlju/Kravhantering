@@ -272,6 +272,58 @@ describe('RFI client UI states', () => {
     vi.unstubAllGlobals()
   })
 
+  it('exposes question text, metadata and announced status while actions leave details collapsed', async () => {
+    mockRfiClientFetch()
+    await renderRfiQuestionsClient()
+    await screen.findByText('SEC-RFI001')
+    for (const question of rfiQuestions) {
+      const disclosure = screen.getByRole('button', {
+        name: new RegExp(question.questionCode),
+        expanded: false,
+      })
+      const status = within(disclosure.closest('li') as HTMLElement).getByRole(
+        'status',
+      )
+      expect(status).toHaveAttribute('aria-live', 'polite')
+      expect(status.closest('button')).toBeNull()
+      expect(disclosure.nextElementSibling).toBe(status)
+      expect(status).toHaveTextContent(
+        question.isArchived ? 'rfiQuestions.archived' : 'rfiQuestions.active',
+      )
+      const badge = within(disclosure).getByText(
+        question.isArchived ? 'rfiQuestions.archived' : 'rfiQuestions.active',
+      )
+      expect(badge.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+      expect(badge).toHaveAttribute(
+        'data-developer-mode-name',
+        'question status',
+      )
+      expect(
+        within(disclosure).getByText(question.questionText),
+      ).toHaveAttribute('data-developer-mode-name', 'question text')
+      expect(
+        within(disclosure)
+          .getByText(question.questionCode)
+          .closest('[data-developer-mode-name="question metadata"]'),
+      ).toHaveTextContent(`v${question.versionNumber}`)
+      expect(disclosure.closest('ul')).toHaveAttribute(
+        'data-developer-mode-name',
+        'requirement area question list',
+      )
+    }
+    const disclosure = screen.getByRole('button', {
+      name: /SEC-RFI001/,
+      expanded: false,
+    })
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'rfiQuestions.editQuestion: SEC-RFI001',
+      }),
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('leaves loading state when no requirement areas are available', async () => {
     fetchMock.mockImplementation((url: RequestInfo | URL) => {
       const href = String(url)
@@ -1464,6 +1516,7 @@ describe('RFI client UI states', () => {
   })
 
   it('archives after confirmation and reactivates without confirmation', async () => {
+    let currentQuestions = rfiQuestions.map(question => ({ ...question }))
     fetchMock.mockImplementation(
       (url: RequestInfo | URL, init?: RequestInit) => {
         const href = String(url)
@@ -1471,18 +1524,24 @@ describe('RFI client UI states', () => {
           return Promise.resolve(okJson({ areas }))
         }
         if (href === '/api/rfi-questions?includeArchived=true') {
-          return Promise.resolve(okJson({ questions: rfiQuestions }))
+          return Promise.resolve(okJson({ questions: currentQuestions }))
         }
         if (href === '/api/rfi-question-suggestions') {
           return Promise.resolve(okJson({ suggestions: [] }))
         }
         if (href === '/api/rfi-questions/11' && init?.method === 'DELETE') {
+          currentQuestions = currentQuestions.map(question =>
+            question.id === 11 ? { ...question, isArchived: true } : question,
+          )
           return Promise.resolve(okJson({ id: 11 }))
         }
         if (
           href === '/api/rfi-questions/22/reactivate' &&
           init?.method === 'POST'
         ) {
+          currentQuestions = currentQuestions.map(question =>
+            question.id === 22 ? { ...question, isArchived: false } : question,
+          )
           return Promise.resolve(okJson({ id: 22 }))
         }
         throw new Error(`Unmocked fetch: ${href}`)
@@ -1490,7 +1549,13 @@ describe('RFI client UI states', () => {
     )
 
     await renderRfiQuestionsClient()
-    await screen.findByText('SEC-RFI001')
+    const code = await screen.findByText('SEC-RFI001')
+    const activeStatus = within(code.closest('li') as HTMLElement).getByRole(
+      'status',
+    )
+    const archivedStatus = within(
+      screen.getByText('OPS-RFI001').closest('li') as HTMLElement,
+    ).getByRole('status')
     await userEvent.click(
       screen.getByRole('button', {
         name: 'rfiQuestions.archive: SEC-RFI001',
@@ -1506,6 +1571,11 @@ describe('RFI client UI states', () => {
       )
     })
 
+    await waitFor(() =>
+      expect(activeStatus).toHaveTextContent('rfiQuestions.archived'),
+    )
+    expect(activeStatus).toBeInTheDocument()
+
     await userEvent.click(
       screen.getByRole('button', {
         name: 'rfiQuestions.reactivate: OPS-RFI001',
@@ -1517,6 +1587,10 @@ describe('RFI client UI states', () => {
         expect.objectContaining({ method: 'POST' }),
       )
     })
+    await waitFor(() =>
+      expect(archivedStatus).toHaveTextContent('rfiQuestions.active'),
+    )
+    expect(archivedStatus).toBeInTheDocument()
   })
 
   it('renders an RFI list as read-only without suggestion requests', async () => {
