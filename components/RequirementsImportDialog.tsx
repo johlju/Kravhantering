@@ -2166,17 +2166,19 @@ export default function RequirementsImportDialog({
           className={`flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-secondary-950 ${
             hasLoadedReview || isPreparingInitialImport
               ? 'h-[calc(100dvh-2rem)] max-w-6xl'
-              : 'max-w-xl'
+              : mode === 'library'
+                ? 'max-w-[60rem]'
+                : 'max-w-xl'
           }`}
           {...panelDialogProps}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-secondary-200 px-5 py-3 dark:border-secondary-800">
+          <div className="flex items-start justify-between gap-3 border-b border-secondary-200 px-5 py-4 dark:border-secondary-800">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase text-primary-700 dark:text-primary-300">
                 JSON
               </p>
               <h2
-                className="truncate text-lg font-semibold text-secondary-950 dark:text-secondary-50"
+                className="wrap-anywhere text-xl font-semibold leading-snug text-secondary-950 dark:text-secondary-50"
                 id={titleId}
               >
                 {title}
@@ -2184,7 +2186,7 @@ export default function RequirementsImportDialog({
             </div>
             <button
               aria-label={text.close}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-secondary-100 dark:hover:bg-secondary-900"
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg hover:bg-secondary-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 dark:hover:bg-secondary-900"
               onClick={() => void closeDialog()}
               type="button"
             >
@@ -2210,161 +2212,203 @@ export default function RequirementsImportDialog({
               </div>
             ) : null}
             {!hasLoadedReview && !isPreparingInitialImport ? (
-              <aside className="space-y-4 p-4">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
+              <div
+                className={
+                  mode === 'library'
+                    ? 'grid md:grid-cols-[minmax(0,1fr)_16.25rem]'
+                    : ''
+                }
+                {...devMarker({
+                  context: 'requirements import',
+                  name: 'entry layout',
+                  priority: 200,
+                })}
+              >
+                <div
+                  className="min-w-0 space-y-5 p-5 sm:p-6"
+                  {...devMarker({
+                    context: 'requirements import',
+                    name: 'input panel',
+                    priority: 250,
+                  })}
+                >
+                  {mode === 'library' ? (
+                    <div>
+                      <label
+                        className="mb-2 block text-sm font-semibold"
+                        htmlFor="requirements-import-area"
+                      >
+                        {text.area}
+                        <RequiredFieldMarker />
+                      </label>
+                      <select
+                        className={inputClass}
+                        disabled={
+                          rows.length > 0 ||
+                          previewToken !== null ||
+                          hadSuccessfulImport
+                        }
+                        id="requirements-import-area"
+                        onChange={event =>
+                          setSelectedAreaId(event.target.value)
+                        }
+                        value={selectedAreaId}
+                      >
+                        <option value="">{text.area}...</option>
+                        {authorableAreas.map(area => (
+                          <option key={area.id} value={area.id}>
+                            {area.prefix ? `${area.prefix} ` : ''}
+                            {area.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  <div>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <label
+                        className="text-sm font-semibold"
+                        htmlFor="import-json"
+                      >
+                        {text.rawJson}
+                        <RequiredFieldMarker />
+                      </label>
+                      <input
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange={event => void handleFile(event)}
+                        ref={fileInputRef}
+                        type="file"
+                      />
+                    </div>
+                    <button
+                      className={`mb-2 flex min-h-24 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-3 text-center text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 ${
+                        jsonDropActive
+                          ? 'border-primary-500 bg-primary-50 text-primary-800 dark:border-primary-400 dark:bg-primary-950/30 dark:text-primary-100'
+                          : 'border-secondary-300 bg-secondary-50/60 text-secondary-700 hover:border-primary-400 hover:bg-primary-50/60 dark:border-secondary-700 dark:bg-secondary-900/50 dark:text-secondary-200 dark:hover:border-primary-500 dark:hover:bg-primary-950/20'
+                      }`}
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragEnter={event => {
+                        event.preventDefault()
+                        setJsonDropActive(true)
+                      }}
+                      onDragLeave={event => {
+                        event.preventDefault()
+                        setJsonDropActive(false)
+                      }}
+                      onDragOver={event => {
+                        event.preventDefault()
+                        setJsonDropActive(true)
+                      }}
+                      onDrop={event => void handleJsonDrop(event)}
+                      type="button"
+                    >
+                      <FileInput aria-hidden="true" className="h-5 w-5" />
+                      <span>{text.dropJsonFile}</span>
+                    </button>
+                    <textarea
+                      className={`${inputClass} min-h-52 resize-y font-mono text-xs`}
+                      id="import-json"
+                      onChange={event => {
+                        try {
+                          assertRequirementImportTextSize(event.target.value)
+                          setRawJson(event.target.value)
+                          setErrorMessage(null)
+                        } catch (error) {
+                          setRawJson('')
+                          setErrorMessage(
+                            error instanceof RequirementImportClientBudgetError
+                              ? text.contentTooLarge
+                              : text.error,
+                          )
+                        }
+                      }}
+                      placeholder={text.rawJsonPlaceholder}
+                      value={rawJson}
+                    />
+                  </div>
+                  {!canLoadPreview && startImportDisabledReason ? (
+                    <p
+                      className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                      role="status"
+                      {...devMarker({
+                        context: 'requirements import',
+                        name: 'status banner',
+                        priority: 350,
+                        value: 'preview blocker',
+                      })}
+                    >
+                      <AlertTriangle
+                        aria-hidden="true"
+                        className="mt-0.5 h-4 w-4 shrink-0"
+                      />
+                      <span>{startImportDisabledReason}</span>
+                    </p>
+                  ) : null}
+                  <button
+                    className="btn-primary inline-flex w-full items-center justify-center gap-2 sm:w-auto"
+                    disabled={!canLoadPreview}
+                    onClick={() => void loadPreview()}
+                    type="button"
+                  >
+                    {text.loadReview}
+                  </button>
+                  <ImportOutcomeFeedback
+                    errorMessage={errorMessage}
+                    noticeMessage={noticeMessage}
+                    successLabel={text.success}
+                  />
+                </div>
+                <aside
+                  aria-labelledby={`${titleId}-support`}
+                  className={`min-w-0 space-y-3 border-t border-secondary-200 bg-secondary-50 p-5 text-secondary-600 dark:border-secondary-800 dark:bg-secondary-900/50 dark:text-secondary-300 ${mode === 'library' ? 'md:border-t-0 md:border-l' : ''}`}
+                  {...devMarker({
+                    context: 'requirements import',
+                    name: 'support panel',
+                    priority: 250,
+                  })}
+                >
+                  <h3
+                    className="text-sm font-semibold text-secondary-800 dark:text-secondary-200"
+                    id={`${titleId}-support`}
+                  >
+                    {importText('importSupport')}
+                  </h3>
+                  <div className="flex flex-col items-start gap-2">
                     <button
                       aria-describedby="requirements-import-download-help"
-                      className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium hover:bg-secondary-50 dark:border-secondary-700 dark:hover:bg-secondary-900"
+                      className="inline-flex min-h-8 items-center gap-2 rounded text-left text-sm underline underline-offset-4 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 dark:hover:text-primary-300"
                       onClick={() => void downloadArtifact('schema')}
                       type="button"
                     >
-                      <Download aria-hidden="true" className="h-4 w-4" />
+                      <Download
+                        aria-hidden="true"
+                        className="h-4 w-4 shrink-0"
+                      />
                       {text.downloadSchema}
                     </button>
                     <button
                       aria-describedby="requirements-import-download-help"
-                      className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium hover:bg-secondary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-secondary-700 dark:hover:bg-secondary-900"
+                      className="inline-flex min-h-8 items-center gap-2 rounded text-left text-sm underline underline-offset-4 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-primary-300"
                       disabled={!canDownloadImportInstruction}
                       onClick={() => void downloadArtifact('instruction')}
                       type="button"
                     >
-                      <FileJson aria-hidden="true" className="h-4 w-4" />
+                      <FileJson
+                        aria-hidden="true"
+                        className="h-4 w-4 shrink-0"
+                      />
                       {text.downloadImportInstruction}
                     </button>
                   </div>
                   <p
-                    className="max-w-3xl text-xs leading-relaxed text-secondary-500 dark:text-secondary-400"
+                    className="max-w-3xl text-xs leading-relaxed text-secondary-600 dark:text-secondary-300"
                     id="requirements-import-download-help"
                   >
                     {text.downloadArtifactsHelp}
                   </p>
-                </div>
-                {mode === 'library' ? (
-                  <div>
-                    <label
-                      className="mb-1 block text-sm font-medium"
-                      htmlFor="requirements-import-area"
-                    >
-                      {text.area}
-                      <RequiredFieldMarker />
-                    </label>
-                    <select
-                      className={inputClass}
-                      disabled={
-                        rows.length > 0 ||
-                        previewToken !== null ||
-                        hadSuccessfulImport
-                      }
-                      id="requirements-import-area"
-                      onChange={event => setSelectedAreaId(event.target.value)}
-                      value={selectedAreaId}
-                    >
-                      <option value="">{text.area}...</option>
-                      {authorableAreas.map(area => (
-                        <option key={area.id} value={area.id}>
-                          {area.prefix ? `${area.prefix} ` : ''}
-                          {area.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <label
-                      className="text-sm font-medium"
-                      htmlFor="import-json"
-                    >
-                      {text.rawJson}
-                      <RequiredFieldMarker />
-                    </label>
-                    <input
-                      accept=".json,application/json"
-                      className="hidden"
-                      onChange={event => void handleFile(event)}
-                      ref={fileInputRef}
-                      type="file"
-                    />
-                  </div>
-                  <button
-                    className={`mb-2 flex min-h-24 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-3 text-center text-sm transition-colors ${
-                      jsonDropActive
-                        ? 'border-primary-500 bg-primary-50 text-primary-800 dark:border-primary-400 dark:bg-primary-950/30 dark:text-primary-100'
-                        : 'border-secondary-300 bg-secondary-50/60 text-secondary-700 hover:border-primary-400 hover:bg-primary-50/60 dark:border-secondary-700 dark:bg-secondary-900/50 dark:text-secondary-200 dark:hover:border-primary-500 dark:hover:bg-primary-950/20'
-                    }`}
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragEnter={event => {
-                      event.preventDefault()
-                      setJsonDropActive(true)
-                    }}
-                    onDragLeave={event => {
-                      event.preventDefault()
-                      setJsonDropActive(false)
-                    }}
-                    onDragOver={event => {
-                      event.preventDefault()
-                      setJsonDropActive(true)
-                    }}
-                    onDrop={event => void handleJsonDrop(event)}
-                    type="button"
-                  >
-                    <FileInput aria-hidden="true" className="h-5 w-5" />
-                    <span>{text.dropJsonFile}</span>
-                  </button>
-                  <textarea
-                    className={`${inputClass} min-h-52 resize-y font-mono text-xs`}
-                    id="import-json"
-                    onChange={event => {
-                      try {
-                        assertRequirementImportTextSize(event.target.value)
-                        setRawJson(event.target.value)
-                        setErrorMessage(null)
-                      } catch (error) {
-                        setRawJson('')
-                        setErrorMessage(
-                          error instanceof RequirementImportClientBudgetError
-                            ? text.contentTooLarge
-                            : text.error,
-                        )
-                      }
-                    }}
-                    placeholder={text.rawJsonPlaceholder}
-                    value={rawJson}
-                  />
-                </div>
-                {!canLoadPreview && startImportDisabledReason ? (
-                  <p
-                    className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
-                    role="status"
-                    {...devMarker({
-                      context: 'requirements import',
-                      name: 'status banner',
-                      priority: 350,
-                      value: 'preview blocker',
-                    })}
-                  >
-                    <AlertTriangle
-                      aria-hidden="true"
-                      className="mt-0.5 h-4 w-4 shrink-0"
-                    />
-                    <span>{startImportDisabledReason}</span>
-                  </p>
-                ) : null}
-                <button
-                  className="btn-primary inline-flex w-full items-center justify-center gap-2"
-                  disabled={!canLoadPreview}
-                  onClick={() => void loadPreview()}
-                  type="button"
-                >
-                  {text.loadReview}
-                </button>
-                <ImportOutcomeFeedback
-                  errorMessage={errorMessage}
-                  noticeMessage={noticeMessage}
-                  successLabel={text.success}
-                />
-              </aside>
+                </aside>
+              </div>
             ) : null}
             {hasLoadedReview ? (
               <main className="flex h-full flex-col overflow-hidden">

@@ -1097,15 +1097,21 @@ har ändrats.
 ### REQ-17: importera krav till kravbiblioteket
 
 **Steg:** Logga in som `olle.areaowner`, öppna `/sv/requirements`, välj
-importknappen i den flytande åtgärdsytan och ladda ner schema och
-importinstruktion. Klistra in `requirement-import.v4`-JSON med ett krav vars
+importknappen i den flytande åtgärdsytan. Använd Tab och Skift+Tab för att
+nå kravområde, filval, textinmatning och stödytan `Schema och instruktion`.
+Ladda ner schema och importinstruktion från stödytan. Välj även en JSON-fil
+via filvalet och kontrollera att innehållet visas i textfältet. Klistra in
+`requirement-import.v4`-JSON med ett krav vars
 kravtext börjar med `=`,
 föreslagen normreferens, behovsreferensfält som ska ignoreras och ett först
 otillåtet destinationsfält. Välj kravområde, korrigera JSON, förhandsgranska,
 expandera raden, granska den föreslagna normreferensen, importera vald rad och
 ladda ner CSV-kvitto.
 
-**Förväntat resultat:** JSON med destinationsfält stoppas före granskning.
+**Förväntat resultat:** Inmatning och stödmaterial går att nå med tangentbord
+och har synlig fokusmarkering. Båda nedladdningarna och deras förklaring är
+tillgängliga utan att öppna en extra sektion. Filval och inklistring använder
+samma textfält och validering. JSON med destinationsfält stoppas före granskning.
 Kravområde måste väljas från användarens tilldelade områden, dialogrubriken
 visar `Importera krav för {kravområde}` och granskningen skiljer mellan `Krav`
 och `Föreslagna normreferenser`. Rader är kollapsade från start,
