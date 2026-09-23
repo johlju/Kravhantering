@@ -79,8 +79,8 @@ the change before merging.
 Use the manual path when selecting an exceptional tag, recovering a failed
 automation run, or changing registry or pinning policy:
 
-1. Choose the new official nginx tag. Prefer a version-specific Alpine tag and
-   avoid moving tags such as `stable-alpine` for release locks.
+1. Choose the new official nginx tag with an explicit Alpine minor version.
+   Avoid moving tags such as `stable-alpine` for release locks.
 2. Resolve the current manifest digest and image ID from Docker Hub.
 3. Update `tag`, `manifestDigest` and `imageId` together in
    `image.lock.json`.
