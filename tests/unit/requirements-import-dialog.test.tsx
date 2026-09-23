@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RequirementsImportDialog, {
   type ImportPreviewResponse,
@@ -22,6 +28,7 @@ const importDialogTranslate = vi.hoisted(() => {
     descriptionRequired: 'Kravtext måste anges innan raden kan importeras.',
     importTitleWithDestination: '{title} för {destination}',
     loadingInitialImport: 'Förbereder importgranskning...',
+    importSupport: 'Schema och instruktion',
     verificationMethodRequired:
       'Verifieringsmetod måste anges för verifierbara krav.',
   }
@@ -281,6 +288,39 @@ describe('RequirementsImportDialog', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('keeps downloads and their guidance in a named support panel after the import inputs', async () => {
+    render(
+      <RequirementsImportDialog
+        areas={[{ id: 1, name: 'Informationssäkerhet' }]}
+        mode="library"
+        onClose={vi.fn()}
+        open
+      />,
+    )
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(6))
+    const support = screen.getByRole('complementary', {
+      name: 'Schema och instruktion',
+    })
+    expect(support).toHaveAttribute('data-developer-mode-name', 'support panel')
+    expect(
+      screen
+        .getByLabelText(/Kravområde/)
+        .closest('[data-developer-mode-name="input panel"]'),
+    ).toBeInTheDocument()
+    expect(
+      within(support).getByRole('button', { name: 'Ladda ner schema' }),
+    ).toHaveAccessibleDescription(/Använd schemat/)
+    expect(
+      within(support).getByRole('button', {
+        name: 'Ladda ner importinstruktion',
+      }),
+    ).toBeEnabled()
+    expect(
+      screen.getByLabelText(/Import-JSON/).compareDocumentPosition(support) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it.each(['library', 'specification-local'] as const)(

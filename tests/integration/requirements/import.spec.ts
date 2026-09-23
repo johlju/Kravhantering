@@ -174,6 +174,46 @@ test.describe('Requirements import', () => {
       await expect(dialog).toHaveCount(1)
       await expect(dialog.getByLabel('Import-JSON')).toHaveValue('')
 
+      const support = dialog.getByRole('complementary', {
+        name: 'Schema och instruktion',
+      })
+      await expect(support).toHaveAttribute(
+        'data-developer-mode-name',
+        'support panel',
+      )
+      await dialog.getByRole('button', { name: 'Stäng' }).focus()
+      await page.keyboard.press('Tab')
+      await expect(dialog.getByLabel('Kravområde')).toBeFocused()
+      await page.keyboard.press('Tab')
+      const upload = dialog.getByRole('button', { name: /Släpp en JSON-fil/ })
+      await expect(upload).toBeFocused()
+      const chooserPromise = page.waitForEvent('filechooser')
+      await page.keyboard.press('Enter')
+      const chooser = await chooserPromise
+      await chooser.setFiles({
+        name: 'requirements.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(validImportPayload)),
+      })
+      await expect(dialog.getByLabel('Import-JSON')).toHaveValue(
+        JSON.stringify(validImportPayload),
+      )
+      await page.keyboard.press('Tab')
+      await expect(dialog.getByLabel('Import-JSON')).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(
+        support.getByRole('button', { name: 'Ladda ner schema' }),
+      ).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(
+        support.getByRole('button', { name: 'Ladda ner importinstruktion' }),
+      ).toBeFocused()
+      await page.keyboard.press('Shift+Tab')
+      await expect(
+        support.getByRole('button', { name: 'Ladda ner schema' }),
+      ).toBeFocused()
+      await dialog.getByLabel('Import-JSON').fill('')
+
       await dialog.getByRole('button', { name: 'Ladda ner schema' }).click()
       await dialog
         .getByRole('button', { name: 'Ladda ner importinstruktion' })
@@ -344,6 +384,77 @@ test.describe('Requirements import', () => {
       await expect(importButton).toBeFocused()
     })
   })
+  test('REQ-17: keeps the import form and support readable across themes and viewport sizes', async ({
+    page,
+  }) => {
+    await page.goto('/sv/requirements')
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1920, height: 1080 },
+      { width: 320, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport)
+      for (const theme of ['light', 'dark']) {
+        await test.step(`${viewport.width} × ${viewport.height}, ${theme} theme`, async () => {
+          await page.evaluate(
+            theme =>
+              document.documentElement.classList.toggle(
+                'dark',
+                theme === 'dark',
+              ),
+            theme,
+          )
+          await page
+            .getByRole('button', { name: 'Importera krav', exact: true })
+            .click()
+          const dialog = page.getByRole('dialog', {
+            name: 'Importera krav',
+            exact: true,
+          })
+          const input = dialog.locator(
+            '[data-developer-mode-name="input panel"]',
+          )
+          const support = dialog.getByRole('complementary', {
+            name: 'Schema och instruktion',
+          })
+          await expect(input).toHaveCount(1)
+          await expect(support).toHaveCount(1)
+          await expect
+            .poll(async () => {
+              const mainBox = await input.boundingBox()
+              const supportBox = await support.boundingBox()
+              if (!mainBox || !supportBox) return false
+              return viewport.width >= 768
+                ? supportBox.x >= mainBox.x + mainBox.width &&
+                    Math.abs(mainBox.y - supportBox.y) < 1
+                : supportBox.y >= mainBox.y + mainBox.height
+            })
+            .toBe(true)
+          const panel = dialog
+          await expect
+            .poll(async () =>
+              Math.round((await panel.boundingBox())?.width ?? 0),
+            )
+            .toBe(viewport.width >= 768 ? 960 : 288)
+          await expect
+            .poll(() =>
+              panel.evaluate(
+                element => element.scrollWidth <= element.clientWidth,
+              ),
+            )
+            .toBe(true)
+          await support
+            .getByRole('button', { name: 'Ladda ner schema' })
+            .scrollIntoViewIfNeeded()
+          await expect(
+            support.getByRole('button', { name: 'Ladda ner schema' }),
+          ).toBeInViewport()
+          await dialog.getByRole('button', { name: 'Stäng' }).click()
+        })
+      }
+    }
+  })
+
   test('REQ-17a: downloads edited remaining candidates and reopens with changed reference data', async ({
     page,
   }) => {
