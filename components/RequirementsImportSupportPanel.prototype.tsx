@@ -365,8 +365,8 @@ function VariantB(props: SupportPanelPrototypeProps) {
             </p>
             <p className="text-xs leading-relaxed">
               {model.sv
-                ? `Skriv behovet i Microsoft 365 Copilot Chat eller Copilot Chat i din IDE. Klistra in innehållet i ${model.inlineName} och bifoga referensdatafilen.`
-                : `Write the need in Microsoft 365 Copilot Chat or Copilot Chat in your IDE. Paste the contents of the ${model.inlineName} and attach the reference data file.`}
+                ? `Skriv behovet i chatten hos din AI-assistent. Klistra in innehållet i ${model.inlineName} och bifoga referensdatafilen, eller lägg till den som kontext.`
+                : `Write the need in your AI assistant chat. Paste the contents of the ${model.inlineName} and attach the reference data file, or add it as context.`}
             </p>
           </div>
         </li>
