@@ -187,6 +187,8 @@ and every discovered direct `FROM` reference and image ARG default together.
 For the runtime role, also synchronize the provisioner's
 `containers/hsa-mtls-provisioner/toolchain.lock.json`. Inspect the selected
 image's exact Node version and RPM headers before changing locked values.
+Then prune the shared helper's security package list as described in
+[runtime security packages](../../containers/node/README.md#runtime-security-packages).
 The provisioner tests verify that its base identity matches the runtime lane.
 The coverage check rejects ambiguous ownership, unresolved ARG references,
 and a role reference that differs from its selected digest. Vendor images keep

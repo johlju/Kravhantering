@@ -6,11 +6,16 @@ set -eu
 [ "$(id -u)" = 0 ]
 [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ]
 
-# Public RPM fixes can precede refreshed base images (CVE-2026-8458).
-# Update only the inherited curl packages; leave workload/toolchain RPMs alone.
-microdnf --disablerepo='*' --enablerepo=ubi-10-baseos-rpms \
-  upgrade -y curl libcurl-minimal
-microdnf clean all
+# Public RPM fixes can precede refreshed base images. Keep this hook when the
+# list is empty; README.md#runtime-security-packages owns the entry rules and
+# records each entry's vulnerabilities and advisory.
+security_update_packages='curl libcurl-minimal libxml2'
+if [ -n "$security_update_packages" ]; then
+  # shellcheck disable=SC2086 # Split the package list into arguments.
+  microdnf --disablerepo='*' --enablerepo=ubi-10-baseos-rpms \
+    upgrade -y $security_update_packages
+  microdnf clean all
+fi
 
 # Fail closed if a replacement base assigns the supported identity elsewhere.
 if getent passwd node >/dev/null || getent passwd 1000 >/dev/null \
