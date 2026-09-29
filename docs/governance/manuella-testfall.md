@@ -1098,8 +1098,10 @@ har ändrats.
 
 **Steg:** Logga in som `olle.areaowner`, öppna `/sv/requirements`, välj
 importknappen i den flytande åtgärdsytan. Använd Tab och Skift+Tab för att
-nå kravområde, filval, textinmatning och stödytan `Schema och instruktion`.
-Ladda ner schema och importinstruktion från stödytan. Välj även en JSON-fil
+nå kravområde, filval, textinmatning och stödytan `Låt en extern AI ta fram
+krav`. Kontrollera stegguidens tre steg. Öppna den infällda sektionen `Egen
+prompt eller validering` och ladda ner schema och importinstruktion. Välj även
+en JSON-fil
 via filvalet och kontrollera att innehållet visas i textfältet. Klistra in
 `requirement-import.v4`-JSON med ett krav vars
 kravtext börjar med `=`,
@@ -1109,8 +1111,12 @@ expandera raden, granska den föreslagna normreferensen, importera vald rad och
 ladda ner CSV-kvitto.
 
 **Förväntat resultat:** Inmatning och stödmaterial går att nå med tangentbord
-och har synlig fokusmarkering. Båda nedladdningarna och deras förklaring är
-tillgängliga utan att öppna en extra sektion. Filval och inklistring använder
+och har synlig fokusmarkering. Stegguiden visar `Hämta två filer`, `Fråga
+AI-assistenten` och `Lägg in svaret här` och nämner inga produktnamn.
+Sektionen `Egen prompt eller validering` är stängd från start, anger sitt
+läge för skärmläsare och visar knapparna för schema och importinstruktion med
+förklaringen att filerna bara innehåller formatregler och referensdata.
+Filval och inklistring använder
 samma textfält och validering. JSON med destinationsfält stoppas före granskning.
 Kravområde måste väljas från användarens tilldelade områden, dialogrubriken
 visar `Importera krav för {kravområde}` och granskningen skiljer mellan `Krav`
@@ -1148,6 +1154,25 @@ Nedladdning behåller ändringar och val i granskningen. Filen kan öppnas via
 vanlig filinläsning; den nya granskningen visar den korrigerade raden och en
 varning för den saknade referensen. Aktuell behörighet, destination,
 referensdata och kravimportbudget valideras på nytt.
+
+### REQ-17b: hämta AI-anropsmall och referensdatafil för kravbiblioteket
+
+**Steg:** Öppna `/sv/requirements` och välj `Importera krav`. Välj
+`AI-anropsmall` och sedan `Referensdatafil` i steg 1 i stödytan `Låt en extern
+AI ta fram krav`. Öppna båda filerna.
+
+**Förväntat resultat:** Filnamnet står under varje knapp och är detsamma som
+den nedladdade filens namn: `kravimport-ai-anropsmall-kravbibliotek.md` och
+`kravimport-referensdata-kravbibliotek.json`. Mallen börjar
+med raden `===== BÖRJAN PÅ AI-ANROPSMALL FÖR KRAVIMPORT =====` och slutar med
+raden `===== SLUT PÅ AI-ANROPSMALL =====`. Den anger `schemaVersion` och
+destinationstypen `requirements_library`, har ett enda `json`-kodblock med
+schemat och innehåller varken referensdata, platshållare eller produktnamn.
+Referensdatafilen är minifierad JSON utan BOM med `generatedAt`,
+`schemaVersion`, `locale`, `destination` med `kind` `requirements_library`
+och `referenceData`. Under stegen står att referensdatafilen speglar
+kravbiblioteket just nu och att en ny fil behövs när normreferenser eller
+kravpaket har ändrats.
 
 ### REQ-17c: läs in extern JSON och visa detaljerade fel i importdialogen
 

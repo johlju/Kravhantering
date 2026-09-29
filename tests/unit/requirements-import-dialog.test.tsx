@@ -28,7 +28,6 @@ const importDialogTranslate = vi.hoisted(() => {
     descriptionRequired: 'Kravtext måste anges innan raden kan importeras.',
     importTitleWithDestination: '{title} för {destination}',
     loadingInitialImport: 'Förbereder importgranskning...',
-    importSupport: 'Schema och instruktion',
     verificationMethodRequired:
       'Verifieringsmetod måste anges för verifierbara krav.',
   }
@@ -49,23 +48,26 @@ vi.mock('next-intl', async () => {
     await vi.importActual<typeof import('next-intl')>('next-intl')
   const { default: enMessages } = await import('@/messages/en.json')
   const { default: svMessages } = await import('@/messages/sv.json')
-  const importJsonTranslators = {
-    en: createTranslator({
-      locale: 'en',
-      messages: enMessages,
-      namespace: 'requirementsImportJson',
-    }),
-    sv: createTranslator({
-      locale: 'sv',
-      messages: svMessages,
-      namespace: 'requirementsImportJson',
-    }),
+  const createTranslators = (namespace: string) => ({
+    en: createTranslator({ locale: 'en', messages: enMessages, namespace }),
+    sv: createTranslator({ locale: 'sv', messages: svMessages, namespace }),
+  })
+  const realTranslators: Record<
+    string,
+    ReturnType<typeof createTranslators>
+  > = {
+    requirementsImportAiRequest: createTranslators(
+      'requirementsImportAiRequest',
+    ),
+    requirementsImportJson: createTranslators('requirementsImportJson'),
   }
   return {
     useLocale: () => importLocaleState.locale,
     useTranslations: (namespace?: string) =>
-      namespace === 'requirementsImportJson'
-        ? importJsonTranslators[importLocaleState.locale === 'en' ? 'en' : 'sv']
+      namespace && realTranslators[namespace]
+        ? realTranslators[namespace][
+            importLocaleState.locale === 'en' ? 'en' : 'sv'
+          ]
         : importDialogTranslate,
   }
 })
@@ -311,7 +313,7 @@ describe('RequirementsImportDialog', () => {
     vi.restoreAllMocks()
   })
 
-  it('keeps downloads and their guidance in a named support panel after the import inputs', async () => {
+  it('shows the external AI step guide in a named support panel after the import inputs', async () => {
     render(
       <RequirementsImportDialog
         areas={[{ id: 1, name: 'Informationssäkerhet' }]}
@@ -322,7 +324,7 @@ describe('RequirementsImportDialog', () => {
     )
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(6))
     const support = screen.getByRole('complementary', {
-      name: 'Schema och instruktion',
+      name: 'Låt en extern AI ta fram krav',
     })
     expect(support).toHaveAttribute('data-developer-mode-name', 'support panel')
     expect(
@@ -331,17 +333,193 @@ describe('RequirementsImportDialog', () => {
         .closest('[data-developer-mode-name="input panel"]'),
     ).toBeInTheDocument()
     expect(
-      within(support).getByRole('button', { name: 'Ladda ner schema' }),
-    ).toHaveAccessibleDescription(/Använd schemat/)
-    expect(
-      within(support).getByRole('button', {
-        name: 'Ladda ner importinstruktion',
-      }),
-    ).toBeEnabled()
-    expect(
       screen.getByLabelText(/Import-JSON/).compareDocumentPosition(support) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+
+    const guide = within(support).getByRole('list')
+    expect(guide).toHaveAttribute('data-developer-mode-name', 'step guide')
+    const steps = within(guide).getAllByRole('listitem')
+    expect(steps).toHaveLength(3)
+    expect(
+      steps.map(step => step.getAttribute('data-developer-mode-value')),
+    ).toEqual(['get files', 'ask ai assistant', 'add response'])
+    expect(steps[0]).toHaveTextContent('Hämta två filer')
+    expect(steps[1]).toHaveTextContent('Fråga AI-assistenten')
+    expect(steps[1]).toHaveTextContent('din AI-assistent')
+    expect(steps[2]).toHaveTextContent('Lägg in svaret här')
+    expect(support).toHaveTextContent(
+      'Referensdatafilen speglar kravbiblioteket just nu.',
+    )
+
+    const templateButton = within(steps[0] as HTMLElement).getByRole('button', {
+      name: 'AI-anropsmall',
+    })
+    const referenceDataButton = within(steps[0] as HTMLElement).getByRole(
+      'button',
+      { name: 'Referensdatafil' },
+    )
+    expect(templateButton).toBeEnabled()
+    expect(templateButton).toHaveClass('btn-primary')
+    expect(templateButton).toHaveAccessibleDescription(
+      'kravimport-ai-anropsmall-kravbibliotek.md',
+    )
+    expect(templateButton).toHaveAttribute(
+      'data-developer-mode-value',
+      'ai request template',
+    )
+    expect(referenceDataButton).toBeEnabled()
+    expect(referenceDataButton).toHaveClass('btn-secondary')
+    expect(referenceDataButton).toHaveAccessibleDescription(
+      'kravimport-referensdata-kravbibliotek.json',
+    )
+    expect(referenceDataButton).toHaveAttribute(
+      'data-developer-mode-value',
+      'reference data file',
+    )
+    expect(support).not.toHaveTextContent(/Copilot|ChatGPT|Microsoft/)
+  })
+
+  it('keeps the schema and import instruction in a collapsed own prompt section', async () => {
+    render(
+      <RequirementsImportDialog
+        areas={[{ id: 1, name: 'Informationssäkerhet' }]}
+        mode="library"
+        onClose={vi.fn()}
+        open
+      />,
+    )
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(6))
+    const toggle = screen.getByRole('button', {
+      name: 'Egen prompt eller validering',
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      toggle.closest('[data-developer-mode-name="disclosure"]'),
+    ).toHaveAttribute('data-developer-mode-value', 'own prompt or validation')
+    expect(
+      screen.queryByRole('button', { name: 'Ladda ner schema' }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.getByRole('button', { name: 'Ladda ner schema' }),
+    ).toHaveAccessibleDescription(/bara formatregler och referensdata/)
+    expect(
+      screen.getByRole('button', { name: 'Ladda ner importinstruktion' }),
+    ).toBeEnabled()
+
+    fireEvent.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.queryByRole('button', { name: 'Ladda ner schema' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [
+      'sv',
+      'AI-anropsmall',
+      '/api/requirements/import/ai-request-template?locale=sv&kind=requirements_library',
+      'kravimport-ai-anropsmall-kravbibliotek.md',
+    ],
+    [
+      'sv',
+      'Referensdatafil',
+      '/api/requirements/import/reference-data?locale=sv&kind=requirements_library',
+      'kravimport-referensdata-kravbibliotek.json',
+    ],
+    [
+      'en',
+      'AI request template',
+      '/api/requirements/import/ai-request-template?locale=en&kind=requirements_library',
+      'requirement-import-ai-request-template-requirements-library.md',
+    ],
+    [
+      'en',
+      'Reference data file',
+      '/api/requirements/import/reference-data?locale=en&kind=requirements_library',
+      'requirement-import-reference-data-requirements-library.json',
+    ],
+  ])(
+    'downloads the %s library file behind %s',
+    async (locale, buttonName, expectedUrl, expectedFileName) => {
+      importLocaleState.locale = locale
+      const fileBlob = new Blob(['file'])
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/requirements/import/schema')) {
+          return {
+            json: async () => buildRequirementsImportJsonSchema(locale as 'sv'),
+            ok: true,
+          } as Response
+        }
+        if (url.startsWith('/api/requirements/import/')) {
+          return { blob: async () => fileBlob, ok: true } as Response
+        }
+        return { json: async () => ({}), ok: true } as Response
+      })
+      global.fetch = fetchMock
+
+      render(
+        <RequirementsImportDialog
+          areas={[{ id: 1, name: 'Informationssäkerhet' }]}
+          mode="library"
+          onClose={vi.fn()}
+          open
+        />,
+      )
+      fireEvent.click(await screen.findByRole('button', { name: buttonName }))
+
+      await waitFor(() =>
+        expect(downloadBlobMock).toHaveBeenCalledWith(
+          fileBlob,
+          expectedFileName,
+        ),
+      )
+      expect(fetchMock).toHaveBeenCalledWith(expectedUrl)
+    },
+  )
+
+  it('reports a failed AI request template download', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/requirements/import/ai-request-template')) {
+        return {
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({ error: 'Template unavailable' }),
+          ok: false,
+        } as Response
+      }
+      return {
+        json: async () =>
+          url.includes('/api/requirements/import/schema')
+            ? buildRequirementsImportJsonSchema('sv')
+            : {},
+        ok: true,
+      } as Response
+    })
+    global.fetch = fetchMock
+
+    render(
+      <RequirementsImportDialog
+        areas={[{ id: 1, name: 'Informationssäkerhet' }]}
+        mode="library"
+        onClose={vi.fn()}
+        open
+      />,
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'AI-anropsmall' }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Template unavailable',
+    )
+    expect(downloadBlobMock).not.toHaveBeenCalled()
   })
 
   it.each(['library', 'specification-local'] as const)(
@@ -925,6 +1103,9 @@ describe('RequirementsImportDialog', () => {
     )
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Egen prompt eller validering' }),
+    )
     const instructionButton = screen.getByRole('button', {
       name: 'Ladda ner importinstruktion',
     })
@@ -2415,6 +2596,22 @@ describe('RequirementsImportDialog', () => {
       />,
     )
 
+    const support = screen.getByRole('complementary', {
+      name: 'Låt en extern AI ta fram krav',
+    })
+    expect(support).toHaveTextContent(
+      'Hämta en ny fil om normreferenser, kravpaket eller behovsreferenser har ändrats.',
+    )
+    // Specification destinations get their AI request files separately.
+    expect(
+      within(support).getByRole('button', { name: 'AI-anropsmall' }),
+    ).toBeDisabled()
+    expect(
+      within(support).getByRole('button', { name: 'Referensdatafil' }),
+    ).toBeDisabled()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Egen prompt eller validering' }),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Ladda ner schema' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Schema unavailable',

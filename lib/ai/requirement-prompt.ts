@@ -440,6 +440,91 @@ export function buildRequirementImportSystemPrompt(
   ].join('\n\n')
 }
 
+export interface BuildRequirementImportAiRequestTemplateOptions {
+  budget: RequirementImportBudget
+  destinationKind: RequirementImportDestinationKind
+  locale: 'en' | 'sv'
+}
+
+function templateMessage(locale: 'en' | 'sv', key: string): string {
+  return getPromptMessage(locale, ['ai', 'prompt', 'template', key])
+}
+
+function templateList(locale: 'en' | 'sv', key: string): string[] {
+  return getPromptMessageList(locale, ['ai', 'prompt', 'template', key])
+}
+
+/**
+ * Template composer: the AI request in portable form for an external AI
+ * assistant. It uses the same shared parts as the internal composer, never
+ * embeds reference data (the user attaches the reference data file), and
+ * embeds the same minified schema as the schema download.
+ */
+export function buildRequirementImportAiRequestTemplate({
+  budget,
+  destinationKind,
+  locale,
+}: BuildRequirementImportAiRequestTemplateOptions): string {
+  const values = {
+    defaultCount: DEFAULT_REQUIREMENT_CANDIDATE_COUNT,
+    destinationKind,
+    destinationLabel: getPromptMessage(locale, [
+      'ai',
+      'prompt',
+      'template',
+      'destinationLabels',
+      destinationKind,
+    ]),
+    maxRows: budget.maxRows,
+    schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+  }
+  const section = (headingKey: string, ...body: string[]) =>
+    [`# ${templateMessage(locale, headingKey)}`, ...body].join('\n\n')
+
+  return `${[
+    templateMessage(locale, 'startMarker'),
+    buildRequirementImportRoleIntro(locale),
+    buildRequirementImportRuleOrder(locale),
+    section(
+      'inputHeading',
+      renderPromptRuleList(templateList(locale, 'input'), values),
+    ),
+    section(
+      'checksHeading',
+      [
+        templateMessage(locale, 'checksIntro'),
+        renderPromptRuleList(templateList(locale, 'checks'), values),
+      ].join('\n'),
+    ),
+    section(
+      'countHeading',
+      renderPromptRuleList(templateList(locale, 'count'), values),
+    ),
+    section(
+      'aiInstructionHeading',
+      buildRequirementImportAiInstruction(locale),
+    ),
+    section(
+      'importInstructionHeading',
+      buildRequirementImportInstructionRules({
+        budget,
+        destinationKind,
+        locale,
+      }),
+    ),
+    section(
+      'schemaHeading',
+      templateMessage(locale, 'schemaContract'),
+      [
+        '```json',
+        JSON.stringify(buildRequirementsImportJsonSchema(locale, budget)),
+        '```',
+      ].join('\n'),
+    ),
+    templateMessage(locale, 'endMarker'),
+  ].join('\n\n')}\n`
+}
+
 export interface BuildRequirementImportUserPromptOptions {
   count?: number
   locale?: 'en' | 'sv'

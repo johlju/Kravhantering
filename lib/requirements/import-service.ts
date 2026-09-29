@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
+  buildRequirementImportAiRequestTemplate,
   buildRequirementImportInstruction,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
@@ -77,6 +78,11 @@ import {
   validateImportContentBudget,
 } from '@/lib/requirements/import-budget'
 import { withRequirementImportCapacity } from '@/lib/requirements/import-capacity'
+import {
+  buildRequirementImportReferenceDataFile,
+  type RequirementImportReferenceDataFile,
+  type RequirementImportReferenceDataFileDestination,
+} from '@/lib/requirements/import-reference-data-file'
 import {
   buildRequirementsImportJsonSchema,
   buildRequirementsImportPayloadSchema,
@@ -842,6 +848,22 @@ function importPromptReferenceData(
     priorityLevels: importPromptPriorityLevels(referenceData, locale),
     types: importPromptTypes(referenceData, locale),
   }
+}
+
+/**
+ * Loads the reference data object for one destination and locale. The import
+ * instruction and the reference data file both use it, so they stay equal.
+ */
+async function loadImportPromptReferenceData(
+  db: SqlServerDatabase,
+  locale: ImportPromptLocale,
+  destination: McpImportInstructionDestinationRef,
+): Promise<Record<string, unknown>> {
+  return importPromptReferenceData(
+    await loadImportReferenceDataForDestination(db, destination),
+    locale,
+    destination.kind,
+  )
 }
 
 function warning(
@@ -3295,19 +3317,82 @@ export function createRequirementsImportWorkflow({
       destination: McpImportInstructionDestinationRef,
     ) {
       const [referenceData, budget] = await Promise.all([
-        loadImportReferenceDataForDestination(db, destination),
+        loadImportPromptReferenceData(db, locale, destination),
         loadRequirementImportBudget(db),
       ])
       return buildRequirementImportInstruction({
         budget,
         destinationKind: destination.kind,
         locale,
-        referenceData: importPromptReferenceData(
-          referenceData,
-          locale,
-          destination.kind,
-        ),
+        referenceData,
       })
+    },
+
+    async getImportAiRequestTemplate(
+      context: RequestContext,
+      input: {
+        destinationKind: RequirementImportDestinationKind
+        locale: 'en' | 'sv'
+      },
+    ): Promise<{ aiRequestTemplate: string }> {
+      await authorize(
+        authorization,
+        { kind: 'get_import_instruction' },
+        context,
+      )
+
+      const budget = await loadRequirementImportBudget(db)
+      return withLogging(
+        logger,
+        context,
+        'requirements.get_import_ai_request_template',
+        {
+          destination_kind: input.destinationKind,
+          locale: input.locale,
+        },
+        async () => ({
+          aiRequestTemplate: buildRequirementImportAiRequestTemplate({
+            budget,
+            destinationKind: input.destinationKind,
+            locale: input.locale,
+          }),
+        }),
+      )
+    },
+
+    async getImportReferenceDataFile(
+      context: RequestContext,
+      input: {
+        destination: RequirementImportReferenceDataFileDestination
+        locale: 'en' | 'sv'
+      },
+    ): Promise<RequirementImportReferenceDataFile> {
+      await authorize(
+        authorization,
+        { kind: 'get_import_instruction' },
+        context,
+      )
+
+      return withLogging(
+        logger,
+        context,
+        'requirements.get_import_reference_data',
+        {
+          destination_kind: input.destination.kind,
+          locale: input.locale,
+        },
+        async () =>
+          buildRequirementImportReferenceDataFile({
+            destination: input.destination,
+            generatedAt: new Date(),
+            locale: input.locale,
+            referenceData: await loadImportPromptReferenceData(
+              db,
+              input.locale,
+              input.destination,
+            ),
+          }),
+      )
     },
 
     async executeLibraryImport(

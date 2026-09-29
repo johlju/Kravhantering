@@ -1,0 +1,49 @@
+import { REQUIREMENTS_IMPORT_SCHEMA_VERSION } from '@/lib/requirements/import-schema'
+
+/** The destination metadata of a reference data file. */
+export type RequirementImportReferenceDataFileDestination = {
+  kind: 'requirements_library'
+}
+
+/**
+ * A reference data file: a snapshot of the import reference data for one
+ * destination, attached to the AI request template. `referenceData` is the
+ * same object that the import instruction embeds for the same destination and
+ * locale.
+ */
+export interface RequirementImportReferenceDataFile {
+  destination: RequirementImportReferenceDataFileDestination
+  generatedAt: string
+  locale: 'en' | 'sv'
+  referenceData: Readonly<Record<string, unknown>>
+  schemaVersion: string
+}
+
+export interface BuildRequirementImportReferenceDataFileOptions {
+  destination: RequirementImportReferenceDataFileDestination
+  generatedAt: Date
+  locale: 'en' | 'sv'
+  referenceData: Readonly<Record<string, unknown>>
+}
+
+export function buildRequirementImportReferenceDataFile({
+  destination,
+  generatedAt,
+  locale,
+  referenceData,
+}: BuildRequirementImportReferenceDataFileOptions): RequirementImportReferenceDataFile {
+  return {
+    generatedAt: generatedAt.toISOString(),
+    schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+    locale,
+    destination,
+    referenceData,
+  }
+}
+
+/** Serializes the file as minified JSON without a byte order mark. */
+export function serializeRequirementImportReferenceDataFile(
+  file: RequirementImportReferenceDataFile,
+): string {
+  return JSON.stringify(file)
+}

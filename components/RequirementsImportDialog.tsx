@@ -9,7 +9,6 @@ import {
   ChevronsUp,
   Download,
   FileInput,
-  FileJson,
   Info,
   Loader2,
   Plus,
@@ -36,12 +35,14 @@ import NormReferenceModal, {
 import QualityCharacteristicSelectOptions from '@/components/QualityCharacteristicSelectOptions'
 import RequiredFieldMarker from '@/components/RequiredFieldMarker'
 import RequirementPackagePurposeTooltip from '@/components/RequirementPackagePurposeTooltip'
+import RequirementsImportSupportPanel from '@/components/RequirementsImportSupportPanel'
 import StatusBadge from '@/components/StatusBadge'
 import { downloadBlob } from '@/lib/browser-download'
 import { devMarker } from '@/lib/developer-mode-markers'
 import { escapeCsvField } from '@/lib/export-csv'
 import { apiFetch } from '@/lib/http/api-fetch'
 import { readResponseMessage } from '@/lib/http/response-message'
+import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
 import {
   RequirementImportCandidateError,
@@ -282,11 +283,7 @@ const TEXT = {
     confirmWarnings:
       'Selected rows contain warnings. Unresolved optional metadata will be omitted. Continue?',
     dropJsonFile: 'Drop a JSON file here, or click to browse.',
-    downloadImportInstruction: 'Download import instruction',
-    downloadArtifactsHelp:
-      'Use the schema to validate the file. The import instruction is only the output-format and import-reference part for AI work; combine it with your own prompt describing the requirements and text content to produce.',
     downloadCsv: 'Download CSV receipt',
-    downloadSchema: 'Download schema',
     error: 'Something went wrong',
     errors: 'errors',
     execute: 'Import selected',
@@ -384,11 +381,7 @@ const TEXT = {
     confirmWarnings:
       'Valda rader innehåller varningar. Olöst frivillig metadata utelämnas. Fortsätta?',
     dropJsonFile: 'Släpp en JSON-fil här, eller klicka för att välja fil.',
-    downloadImportInstruction: 'Ladda ner importinstruktion',
-    downloadArtifactsHelp:
-      'Använd schemat för att validera filen. Importinstruktionen är bara formatdelen och referensdata för import för AI-arbete; kombinera den med en egen prompt som beskriver vilka krav och texter som ska tas fram.',
     downloadCsv: 'Ladda ner CSV-kvitto',
-    downloadSchema: 'Ladda ner schema',
     error: 'Något gick fel',
     errors: 'fel',
     execute: 'Importera valda',
@@ -910,6 +903,9 @@ export default function RequirementsImportDialog({
   const hasRequiredImportTarget = mode !== 'library' || selectedAreaId !== ''
   const canDownloadImportInstruction =
     mode === 'library' || specificationId != null
+  // The reference data file serves requirements library destinations.
+  const aiRequestFileDestination: AiRequestFileDestination | null =
+    mode === 'library' ? { kind: 'requirements_library' } : null
   const canLoadPreview =
     !loading && parsedImportPayload !== null && hasRequiredImportTarget
   const startImportDisabledReason = useMemo(() => {
@@ -2449,45 +2445,22 @@ export default function RequirementsImportDialog({
                     priority: 250,
                   })}
                 >
-                  <h3
-                    className="text-sm font-semibold text-secondary-800 dark:text-secondary-200"
-                    id={`${titleId}-support`}
-                  >
-                    {importText('importSupport')}
-                  </h3>
-                  <div className="flex flex-col items-start gap-2">
-                    <button
-                      aria-describedby="requirements-import-download-help"
-                      className="inline-flex min-h-8 items-center gap-2 rounded text-left text-sm underline underline-offset-4 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 dark:hover:text-primary-300"
-                      onClick={() => void downloadArtifact('schema')}
-                      type="button"
-                    >
-                      <Download
-                        aria-hidden="true"
-                        className="h-4 w-4 shrink-0"
-                      />
-                      {text.downloadSchema}
-                    </button>
-                    <button
-                      aria-describedby="requirements-import-download-help"
-                      className="inline-flex min-h-8 items-center gap-2 rounded text-left text-sm underline underline-offset-4 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-primary-300"
-                      disabled={!canDownloadImportInstruction}
-                      onClick={() => void downloadArtifact('instruction')}
-                      type="button"
-                    >
-                      <FileJson
-                        aria-hidden="true"
-                        className="h-4 w-4 shrink-0"
-                      />
-                      {text.downloadImportInstruction}
-                    </button>
-                  </div>
-                  <p
-                    className="max-w-3xl text-xs leading-relaxed text-secondary-600 dark:text-secondary-300"
-                    id="requirements-import-download-help"
-                  >
-                    {text.downloadArtifactsHelp}
-                  </p>
+                  <RequirementsImportSupportPanel
+                    canDownloadImportInstruction={canDownloadImportInstruction}
+                    destination={aiRequestFileDestination}
+                    destinationKind={
+                      mode === 'library'
+                        ? 'requirements_library'
+                        : 'requirements_specification'
+                    }
+                    headingId={`${titleId}-support`}
+                    locale={locale}
+                    onDownloadError={setErrorMessage}
+                    onDownloadImportInstruction={() =>
+                      void downloadArtifact('instruction')
+                    }
+                    onDownloadSchema={() => void downloadArtifact('schema')}
+                  />
                 </aside>
               </div>
             ) : null}

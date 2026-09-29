@@ -88,9 +88,36 @@ The reference data object is built on the server in
 `buildRequirementImportInstruction` combines the title, the rules part, and the
 indented reference data into the standalone import instruction.
 
-`buildRequirementImportSystemPrompt` is the internal composer. Generation,
-repair, and the AI request explanation dialog use it. It joins the role intro,
-the rule order, and the import instruction.
+Two composers use the parts:
+
+- `buildRequirementImportSystemPrompt` is the internal composer. Generation,
+  repair, and the AI request explanation dialog use it. It joins the role
+  intro, the rule order, and the import instruction.
+- `buildRequirementImportAiRequestTemplate` is the template composer. The
+  `GET /api/requirements/import/ai-request-template` route uses it through
+  `RequirementsService.getImportAiRequestTemplate`. It wraps the role intro,
+  the rule order, the AI instruction, the import instruction rules, and the
+  minified validation schema in start and end markers, with its own texts from
+  `ai.prompt.template`. It never includes reference data.
+
+The reference data file (`GET /api/requirements/import/reference-data`) is
+built by `RequirementsService.getImportReferenceDataFile`. It uses the same
+reference data loader as the import instruction, and
+`lib/requirements/import-reference-data-file.ts` adds the metadata. The client
+file names and route URLs for both files are in
+`lib/requirements/ai-request-files.ts`, and
+`components/AiRequestFileDownloads.tsx` renders the two download buttons.
+
+These tests stop the composers from drifting apart:
+
+- `tests/unit/ai-request-template-parity.test.ts` checks for `sv`, `en`, and
+  both destination kinds that the internal system prompt and the template
+  contain the same role intro, rule order, and import instruction rules, that
+  the user prompt and the template contain the same AI instruction, and that
+  the template schema has the same bytes as the schema route.
+- `tests/unit/ai-request-template.test.ts` checks the template's own parts.
+- `tests/unit/requirements-import-service.test.ts` checks that the reference
+  data file and the import instruction carry deep-equal reference data.
 
 The shared texts are channel-neutral, so they also work outside the built-in
 AI request:

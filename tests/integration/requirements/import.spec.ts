@@ -175,12 +175,20 @@ test.describe('Requirements import', () => {
       await expect(dialog.getByLabel('Import-JSON')).toHaveValue('')
 
       const support = dialog.getByRole('complementary', {
-        name: 'Schema och instruktion',
+        name: 'Låt en extern AI ta fram krav',
       })
       await expect(support).toHaveAttribute(
         'data-developer-mode-name',
         'support panel',
       )
+      await expect(support.getByRole('listitem')).toHaveCount(3)
+      const ownPromptToggle = support.getByRole('button', {
+        name: 'Egen prompt eller validering',
+      })
+      await expect(ownPromptToggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(
+        support.getByRole('button', { name: 'Ladda ner schema' }),
+      ).toHaveCount(0)
       await dialog.getByRole('button', { name: 'Stäng' }).focus()
       await page.keyboard.press('Tab')
       await expect(dialog.getByLabel('Kravområde')).toBeFocused()
@@ -200,6 +208,18 @@ test.describe('Requirements import', () => {
       )
       await page.keyboard.press('Tab')
       await expect(dialog.getByLabel('Import-JSON')).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(
+        support.getByRole('button', { name: 'AI-anropsmall' }),
+      ).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(
+        support.getByRole('button', { name: 'Referensdatafil' }),
+      ).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(ownPromptToggle).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(ownPromptToggle).toHaveAttribute('aria-expanded', 'true')
       await page.keyboard.press('Tab')
       await expect(
         support.getByRole('button', { name: 'Ladda ner schema' }),
@@ -226,7 +246,7 @@ test.describe('Requirements import', () => {
         .toEqual({ instruction: true, schema: true })
       await expect(
         dialog.getByText(
-          /Importinstruktionen är bara formatdelen och referensdata för import/,
+          /Schemat och importinstruktionen innehåller bara formatregler och referensdata/,
         ),
       ).toHaveCount(1)
     })
@@ -415,7 +435,7 @@ test.describe('Requirements import', () => {
             '[data-developer-mode-name="input panel"]',
           )
           const support = dialog.getByRole('complementary', {
-            name: 'Schema och instruktion',
+            name: 'Låt en extern AI ta fram krav',
           })
           await expect(input).toHaveCount(1)
           await expect(support).toHaveCount(1)
@@ -443,6 +463,12 @@ test.describe('Requirements import', () => {
               ),
             )
             .toBe(true)
+          const ownPromptToggle = support.getByRole('button', {
+            name: 'Egen prompt eller validering',
+          })
+          await ownPromptToggle.scrollIntoViewIfNeeded()
+          await expect(ownPromptToggle).toBeInViewport()
+          await ownPromptToggle.click()
           await support
             .getByRole('button', { name: 'Ladda ner schema' })
             .scrollIntoViewIfNeeded()

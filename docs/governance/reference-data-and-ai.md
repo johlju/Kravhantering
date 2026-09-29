@@ -181,6 +181,11 @@ exact system/user/import text available as secondary details. It does not show
 or download the full schema; schema inspection and schema download belong to
 the import views.
 
+The AI request template in section 5 is the same AI request in portable form.
+A separate template composer builds it from the same shared part builders as
+the internal composer: role intro, rule order, AI instruction, and import
+instruction rules. Tests stop a change that makes the two differ.
+
 The user-facing prompt field is `Behov och sammanhang` / `Need and context`.
 There is no second free-text instruction field; later steering should be added
 as concrete controls when needed.
@@ -257,9 +262,12 @@ to the repair route together with a generated repair prompt.
 
 Sources: `lib/requirements/import-schema.ts`,
 `lib/requirements/import-service.ts`, `lib/ai/requirement-prompt.ts`,
-`ai.prompt.importInstruction` in `messages/{sv,en}.json`,
-`app/api/requirements/import/schema`,
-`app/api/requirements/import/instruction`.
+`lib/requirements/import-reference-data-file.ts`,
+`ai.prompt.importInstruction` and `ai.prompt.template` in
+`messages/{sv,en}.json`, `app/api/requirements/import/schema`,
+`app/api/requirements/import/instruction`,
+`app/api/requirements/import/ai-request-template`,
+`app/api/requirements/import/reference-data`.
 
 Requirement import publishes a strict shared JSON Schema whose top-level
 `schemaVersion` is `requirement-import.v4`. The version applies to the whole
@@ -378,6 +386,49 @@ user before creating missing behovsreferenser with
 the agent must ask whether importing without the needs-reference link is
 acceptable, and stop when the missing link is central to why the row belongs in
 the kravunderlag.
+
+### AI Request Template and Reference Data File
+
+The import dialog offers an AI request template and a reference data file so
+that an external AI assistant can draft requirements with the same rules as
+built-in AI-assisted authoring. No target client can enforce JSON Schema in its
+user interface, so the template states the schema as a mandatory output
+contract and Kravhantering validates the response on import. The import
+contract stays canonical; the template cannot change it.
+
+`GET /api/requirements/import/ai-request-template` takes `locale` (`sv`,
+otherwise `en`) and `kind` (`requirements_library` or
+`requirements_specification`). It returns UTF-8 Markdown with a BOM. The
+template depends only on locale, destination kind, `schemaVersion`, and the
+import budget, so the route takes no `specificationId`. The template contains,
+in this order, a start marker line, the role intro, the rule order, the input
+material rules, the checks, the candidate count, the AI instruction, the
+import instruction rules for the destination kind, and the full validation
+schema minified in one `json` code block, followed by an end marker line. The
+input material rules say that all text outside the markers and all attachments
+except the reference data file are input material, and state `schemaVersion`
+and the destination kind. The checks make the model reply briefly without
+JSON when there is no need outside the markers, when the reference data file is
+missing, or when its `schemaVersion` or `destination.kind` differs. The count
+rule caps a requested count at `maxRows` from the import budget and otherwise
+uses the default candidate count. The embedded schema has the same bytes as the
+schema route response for the same locale and budget, not the provider-strict
+variant. The template has no placeholders, no reference data, no human
+guidance, no AI product names, and no repair rules.
+
+`GET /api/requirements/import/reference-data` takes `locale` and `kind`. It
+returns minified `application/json` without a BOM:
+`{"generatedAt","schemaVersion","locale","destination","referenceData"}`.
+For a requirements library, `destination` is `{"kind":"requirements_library"}`.
+`referenceData` is the same object that the import instruction embeds for the
+same destination and locale, including the same minimization. The file is
+never embedded in the template. The route currently serves requirements
+library destinations and rejects requirements specification destinations.
+
+Both routes require an authenticated session and the same
+`get_import_instruction` authorization as the import instruction. Missing or
+unknown destination parameters are validation errors with the same reason as
+the instruction route. Neither route is exposed through MCP.
 
 ### Human-Facing Import Examples
 
