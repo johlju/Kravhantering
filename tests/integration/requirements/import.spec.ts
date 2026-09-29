@@ -506,9 +506,7 @@ test.describe('Requirements import', () => {
     const previewButton = dialog.getByRole('button', {
       name: 'Förhandsgranska krav',
     })
-    const blocker = dialog.locator(
-      '[data-developer-mode-value="preview blocker"]',
-    )
+    const blocker = dialog.getByRole('status')
     await dialog.getByLabel('Kravområde').selectOption({ index: 1 })
 
     await test.step('explain a response without JSON', async () => {
@@ -532,6 +530,7 @@ test.describe('Requirements import', () => {
         `Förslag 1:\n\`\`\`json\n${validJson}\n\`\`\`\nFörslag 2:\n\`\`\`json\n${validJson}\n\`\`\``,
       )
       await expect(blocker).toContainText('Svaret innehåller 2 kodblock.')
+      await expect(previewButton).toBeDisabled()
       await expect(dialog.getByText(/JSON togs ut ur kodblocket/)).toHaveCount(
         0,
       )
@@ -544,6 +543,7 @@ test.describe('Requirements import', () => {
       await expect(blocker).toHaveText(
         'JSON har ett syntaxfel på rad 4, kolumn 1: oväntat tecken ”}”.',
       )
+      await expect(previewButton).toBeDisabled()
     })
 
     await test.step('explain a wrong schemaVersion', async () => {
@@ -556,6 +556,7 @@ test.describe('Requirements import', () => {
       await expect(blocker).toHaveText(
         'schemaVersion ska vara requirement-import.v4.',
       )
+      await expect(previewButton).toBeDisabled()
     })
 
     await test.step('list at most 20 schema errors with JSON paths', async () => {

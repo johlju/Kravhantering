@@ -215,7 +215,6 @@ describe('formatRequirementImportJsonErrors', () => {
 
     expect(REQUIREMENT_IMPORT_JSON_DIALOG_ERROR_LIMIT).toBe(20)
     expect(dialog.errors).toHaveLength(20)
-    expect(dialog.totalCount).toBe(23)
     expect(dialog.omittedCount).toBe(3)
     expect(dialog.errors[19]?.path).toBe('$.requirements[19].description')
     expect(repair.errors).toHaveLength(23)
@@ -259,7 +258,7 @@ describe('formatRequirementImportJsonErrors', () => {
     ])
     expect(
       formatRequirementImportJsonErrors({ kind: 'no-json' }, { limit: 50, t }),
-    ).toEqual({ errors: [], omittedCount: 0, totalCount: 0 })
+    ).toEqual({ errors: [], omittedCount: 0 })
   })
 })
 
@@ -345,7 +344,7 @@ describe('schema issue texts', () => {
     expect(
       messagesFor([
         { code: 'invalid_value', message: '', path: ['a'], values: ['x', 2] },
-        { code: 'invalid_format', format: 'email', message: '', path: ['a'] },
+        { code: 'invalid_format', message: '', path: ['a'] },
         {
           code: 'custom',
           message: 'import_json_depth_cap_exceeded',

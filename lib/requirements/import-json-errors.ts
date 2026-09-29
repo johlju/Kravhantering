@@ -32,7 +32,6 @@ export interface FormattedRequirementImportJsonErrors {
   errors: FormattedRequirementImportJsonError[]
   /** Number of errors left out because of the cap. */
   omittedCount: number
-  totalCount: number
 }
 
 export interface FormatRequirementImportJsonErrorsOptions {
@@ -181,17 +180,6 @@ function syntaxDetail(
   }
 }
 
-function countSchemaErrors(issues: readonly ImportJsonSchemaIssue[]): number {
-  return issues.reduce(
-    (count, issue) =>
-      count +
-      (issue.code === 'unrecognized_keys' && issue.keys?.length
-        ? issue.keys.length
-        : 1),
-    0,
-  )
-}
-
 /**
  * Describes an import JSON problem in one sentence. For schema problems, the
  * sentence introduces the error list from
@@ -219,7 +207,9 @@ export function describeRequirementImportJsonProblem(
     case 'wrong-version':
       return t('wrongSchemaVersion', { version: problem.expectedVersion })
     case 'schema':
-      return t('schemaInvalid', { count: countSchemaErrors(problem.issues) })
+      return t('schemaInvalid', {
+        count: schemaIssueErrors(problem.issues, t).length,
+      })
   }
 }
 
@@ -260,6 +250,5 @@ export function formatRequirementImportJsonErrors(
   return {
     errors: errors.slice(0, cap),
     omittedCount: Math.max(0, errors.length - cap),
-    totalCount: errors.length,
   }
 }

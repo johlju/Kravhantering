@@ -32,7 +32,6 @@ export type ImportJsonSyntaxErrorReason =
 export interface ImportJsonSchemaIssue {
   code: string
   expected?: string
-  format?: string
   inclusive?: boolean
   keys?: readonly string[]
   maximum?: number
@@ -57,8 +56,6 @@ export type ImportJsonProblem =
     }
   | { expectedVersion: string; kind: 'wrong-version' }
   | { issues: ImportJsonSchemaIssue[]; kind: 'schema' }
-
-export type ImportJsonProblemKind = ImportJsonProblem['kind']
 
 export type ImportJsonReadResult<T> =
   | {
@@ -442,9 +439,6 @@ function toSchemaIssue(
     case 'invalid_value':
       result.values = issue.values
       break
-    case 'invalid_format':
-      result.format = issue.format
-      break
   }
   return result
 }
@@ -453,32 +447,39 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function invalidImportJson<T>(
+  problem: ImportJsonProblem,
+  extractedFromCodeBlock = false,
+): ImportJsonReadResult<T> {
+  return { extractedFromCodeBlock, payload: null, problem }
+}
+
+function trimSourceStart(source: JsonSource): JsonSource {
+  const text = source.text.trimStart()
+  return {
+    offset: source.offset + source.text.length - text.length,
+    text,
+  }
+}
+
 function readSource<T>(
   fieldText: string,
   source: JsonSource,
   schema: z.ZodType<T>,
   extractedFromCodeBlock: boolean,
 ): ImportJsonReadResult<T> {
-  const invalid = (problem: ImportJsonProblem): ImportJsonReadResult<T> => ({
-    extractedFromCodeBlock,
-    payload: null,
-    problem,
-  })
+  const invalid = (problem: ImportJsonProblem): ImportJsonReadResult<T> =>
+    invalidImportJson(problem, extractedFromCodeBlock)
   let parsed: unknown
   try {
     parsed = JSON.parse(source.text)
   } catch {
-    if (!source.text.trimStart().startsWith('{')) {
-      return invalid({ kind: 'no-json' })
-    }
-    if (isTruncatedJsonText(source.text)) return invalid({ kind: 'truncated' })
-    const leading = source.text.length - source.text.trimStart().length
-    return invalid(
-      describeSyntaxError(fieldText, {
-        offset: source.offset + leading,
-        text: source.text.trimStart(),
-      }),
-    )
+    const json = trimSourceStart(source)
+    // Nothing was extracted when a code block holds no JSON.
+    if (!json.text.startsWith('{'))
+      return invalidImportJson({ kind: 'no-json' })
+    if (isTruncatedJsonText(json.text)) return invalid({ kind: 'truncated' })
+    return invalid(describeSyntaxError(fieldText, json))
   }
   if (
     isPlainObject(parsed) &&
@@ -512,39 +513,26 @@ export function readRequirementImportJson<T>(
   text: string,
   schema: z.ZodType<T>,
 ): ImportJsonReadResult<T> {
-  const trimmed = text.trim()
-  const offset = text.length - text.trimStart().length
-  if (!trimmed) {
-    return {
-      extractedFromCodeBlock: false,
-      payload: null,
-      problem: { kind: 'no-json' },
-    }
+  const direct = trimSourceStart({ offset: 0, text: text.trimEnd() })
+  if (!direct.text) return invalidImportJson({ kind: 'no-json' })
+  if (direct.text.startsWith('{')) {
+    return readSource(text, direct, schema, false)
   }
-  const direct: JsonSource = { offset, text: trimmed }
-  if (trimmed.startsWith('{')) return readSource(text, direct, schema, false)
   try {
-    JSON.parse(trimmed)
+    JSON.parse(direct.text)
     return readSource(text, direct, schema, false)
   } catch {
     // Not JSON on its own. Look for a code block below.
   }
   const blocks = findCodeBlocks(text)
   if (blocks.length > 1) {
-    return {
-      extractedFromCodeBlock: false,
-      payload: null,
-      problem: { codeBlockCount: blocks.length, kind: 'multiple-code-blocks' },
-    }
+    return invalidImportJson({
+      codeBlockCount: blocks.length,
+      kind: 'multiple-code-blocks',
+    })
   }
   const block = blocks[0]
-  if (!block) {
-    return {
-      extractedFromCodeBlock: false,
-      payload: null,
-      problem: { kind: 'no-json' },
-    }
-  }
+  if (!block) return invalidImportJson({ kind: 'no-json' })
   return readSource(
     text,
     { offset: block.contentOffset, text: block.content },

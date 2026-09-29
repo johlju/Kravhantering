@@ -268,8 +268,10 @@ describe('readRequirementImportJson syntax scanning', () => {
   it('reads code blocks with tilde fences and skips fences with backticks in the info string', () => {
     expect(read(`~~~json\n${validJson}\n~~~`).problem).toBeNull()
     expect(read('```js `x`\n{}\n```').problem).toEqual({ kind: 'no-json' })
-    expect(read('```json\nInget JSON här.\n```').problem).toEqual({
-      kind: 'no-json',
+    expect(read('Jag behöver behovet.\n```\nexempel\n```')).toEqual({
+      extractedFromCodeBlock: false,
+      payload: null,
+      problem: { kind: 'no-json' },
     })
   })
 })
