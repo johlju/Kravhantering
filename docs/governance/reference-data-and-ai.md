@@ -179,7 +179,11 @@ is built` as a separate explanation dialog. The dialog shows the request as
 application rules, the user's order, and the mandatory response contract, with
 exact system/user/import text available as secondary details. It does not show
 or download the full schema; schema inspection and schema download belong to
-the import views.
+the import views. Its last section, `Fortsätt i en extern AI-assistent` /
+`Continue in an external AI assistant`, offers the AI request template and the
+reference data file from section 5 for the same destination and language as the
+AI request, with the same file names as the import dialog. For a requirements
+specification import, the buttons stay disabled without a specification id.
 
 The AI request template in section 5 is the same AI request in portable form.
 A separate template composer builds it from the same shared part builders as

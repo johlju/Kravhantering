@@ -47,6 +47,7 @@ import { devMarker } from '@/lib/developer-mode-markers'
 import { apiFetch } from '@/lib/http/api-fetch'
 import { readResponseMessage } from '@/lib/http/response-message'
 import { dialogPanelMotion, fadeMotion } from '@/lib/reduced-motion'
+import { resolveAiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 import type { ImportRequirementsPayload } from '@/lib/requirements/import-schema'
 
 type AiImportMode = 'library' | 'specification-local'
@@ -461,6 +462,10 @@ export default function AiRequirementGenerator({
     importInstructionScopeKey === currentImportInstructionScopeKey
       ? importInstruction
       : ''
+  const aiRequestFileDestination = resolveAiRequestFileDestination(
+    mode,
+    specificationId,
+  )
   const generationProfile =
     authoringProfiles?.profiles[
       images.length > 0 ? 'generate_with_images' : 'generate_without_images'
@@ -2243,6 +2248,7 @@ export default function AiRequirementGenerator({
         </motion.div>
         <AiRequestExplanationDialog
           candidateCount={candidateCount}
+          fileDestination={aiRequestFileDestination}
           imageCount={images.length}
           importInstruction={scopedImportInstruction}
           importInstructionLoading={importInstructionLoading}

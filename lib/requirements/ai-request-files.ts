@@ -75,3 +75,18 @@ export function aiRequestFileUrl(
   }
   return `${FILE_PATHS[file]}?${params}`
 }
+
+/**
+ * The destination of the AI request files for an import mode. Like the import
+ * instruction, a requirements specification import needs the specification
+ * id, so the files are unavailable (`null`) without it.
+ */
+export function resolveAiRequestFileDestination(
+  mode: 'library' | 'specification-local',
+  specificationId: number | null | undefined,
+): AiRequestFileDestination | null {
+  if (mode === 'library') return { kind: 'requirements_library' }
+  return specificationId != null
+    ? { kind: 'requirements_specification', specificationId }
+    : null
+}

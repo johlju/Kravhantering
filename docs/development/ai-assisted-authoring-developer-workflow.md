@@ -106,7 +106,11 @@ reference data loader as the import instruction, and
 `lib/requirements/import-reference-data-file.ts` adds the metadata. The client
 file names and route URLs for both files are in
 `lib/requirements/ai-request-files.ts`, and
-`components/AiRequestFileDownloads.tsx` renders the two download buttons.
+`components/AiRequestFileDownloads.tsx` renders the two download buttons. Both
+the import dialog's step guide and the last section of
+`AiRequestExplanationDialog` render that component, and both resolve the
+destination from the import mode and specification id with
+`resolveAiRequestFileDestination`, so the two surfaces offer the same files.
 
 These tests stop the composers from drifting apart:
 

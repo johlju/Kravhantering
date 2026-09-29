@@ -3766,7 +3766,9 @@
       "systemInstructionTitle": "Systeminstruktion",
       "userOrderExactTitle": "Användarens beställning",
       "schemaNote": "JSON-schemat visas inte här eftersom det skickas separat i API-anropet som ett tvingande svarsformat.",
-      "emptyNeed": "(inte ifyllt ännu)"
+      "emptyNeed": "(inte ifyllt ännu)",
+      "externalAssistantTitle": "Fortsätt i en extern AI-assistent",
+      "externalAssistantHelp": "Hämta AI-anropsmallen och referensdatafilen för samma destination och språk som det här AI-anropet. Skriv behovet i chatten hos din AI-assistent, klistra in mallen och bifoga referensdatafilen. Lägg sedan in JSON-svaret i importdialogen."
     },
     "analysisTab": "AI-analys",
     "candidateCount": "Antal kravkandidater",

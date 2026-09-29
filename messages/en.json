@@ -3766,7 +3766,9 @@
       "systemInstructionTitle": "System instruction",
       "userOrderExactTitle": "User request",
       "schemaNote": "The JSON schema is not shown here because it is sent separately in the API request as a mandatory response format.",
-      "emptyNeed": "(not filled in yet)"
+      "emptyNeed": "(not filled in yet)",
+      "externalAssistantTitle": "Continue in an external AI assistant",
+      "externalAssistantHelp": "Download the AI request template and the reference data file for the same destination and language as this AI request. Write the need in your AI assistant's chat, paste the template, and attach the reference data file. Then add the JSON response in the import dialog."
     },
     "analysisTab": "AI analysis",
     "candidateCount": "Number of requirement candidates",

@@ -43,7 +43,7 @@ import { devMarker } from '@/lib/developer-mode-markers'
 import { escapeCsvField } from '@/lib/export-csv'
 import { apiFetch } from '@/lib/http/api-fetch'
 import { readResponseMessage } from '@/lib/http/response-message'
-import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
+import { resolveAiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
 import {
   RequirementImportCandidateError,
@@ -905,14 +905,10 @@ export default function RequirementsImportDialog({
   const hasRequiredImportTarget = mode !== 'library' || selectedAreaId !== ''
   const canDownloadImportInstruction =
     mode === 'library' || specificationId != null
-  // Like the import instruction, the AI request files for a requirements
-  // specification need its id.
-  const aiRequestFileDestination: AiRequestFileDestination | null =
-    mode === 'library'
-      ? { kind: 'requirements_library' }
-      : specificationId != null
-        ? { kind: 'requirements_specification', specificationId }
-        : null
+  const aiRequestFileDestination = resolveAiRequestFileDestination(
+    mode,
+    specificationId,
+  )
   const canLoadPreview =
     !loading && parsedImportPayload !== null && hasRequiredImportTarget
   const startImportDisabledReason = useMemo(() => {

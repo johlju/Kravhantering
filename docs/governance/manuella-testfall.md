@@ -949,12 +949,19 @@ meddelar den nya statusen utan att fokus behöver flyttas till statusbrickan.
 ### REQ-15: AI-kravgenerator lämnar kandidater till importgranskning
 
 **Steg:** Öppna AI-assisterat författande från kravbiblioteket, kontrollera
-den administratörsstyrda AI-anslutningen och datapolicyn, välj kravområde och
-generera en kravkandidat. Öppna fliken `AI-analys` och
-kontrollera modellens analys. Välj sedan `Förhandsgranska krav i import`.
+den administratörsstyrda AI-anslutningen och datapolicyn och välj kravområde.
+Öppna `Så byggs AI-anropet`, välj `AI-anropsmall` och sedan `Referensdatafil`
+i sektionen `Fortsätt i en extern AI-assistent` och stäng dialogen. Generera
+en kravkandidat. Öppna fliken `AI-analys` och kontrollera modellens analys.
+Välj sedan `Förhandsgranska krav i import`.
 
-**Förväntat resultat:** Den genererade kandidaten skickas som
-`requirement-import.v4` till importgranskningen för valt kravområde.
+**Förväntat resultat:** Sektionen `Fortsätt i en extern AI-assistent` ligger
+sist i `Så byggs AI-anropet`, efter `Visa exakt text som skickas`. Filnamnet
+står under varje knapp och är detsamma som den nedladdade filens namn och som
+i importdialogen: `kravimport-ai-anropsmall-kravbibliotek.md` och
+`kravimport-referensdata-kravbibliotek.json`. Den genererade kandidaten
+skickas som `requirement-import.v4` till importgranskningen för valt
+kravområde.
 En resolverad prioritet visas i AI-förhandsgranskningen med P-kod och
 lokaliserat namn. Ett ogiltigt förslag visas i stället med en varning.
 Importgranskningen öppnas direkt med kandidaten synlig och utan att visa

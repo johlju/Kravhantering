@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   aiRequestFileName,
   aiRequestFileUrl,
+  resolveAiRequestFileDestination,
 } from '@/lib/requirements/ai-request-files'
 
 const LIBRARY = { kind: 'requirements_library' } as const
@@ -76,4 +77,19 @@ describe('AI request file names and URLs', () => {
       '/api/requirements/import/reference-data?locale=sv&kind=requirements_specification&specificationId=123',
     )
   })
+
+  it.each([
+    ['library', undefined, LIBRARY],
+    ['library', 123, LIBRARY],
+    ['specification-local', 123, SPECIFICATION],
+    ['specification-local', undefined, null],
+    ['specification-local', null, null],
+  ] as const)(
+    'resolves the %s destination with specification id %s',
+    (mode, specificationId, expected) => {
+      expect(resolveAiRequestFileDestination(mode, specificationId)).toEqual(
+        expected,
+      )
+    },
+  )
 })

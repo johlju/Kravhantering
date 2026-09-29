@@ -19,6 +19,8 @@ interface AiRequestFileDownloadsProps {
   locale: 'en' | 'sv'
   /** Developer Mode context of the surface that shows the buttons. */
   markerContext: string
+  /** Called when a download starts, for example to clear an earlier error. */
+  onDownloadStart?: () => void
   onError: (message: string) => void
 }
 
@@ -58,6 +60,7 @@ export default function AiRequestFileDownloads({
   destination,
   locale,
   markerContext,
+  onDownloadStart,
   onError,
 }: AiRequestFileDownloadsProps) {
   const t = useTranslations('requirementsImportAiRequest')
@@ -66,6 +69,7 @@ export default function AiRequestFileDownloads({
 
   const download = async (file: AiRequestFile) => {
     if (!destination) return
+    onDownloadStart?.()
     setPendingFile(file)
     try {
       const response = await fetch(aiRequestFileUrl(file, locale, destination))
