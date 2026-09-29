@@ -4201,7 +4201,7 @@
     },
     "wrongSchemaVersion": "schemaVersion ska vara {version}.",
     "schemaInvalid": "JSON följer inte importschemat. Rätta {count} fel:",
-    "errorListLabel": "Fel i import-JSON",
+    "errorListLabel": "Valideringsfel",
     "moreErrors": "och {count} fel till",
     "issue": {
       "required": "Fältet saknas men är obligatoriskt.",

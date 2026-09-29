@@ -595,7 +595,7 @@ test.describe('Requirements import', () => {
       await expect(blocker).toHaveText(
         'JSON följer inte importschemat. Rätta 23 fel:',
       )
-      const errors = dialog.getByRole('list', { name: 'Fel i import-JSON' })
+      const errors = dialog.getByRole('list', { name: 'Valideringsfel' })
       await expect(errors.getByRole('listitem')).toHaveCount(20)
       await expect(errors.getByRole('listitem').first()).toHaveText(
         '$.requirements[0].description: Fältet saknas men är obligatoriskt.',

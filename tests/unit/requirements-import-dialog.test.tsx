@@ -2263,7 +2263,7 @@ describe('RequirementsImportDialog', () => {
       'JSON följer inte importschemat. Rätta 1 fel:',
     )
     expect(
-      within(screen.getByRole('list', { name: 'Fel i import-JSON' })).getByRole(
+      within(screen.getByRole('list', { name: 'Valideringsfel' })).getByRole(
         'listitem',
       ),
     ).toHaveTextContent('$.requirements: Måste innehålla minst 1 post.')
@@ -2398,7 +2398,7 @@ describe('RequirementsImportDialog', () => {
       'The JSON does not match the import schema. Fix 23 errors:',
     )
     const errorList = screen.getByRole('list', {
-      name: 'Errors in the import JSON',
+      name: 'Validation errors',
     })
     const items = within(errorList).getAllByRole('listitem')
     expect(items).toHaveLength(20)

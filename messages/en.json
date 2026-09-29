@@ -4201,7 +4201,7 @@
     },
     "wrongSchemaVersion": "schemaVersion must be {version}.",
     "schemaInvalid": "The JSON does not match the import schema. Fix {count, plural, one {# error} other {# errors}}:",
-    "errorListLabel": "Errors in the import JSON",
+    "errorListLabel": "Validation errors",
     "moreErrors": "{count, plural, one {and # more error} other {and # more errors}}",
     "issue": {
       "required": "The field is required but missing.",
