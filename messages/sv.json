@@ -4135,5 +4135,52 @@
     "hiddenCreatedNorm": "Sökningen döljer den nya normreferensen ”{name}”. Den är fortfarande markerad.",
     "creationPersistence": "Det nya objektet sparas direkt. Avbryt i väljdialogen kasserar endast urvalet.",
     "searchHelp": "Sök på namn, referens-ID eller paketets syfte. Markeringar behålls när du filtrerar listan."
+  },
+  "requirementsImportJson": {
+    "codeBlockExtracted": "JSON togs ut ur kodblocket i svaret. Texten i fältet är oförändrad.",
+    "noJson": "Svaret innehåller ingen JSON. Läs AI-assistentens svar. Behovet eller referensdatafilen kan saknas.",
+    "truncated": "Svaret är troligen avkortat. Be om färre krav per förfrågan.",
+    "multipleCodeBlocks": "Svaret innehåller {count} kodblock. Klistra in bara JSON eller ett svar med ett enda kodblock.",
+    "syntaxError": "JSON har ett syntaxfel: {detail}.",
+    "syntaxErrorAt": "JSON har ett syntaxfel på rad {line}, kolumn {column}: {detail}.",
+    "syntaxDetail": {
+      "unexpectedCharacter": "oväntat tecken ”{character}”",
+      "unexpectedEnd": "JSON-texten tar slut för tidigt",
+      "invalidString": "ogiltigt tecken eller ogiltig sekvens med omvänt snedstreck i en sträng",
+      "unknown": "texten kan inte läsas som JSON"
+    },
+    "wrongSchemaVersion": "schemaVersion ska vara {version}.",
+    "schemaInvalid": "JSON följer inte importschemat. Rätta {count} fel:",
+    "errorListLabel": "Fel i import-JSON",
+    "moreErrors": "och {count} fel till",
+    "issue": {
+      "required": "Fältet saknas men är obligatoriskt.",
+      "invalidType": "Förväntade {expected} men fick {received}.",
+      "stringEmpty": "Får inte vara tom.",
+      "stringTooShort": "Måste ha minst {minimum} tecken.",
+      "stringTooLong": "Får ha högst {maximum} tecken.",
+      "arrayTooShort": "Måste innehålla minst {minimum, plural, one {# post} other {# poster}}.",
+      "arrayTooLong": "Får innehålla högst {maximum, plural, one {# post} other {# poster}}.",
+      "numberTooSmall": "Måste vara minst {minimum}.",
+      "numberNotAbove": "Måste vara större än {minimum}.",
+      "numberTooBig": "Får vara högst {maximum}.",
+      "numberNotBelow": "Måste vara mindre än {maximum}.",
+      "unknownField": "Okänt fält. Ta bort det.",
+      "invalidValue": "Måste vara {values}.",
+      "invalidFormat": "Värdet har fel format.",
+      "duplicateKey": "Nyckeln måste vara unik.",
+      "jsonTooDeep": "JSON är för djupt nästlad.",
+      "invalid": "Ogiltigt värde."
+    },
+    "valueType": {
+      "array": "lista",
+      "boolean": "sant eller falskt",
+      "int": "heltal",
+      "null": "null",
+      "number": "tal",
+      "object": "objekt",
+      "string": "text",
+      "unknown": "annat värde"
+    }
   }
 }

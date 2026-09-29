@@ -1149,6 +1149,45 @@ vanlig filinläsning; den nya granskningen visar den korrigerade raden och en
 varning för den saknade referensen. Aktuell behörighet, destination,
 referensdata och kravimportbudget valideras på nytt.
 
+### REQ-17c: läs in extern JSON och visa detaljerade fel i importdialogen
+
+**Steg:** Logga in som `olle.areaowner`, öppna `/sv/requirements`, välj
+importknappen och välj ett kravområde. Klistra in följande texter i tur och
+ordning i fältet `Import-JSON` och läs meddelandet under fältet efter varje
+inklistring:
+
+1. Ett svar utan JSON, till exempel `Jag behöver referensdatafilen först.`
+2. Början av ett giltigt importobjekt som slutar mitt i listan `requirements`.
+3. Ett svar med förklarande text och två kodblock med JSON.
+4. Ett importobjekt på fyra rader där rad 3 slutar med ett extra
+   kommatecken före det avslutande `}` på rad 4.
+5. Ett importobjekt med `"schemaVersion": "requirement-import.v1"`.
+6. Ett `requirement-import.v4`-objekt med 23 krav utan kravtext.
+7. Ett svar med förklarande text och ett enda kodblock med giltig
+   `requirement-import.v4`-JSON.
+
+Förhandsgranska sedan.
+
+**Förväntat resultat:** Dialogen visar ett meddelande per fall innan
+granskningen laddas, och `Förhandsgranska krav` är inaktiverad för fall 1–6:
+
+1. `Svaret innehåller ingen JSON. Läs AI-assistentens svar. Behovet eller
+   referensdatafilen kan saknas.`
+2. `Svaret är troligen avkortat. Be om färre krav per förfrågan.`
+3. `Svaret innehåller 2 kodblock.` Ingen JSON tas ut.
+4. Syntaxfelet med rad och kolumn: `JSON har ett syntaxfel på rad 4, kolumn 1:
+   oväntat tecken ”}”.`
+5. `schemaVersion ska vara requirement-import.v4.`
+6. `JSON följer inte importschemat. Rätta 23 fel:` följt av en lista med 20 fel.
+   Varje fel har en JSON-sökväg, till exempel `$.requirements[0].description`,
+   och en översatt text. Listan avslutas med `och 3 fel till`.
+7. Dialogen visar att JSON togs ut ur kodblocket och att texten i fältet är
+   oförändrad. Fältet innehåller fortfarande hela svaret, och granskningen
+   laddas med kravet från kodblocket.
+
+Med engelskt gränssnitt visas samma meddelanden på engelska. Radfel och
+varningar i granskningen behåller sina befintliga åtgärder.
+
 ### REQ-18: exportera kravbiblioteket till CSV
 
 **Steg:** Använd en fixture med minst 205 publicerade krav och sätt CSV-gränsen

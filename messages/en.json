@@ -4135,5 +4135,52 @@
     "hiddenCreatedNorm": "The search hides the new norm reference “{name}”. It is still checked.",
     "creationPersistence": "The new object is saved immediately. Cancel in the selection dialog only discards the selection.",
     "searchHelp": "Search by name, reference ID or package purpose. Selections are kept when you filter the list."
+  },
+  "requirementsImportJson": {
+    "codeBlockExtracted": "The JSON was taken from the code block in the response. The text in the field is unchanged.",
+    "noJson": "The response contains no JSON. Read the AI assistant's response. The need or the reference data file may be missing.",
+    "truncated": "The response is probably truncated. Ask for fewer requirements per request.",
+    "multipleCodeBlocks": "The response contains {count} code blocks. Paste only the JSON or a response with a single code block.",
+    "syntaxError": "The JSON has a syntax error: {detail}.",
+    "syntaxErrorAt": "The JSON has a syntax error at line {line}, column {column}: {detail}.",
+    "syntaxDetail": {
+      "unexpectedCharacter": "unexpected character “{character}”",
+      "unexpectedEnd": "unexpected end of the JSON text",
+      "invalidString": "invalid character or escape sequence in a string",
+      "unknown": "the text cannot be read as JSON"
+    },
+    "wrongSchemaVersion": "schemaVersion must be {version}.",
+    "schemaInvalid": "The JSON does not match the import schema. Fix {count, plural, one {# error} other {# errors}}:",
+    "errorListLabel": "Errors in the import JSON",
+    "moreErrors": "{count, plural, one {and # more error} other {and # more errors}}",
+    "issue": {
+      "required": "The field is required but missing.",
+      "invalidType": "Expected {expected} but got {received}.",
+      "stringEmpty": "Must not be empty.",
+      "stringTooShort": "Must have at least {minimum, plural, one {# character} other {# characters}}.",
+      "stringTooLong": "Must have at most {maximum, plural, one {# character} other {# characters}}.",
+      "arrayTooShort": "Must contain at least {minimum, plural, one {# item} other {# items}}.",
+      "arrayTooLong": "Must contain at most {maximum, plural, one {# item} other {# items}}.",
+      "numberTooSmall": "Must be at least {minimum}.",
+      "numberNotAbove": "Must be greater than {minimum}.",
+      "numberTooBig": "Must be at most {maximum}.",
+      "numberNotBelow": "Must be less than {maximum}.",
+      "unknownField": "Unknown field. Remove it.",
+      "invalidValue": "Must be {values}.",
+      "invalidFormat": "The value has the wrong format.",
+      "duplicateKey": "The key must be unique.",
+      "jsonTooDeep": "The JSON is nested too deeply.",
+      "invalid": "Invalid value."
+    },
+    "valueType": {
+      "array": "list",
+      "boolean": "true or false",
+      "int": "integer",
+      "null": "null",
+      "number": "number",
+      "object": "object",
+      "string": "text",
+      "unknown": "another value"
+    }
   }
 }

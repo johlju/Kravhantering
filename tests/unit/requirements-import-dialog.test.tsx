@@ -44,10 +44,31 @@ const importDialogTranslate = vi.hoisted(() => {
   })
 })
 
-vi.mock('next-intl', () => ({
-  useLocale: () => importLocaleState.locale,
-  useTranslations: () => importDialogTranslate,
-}))
+vi.mock('next-intl', async () => {
+  const { createTranslator } =
+    await vi.importActual<typeof import('next-intl')>('next-intl')
+  const { default: enMessages } = await import('@/messages/en.json')
+  const { default: svMessages } = await import('@/messages/sv.json')
+  const importJsonTranslators = {
+    en: createTranslator({
+      locale: 'en',
+      messages: enMessages,
+      namespace: 'requirementsImportJson',
+    }),
+    sv: createTranslator({
+      locale: 'sv',
+      messages: svMessages,
+      namespace: 'requirementsImportJson',
+    }),
+  }
+  return {
+    useLocale: () => importLocaleState.locale,
+    useTranslations: (namespace?: string) =>
+      namespace === 'requirementsImportJson'
+        ? importJsonTranslators[importLocaleState.locale === 'en' ? 'en' : 'sv']
+        : importDialogTranslate,
+  }
+})
 
 vi.mock('@/components/ConfirmModal', () => ({
   useConfirmModal: () => ({
@@ -1984,14 +2005,16 @@ describe('RequirementsImportDialog', () => {
       'Välj kravområde och lägg till import-JSON',
     )
     fireEvent.change(rawJson, { target: { value: '{' } })
-    expect(screen.getByRole('status')).toHaveTextContent('JSON kan inte läsas')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Svaret är troligen avkortat. Be om färre krav per förfrågan.',
+    )
     fireEvent.change(rawJson, {
       target: {
         value: JSON.stringify({ requirements: [{}], schemaVersion: 'v1' }),
       },
     })
     expect(screen.getByRole('status')).toHaveTextContent(
-      'schemaVersion måste vara requirement-import.v4',
+      'schemaVersion ska vara requirement-import.v4.',
     )
     fireEvent.change(rawJson, {
       target: {
@@ -2002,8 +2025,13 @@ describe('RequirementsImportDialog', () => {
       },
     })
     expect(screen.getByRole('status')).toHaveTextContent(
-      'JSON följer inte importschemat',
+      'JSON följer inte importschemat. Rätta 1 fel:',
     )
+    expect(
+      within(screen.getByRole('list', { name: 'Fel i import-JSON' })).getByRole(
+        'listitem',
+      ),
+    ).toHaveTextContent('$.requirements: Måste innehålla minst 1 post.')
     fireEvent.change(rawJson, { target: { value: validImportPayload() } })
     expect(screen.getByRole('status')).toHaveTextContent('Välj kravområde')
 
@@ -2031,6 +2059,122 @@ describe('RequirementsImportDialog', () => {
     if (!fileInput) throw new Error('Expected the JSON file input')
     fireEvent.change(fileInput, { target: { files: [file] } })
     await waitFor(() => expect(rawJson).toHaveValue(filePayload))
+  })
+
+  it('previews JSON taken from the only code block without changing the field text', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(importPreviewResponse())
+    render(
+      <RequirementsImportDialog
+        mode="specification-local"
+        onClose={vi.fn()}
+        open
+        specificationId={8}
+      />,
+    )
+    const rawJson = screen.getByLabelText(/Import-JSON/)
+    const response = `Här är kraven:\n\n\`\`\`json\n${validImportPayload()}\n\`\`\`\n`
+
+    fireEvent.change(rawJson, { target: { value: response } })
+
+    const notice = await screen.findByText(
+      'JSON togs ut ur kodblocket i svaret. Texten i fältet är oförändrad.',
+    )
+    expect(rawJson).toHaveValue(response)
+    expect(rawJson).toHaveAccessibleDescription(notice.textContent ?? '')
+    expect(notice.closest('p')).toHaveAttribute(
+      'data-developer-mode-value',
+      'code block extracted',
+    )
+    await clickPreviewButton()
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(1))
+    const [, init] = vi.mocked(apiFetch).mock.calls[0] ?? []
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      payload: {
+        requirements: [{ description: 'Kravtext' }],
+        schemaVersion: 'requirement-import.v4',
+      },
+      specificationId: 8,
+    })
+  })
+
+  it('explains responses without JSON, several code blocks and syntax errors with a location', async () => {
+    render(
+      <RequirementsImportDialog
+        mode="specification-local"
+        onClose={vi.fn()}
+        open
+        specificationId={8}
+      />,
+    )
+    const rawJson = screen.getByLabelText(/Import-JSON/)
+    const preview = screen.getByRole('button', {
+      name: 'Förhandsgranska krav',
+    })
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+
+    fireEvent.change(rawJson, {
+      target: { value: 'Jag behöver referensdatafilen först.' },
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Svaret innehåller ingen JSON. Läs AI-assistentens svar. Behovet eller referensdatafilen kan saknas.',
+    )
+    fireEvent.change(rawJson, {
+      target: {
+        value: `\`\`\`json\n${validImportPayload()}\n\`\`\`\n\`\`\`json\n${validImportPayload()}\n\`\`\``,
+      },
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Svaret innehåller 2 kodblock.',
+    )
+    expect(
+      screen.queryByText(/JSON togs ut ur kodblocket/),
+    ).not.toBeInTheDocument()
+    fireEvent.change(rawJson, {
+      target: { value: '{\n  "schemaVersion": "requirement-import.v4",,\n}' },
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'JSON har ett syntaxfel på rad 2, kolumn 44: oväntat tecken ”,”.',
+    )
+    expect(preview).toBeDisabled()
+  })
+
+  it('lists at most 20 schema errors with JSON paths followed by the remaining count', async () => {
+    importLocaleState.locale = 'en'
+    render(
+      <RequirementsImportDialog
+        mode="specification-local"
+        onClose={vi.fn()}
+        open
+        specificationId={8}
+      />,
+    )
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText(/Import JSON/), {
+      target: {
+        value: JSON.stringify({
+          requirements: Array.from({ length: 23 }, () => ({})),
+          schemaVersion: 'requirement-import.v4',
+        }),
+      },
+    })
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'The JSON does not match the import schema. Fix 23 errors:',
+    )
+    const errorList = screen.getByRole('list', {
+      name: 'Errors in the import JSON',
+    })
+    const items = within(errorList).getAllByRole('listitem')
+    expect(items).toHaveLength(20)
+    expect(items[0]).toHaveTextContent(
+      '$.requirements[0].description: The field is required but missing.',
+    )
+    expect(screen.getByText('and 3 more errors')).toBeInTheDocument()
+    expect(errorList.parentElement).toHaveAttribute(
+      'data-developer-mode-value',
+      'import JSON errors',
+    )
   })
 
   it('keeps preview disabled until the independently loaded schema budget resolves', async () => {
