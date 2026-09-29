@@ -26,6 +26,8 @@ import { devMarker } from '@/lib/developer-mode-markers'
 import { dialogPanelMotion, fadeMotion } from '@/lib/reduced-motion'
 import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 
+const MARKER_CONTEXT = 'ai request explanation'
+
 interface AiRequestExplanationDialogProps {
   candidateCount: number
   /**
@@ -157,8 +159,6 @@ function ExactFormatStep() {
     </div>
   )
 }
-
-const MARKER_CONTEXT = 'ai request explanation'
 
 export default function AiRequestExplanationDialog({
   candidateCount,

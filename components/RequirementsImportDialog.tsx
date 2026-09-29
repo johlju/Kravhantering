@@ -903,12 +903,11 @@ export default function RequirementsImportDialog({
   }, [importJsonProblem, importJsonText])
   const parsedImportPayload = importPayloadValidation.payload
   const hasRequiredImportTarget = mode !== 'library' || selectedAreaId !== ''
-  const canDownloadImportInstruction =
-    mode === 'library' || specificationId != null
   const aiRequestFileDestination = resolveAiRequestFileDestination(
     mode,
     specificationId,
   )
+  const canDownloadImportInstruction = aiRequestFileDestination !== null
   const canLoadPreview =
     !loading && parsedImportPayload !== null && hasRequiredImportTarget
   const startImportDisabledReason = useMemo(() => {

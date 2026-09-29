@@ -1,4 +1,5 @@
 import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
+import type { RequirementsImportMode } from '@/lib/requirements/import-service'
 
 /**
  * Client-side names and URLs for the two files that let an external AI
@@ -82,7 +83,7 @@ export function aiRequestFileUrl(
  * id, so the files are unavailable (`null`) without it.
  */
 export function resolveAiRequestFileDestination(
-  mode: 'library' | 'specification-local',
+  mode: RequirementsImportMode,
   specificationId: number | null | undefined,
 ): AiRequestFileDestination | null {
   if (mode === 'library') return { kind: 'requirements_library' }
