@@ -2499,6 +2499,12 @@ describe('RequirementsImportDialog', () => {
       'JSON har ett syntaxfel på rad 2, kolumn 44: oväntat tecken ”,”.',
     )
     expect(preview).toBeDisabled()
+    // Let the lazily loaded repair prompt builder settle inside the test.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Kopiera reparationsprompt' }),
+      ).toBeEnabled(),
+    )
   })
 
   it('lists at most 20 schema errors with JSON paths followed by the remaining count', async () => {
