@@ -2013,6 +2013,22 @@ async function resolveDestinationSnapshot(
   return specificationToDestination(specification)
 }
 
+/** Names the destination in a reference data file's metadata. */
+async function referenceDataFileDestination(
+  db: SqlServerDatabase,
+  destination: McpImportInstructionDestinationRef,
+): Promise<RequirementImportReferenceDataFileDestination> {
+  if (destination.kind === 'requirements_library') {
+    return { kind: destination.kind }
+  }
+  const snapshot = await resolveDestinationSnapshot(db, destination)
+  return {
+    kind: destination.kind,
+    id: destination.specificationId,
+    name: snapshot.name,
+  }
+}
+
 function destinationRefFromSnapshot(
   destination: McpImportDestination,
 ): McpImportDestinationRef {
@@ -3363,7 +3379,7 @@ export function createRequirementsImportWorkflow({
     async getImportReferenceDataFile(
       context: RequestContext,
       input: {
-        destination: RequirementImportReferenceDataFileDestination
+        destination: McpImportInstructionDestinationRef
         locale: 'en' | 'sv'
       },
     ): Promise<RequirementImportReferenceDataFile> {
@@ -3372,6 +3388,13 @@ export function createRequirementsImportWorkflow({
         { kind: 'get_import_instruction' },
         context,
       )
+      if (input.destination.kind === 'requirements_specification') {
+        await assertMcpImportDestinationAuthorized(
+          authorization,
+          context,
+          input.destination,
+        )
+      }
 
       return withLogging(
         logger,
@@ -3381,17 +3404,18 @@ export function createRequirementsImportWorkflow({
           destination_kind: input.destination.kind,
           locale: input.locale,
         },
-        async () =>
-          buildRequirementImportReferenceDataFile({
-            destination: input.destination,
+        async () => {
+          const [destination, referenceData] = await Promise.all([
+            referenceDataFileDestination(db, input.destination),
+            loadImportPromptReferenceData(db, input.locale, input.destination),
+          ])
+          return buildRequirementImportReferenceDataFile({
+            destination,
             generatedAt: new Date(),
             locale: input.locale,
-            referenceData: await loadImportPromptReferenceData(
-              db,
-              input.locale,
-              input.destination,
-            ),
-          }),
+            referenceData,
+          })
+        },
       )
     },
 

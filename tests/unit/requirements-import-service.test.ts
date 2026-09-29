@@ -2758,6 +2758,147 @@ describe('requirements import service', () => {
     expect(listCategories).not.toHaveBeenCalled()
   })
 
+  it.each(['en', 'sv'] as const)(
+    'returns the %s reference data file for a requirements specification with its id, name, and needs references',
+    async locale => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-29T08:30:00.000Z'))
+      try {
+        vi.mocked(getSpecificationById).mockResolvedValue({
+          id: 8,
+          name: 'Journalsystem 2027',
+          specificationCode: 'KU-8',
+        } as never)
+        vi.mocked(listSpecificationNeedsReferences).mockResolvedValue([
+          {
+            createdAt: '2026-07-05T10:00:00.000Z',
+            description: 'Stödjer införande av GDPR artikel 32.',
+            id: 12,
+            libraryItemCount: 1,
+            linkedItemCount: 1,
+            specificationLocalRequirementCount: 0,
+            text: 'Personuppgiftsbehandling behöver tekniskt skydd',
+            updatedAt: '2026-07-05T10:00:00.000Z',
+          },
+        ])
+        const authorization = { assertAuthorized: vi.fn() }
+        const logger = { error: vi.fn(), info: vi.fn() }
+        const workflow = createRequirementsImportWorkflow({
+          authorization,
+          db: {} as never,
+          logger,
+        })
+        const context = makeContext('requirements_get_import_instruction')
+        const destination = {
+          kind: 'requirements_specification',
+          specificationId: 8,
+        } as const
+
+        const file = await workflow.getImportReferenceDataFile(context, {
+          destination,
+          locale,
+        })
+        const instructionReferenceData = extractReferenceData(
+          await workflow.buildImportInstruction(locale, destination),
+        )
+
+        expect(file.referenceData).toEqual(instructionReferenceData)
+        expect(file.referenceData).toHaveProperty('needsReferences', [
+          {
+            description: 'Stödjer införande av GDPR artikel 32.',
+            id: 12,
+            text: 'Personuppgiftsbehandling behöver tekniskt skydd',
+          },
+        ])
+        expect(file).toEqual({
+          destination: {
+            id: 8,
+            kind: 'requirements_specification',
+            name: 'Journalsystem 2027',
+          },
+          generatedAt: '2026-09-29T08:30:00.000Z',
+          locale,
+          referenceData: file.referenceData,
+          schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+        })
+        expect(Object.keys(file.destination)).toEqual(['kind', 'id', 'name'])
+        expect(listSpecificationNeedsReferences).toHaveBeenCalledWith({}, 8)
+        expect(authorization.assertAuthorized).toHaveBeenCalledWith(
+          { kind: 'get_import_instruction' },
+          context,
+        )
+        expect(authorization.assertAuthorized).toHaveBeenCalledWith(
+          {
+            kind: 'manage_specification_local_requirement',
+            operation: 'create',
+            specificationId: 8,
+          },
+          context,
+        )
+        expect(logger.info).toHaveBeenCalledWith(
+          'requirements.get_import_reference_data',
+          expect.objectContaining({
+            destination_kind: 'requirements_specification',
+            locale,
+          }),
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  it('rejects the reference data file for a requirements specification the user may not import into', async () => {
+    const authorization = {
+      assertAuthorized: vi.fn(async (request: { kind: string }) => {
+        if (request.kind === 'manage_specification_local_requirement') {
+          throw forbiddenError()
+        }
+      }),
+    }
+    const workflow = createRequirementsImportWorkflow({
+      authorization,
+      db: {} as never,
+    })
+
+    await expect(
+      workflow.getImportReferenceDataFile(
+        makeContext('requirements_get_import_instruction'),
+        {
+          destination: {
+            kind: 'requirements_specification',
+            specificationId: 8,
+          },
+          locale: 'sv',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'forbidden' })
+    expect(getSpecificationById).not.toHaveBeenCalled()
+    expect(listSpecificationNeedsReferences).not.toHaveBeenCalled()
+    expect(listCategories).not.toHaveBeenCalled()
+  })
+
+  it('rejects the reference data file for a requirements specification that does not exist', async () => {
+    const authorization = { assertAuthorized: vi.fn() }
+    const workflow = createRequirementsImportWorkflow({
+      authorization,
+      db: {} as never,
+    })
+
+    await expect(
+      workflow.getImportReferenceDataFile(
+        makeContext('requirements_get_import_instruction'),
+        {
+          destination: {
+            kind: 'requirements_specification',
+            specificationId: 404,
+          },
+          locale: 'en',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'not_found' })
+  })
+
   it.each([
     ['en', 'requirements_library'],
     ['sv', 'requirements_specification'],

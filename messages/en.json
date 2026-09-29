@@ -4004,7 +4004,7 @@
     "downloadImportInstruction": "Download import instruction",
     "downloadFailed": "The file could not be downloaded. Try again.",
     "downloading": "Downloading…",
-    "filesUnavailable": "These files are not available for this import yet."
+    "filesUnavailable": "These files need a requirements specification."
   },
   "onDemandFeature": {
     "aiAuthoring": {

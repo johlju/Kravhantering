@@ -486,6 +486,110 @@ describe('RequirementsImportDialog', () => {
     },
   )
 
+  it.each([
+    [
+      'sv',
+      'AI-anropsmall',
+      '/api/requirements/import/ai-request-template?locale=sv&kind=requirements_specification',
+      'kravimport-ai-anropsmall-kravunderlag.md',
+    ],
+    [
+      'sv',
+      'Referensdatafil',
+      '/api/requirements/import/reference-data?locale=sv&kind=requirements_specification&specificationId=8',
+      'kravimport-referensdata-kravunderlag-8.json',
+    ],
+    [
+      'en',
+      'AI request template',
+      '/api/requirements/import/ai-request-template?locale=en&kind=requirements_specification',
+      'requirement-import-ai-request-template-requirements-specification.md',
+    ],
+    [
+      'en',
+      'Reference data file',
+      '/api/requirements/import/reference-data?locale=en&kind=requirements_specification&specificationId=8',
+      'requirement-import-reference-data-requirements-specification-8.json',
+    ],
+  ])(
+    'downloads the %s specification file behind %s',
+    async (locale, buttonName, expectedUrl, expectedFileName) => {
+      importLocaleState.locale = locale
+      const fileBlob = new Blob(['file'])
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/requirements/import/schema')) {
+          return {
+            json: async () => buildRequirementsImportJsonSchema(locale as 'sv'),
+            ok: true,
+          } as Response
+        }
+        if (url.startsWith('/api/requirements/import/')) {
+          return { blob: async () => fileBlob, ok: true } as Response
+        }
+        return { json: async () => ({}), ok: true } as Response
+      })
+      global.fetch = fetchMock
+
+      render(
+        <RequirementsImportDialog
+          mode="specification-local"
+          onClose={vi.fn()}
+          open
+          specificationId={8}
+        />,
+      )
+      const button = await screen.findByRole('button', { name: buttonName })
+      expect(button).not.toHaveAttribute('title')
+      expect(screen.getByText(expectedFileName)).toBeInTheDocument()
+      fireEvent.click(button)
+
+      await waitFor(() =>
+        expect(downloadBlobMock).toHaveBeenCalledWith(
+          fileBlob,
+          expectedFileName,
+        ),
+      )
+      expect(fetchMock).toHaveBeenCalledWith(expectedUrl)
+    },
+  )
+
+  it('disables the AI request files when a specification import has no specification id', async () => {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      return {
+        json: async () =>
+          url.includes('/api/requirements/import/schema')
+            ? buildRequirementsImportJsonSchema('sv')
+            : {},
+        ok: true,
+      } as Response
+    })
+
+    render(
+      <RequirementsImportDialog
+        mode="specification-local"
+        onClose={vi.fn()}
+        open
+      />,
+    )
+
+    for (const name of ['AI-anropsmall', 'Referensdatafil']) {
+      const button = await screen.findByRole('button', { name })
+      expect(button).toBeDisabled()
+      expect(button).toHaveAttribute(
+        'title',
+        'Filerna kräver ett kravunderlag.',
+      )
+    }
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Egen prompt eller validering' }),
+    )
+    expect(
+      screen.getByRole('button', { name: 'Ladda ner importinstruktion' }),
+    ).toBeDisabled()
+  })
+
   it('reports a failed AI request template download', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -2656,19 +2760,15 @@ describe('RequirementsImportDialog', () => {
     expect(support).toHaveTextContent(
       'Hämta en ny fil om normreferenser, kravpaket eller behovsreferenser har ändrats.',
     )
-    // Specification destinations get their AI request files separately.
     expect(
       within(support).getByRole('button', { name: 'AI-anropsmall' }),
-    ).toBeDisabled()
-    expect(
-      within(support).getByRole('button', { name: 'AI-anropsmall' }),
-    ).toHaveAttribute(
-      'title',
-      'Filerna går ännu inte att hämta för den här importen.',
-    )
+    ).toBeEnabled()
     expect(
       within(support).getByRole('button', { name: 'Referensdatafil' }),
-    ).toBeDisabled()
+    ).toBeEnabled()
+    expect(support).toHaveTextContent(
+      'kravimport-referensdata-kravunderlag-8.json',
+    )
     fireEvent.click(
       screen.getByRole('button', { name: 'Egen prompt eller validering' }),
     )

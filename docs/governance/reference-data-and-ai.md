@@ -416,19 +416,25 @@ schema route response for the same locale and budget, not the provider-strict
 variant. The template has no placeholders, no reference data, no human
 guidance, no AI product names, and no repair rules.
 
-`GET /api/requirements/import/reference-data` takes `locale` and `kind`. It
-returns minified `application/json` without a BOM:
+`GET /api/requirements/import/reference-data` takes `locale`, `kind`, and
+`specificationId` when `kind=requirements_specification`. It returns minified
+`application/json` without a BOM:
 `{"generatedAt","schemaVersion","locale","destination","referenceData"}`.
 For a requirements library, `destination` is `{"kind":"requirements_library"}`.
+For a requirements specification, it is
+`{"kind":"requirements_specification","id":<id>,"name":"<name>"}`, and
+`referenceData` also has the specification's `needsReferences`.
 `referenceData` is the same object that the import instruction embeds for the
 same destination and locale, including the same minimization. The file is
-never embedded in the template. The route currently serves requirements
-library destinations and rejects requirements specification destinations.
+never embedded in the template.
 
 Both routes require an authenticated session and the same
-`get_import_instruction` authorization as the import instruction. Missing or
-unknown destination parameters are validation errors with the same reason as
-the instruction route. Neither route is exposed through MCP.
+`get_import_instruction` authorization as the import instruction. The reference
+data route also checks a requirements specification destination with
+`assertMcpImportDestinationAuthorized`, as the instruction route does. Missing
+or unknown destination parameters, and a requirements specification without a
+positive integer `specificationId`, are validation errors with the same reason
+as the instruction route. Neither route is exposed through MCP.
 
 ### Human-Facing Import Examples
 

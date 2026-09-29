@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { withRestResponsePolicy } from '@/lib/http/response-policy'
-import { unauthorizedError, validationError } from '@/lib/requirements/errors'
+import { unauthorizedError } from '@/lib/requirements/errors'
 import { toHttpErrorPayload } from '@/lib/requirements/http-errors'
 import {
   importDestinationFromQuery,
@@ -10,10 +10,9 @@ import { serializeRequirementImportReferenceDataFile } from '@/lib/requirements/
 import { createRequirementsRestRuntime } from '@/lib/requirements/server'
 
 const MISSING_REFERENCE_DATA_DESTINATION_MESSAGE =
-  'Reference data destination is required. Use kind=requirements_library.'
-
-const UNSUPPORTED_REFERENCE_DATA_DESTINATION_MESSAGE =
-  'Reference data files are available for requirements_library destinations.'
+  'Reference data destination is required. ' +
+  'Use kind=requirements_library, or kind=requirements_specification with a ' +
+  'positive integer specificationId.'
 
 async function getHandler(request: Request) {
   try {
@@ -22,19 +21,13 @@ async function getHandler(request: Request) {
       throw unauthorizedError()
     }
     const searchParams = new URL(request.url).searchParams
-    const destination = importDestinationFromQuery(
-      searchParams,
-      MISSING_REFERENCE_DATA_DESTINATION_MESSAGE,
-    )
-    if (destination.kind !== 'requirements_library') {
-      throw validationError(UNSUPPORTED_REFERENCE_DATA_DESTINATION_MESSAGE, {
-        reason: 'unsupported_import_reference_data_destination',
-      })
-    }
     const referenceDataFile = await service.getImportReferenceDataFile(
       context,
       {
-        destination,
+        destination: importDestinationFromQuery(
+          searchParams,
+          MISSING_REFERENCE_DATA_DESTINATION_MESSAGE,
+        ),
         locale: importLocaleFromQuery(searchParams),
       },
     )

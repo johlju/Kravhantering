@@ -1,9 +1,13 @@
 import { REQUIREMENTS_IMPORT_SCHEMA_VERSION } from '@/lib/requirements/import-schema'
 
-/** The destination metadata of a reference data file. */
-export type RequirementImportReferenceDataFileDestination = {
-  kind: 'requirements_library'
-}
+/**
+ * The destination metadata of a reference data file. A requirements
+ * specification destination names the specification, so that the user and the
+ * AI assistant can tell which specification the snapshot belongs to.
+ */
+export type RequirementImportReferenceDataFileDestination =
+  | { kind: 'requirements_library' }
+  | { kind: 'requirements_specification'; id: number; name: string }
 
 /**
  * A reference data file: a snapshot of the import reference data for one

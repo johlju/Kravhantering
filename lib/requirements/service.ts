@@ -19,10 +19,7 @@ import {
   requireHumanActorSnapshot,
 } from '@/lib/requirements/auth'
 import { validationError } from '@/lib/requirements/errors'
-import type {
-  RequirementImportReferenceDataFile,
-  RequirementImportReferenceDataFileDestination,
-} from '@/lib/requirements/import-reference-data-file'
+import type { RequirementImportReferenceDataFile } from '@/lib/requirements/import-reference-data-file'
 import type {
   ImportExecuteBody,
   ImportRequirementsPayload,
@@ -465,7 +462,7 @@ export interface RequirementsService extends RfiQuestionQueryService {
   getImportReferenceDataFile(
     context: RequestContext,
     input: {
-      destination: RequirementImportReferenceDataFileDestination
+      destination: McpImportInstructionDestinationRef
       locale: ResponseLocale
     },
   ): Promise<RequirementImportReferenceDataFile>

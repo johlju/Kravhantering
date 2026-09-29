@@ -4004,7 +4004,7 @@
     "downloadImportInstruction": "Ladda ner importinstruktion",
     "downloadFailed": "Filen kunde inte laddas ner. Försök igen.",
     "downloading": "Laddar ner…",
-    "filesUnavailable": "Filerna går ännu inte att hämta för den här importen."
+    "filesUnavailable": "Filerna kräver ett kravunderlag."
   },
   "onDemandFeature": {
     "aiAuthoring": {

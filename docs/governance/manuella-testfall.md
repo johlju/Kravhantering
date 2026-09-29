@@ -2062,20 +2062,33 @@ utan att fokus behöver flyttas till statusbrickan.
 ### SPEC-17: importera unika krav till kravunderlag
 
 **Steg:** Logga in som `petra.specresp`, öppna ett kravunderlag där användaren
-är ansvarig, välj `Fler åtgärder` och sedan `Importera unika krav`.
-Klistra in giltig `requirement-import.v4`-JSON med kravtext, föreslagen
-normreferens, `proposedNeedsReferences` med radens `needsReferenceKey` och fält
-för kravpaket som ska ignoreras för kravunderlagslokala krav. Lös
-behovsreferensen i fliken `Föreslagna behovsreferenser` genom att skapa eller
-länka behovsreferensen. Testa även en rad med `verifiable: true` utan
-verifieringsmetod och fyll sedan i metoden innan import. Ladda ner valda
-kandidater innan import och kontrollera att filen innehåller aktuell
-verifieringsmetod, löst behovsreferens-ID och normreferensens verksamhets-ID.
-Nedladdningen behåller granskningen och filen följer det kanoniska schemat.
+är ansvarig, välj `Fler åtgärder` och sedan `Importera unika krav`. Välj
+`AI-anropsmall` och sedan `Referensdatafil` i steg 1 i stödytan `Låt en extern
+AI ta fram krav` och öppna båda filerna. Klistra in giltig
+`requirement-import.v4`-JSON med kravtext, föreslagen normreferens,
+`proposedNeedsReferences` med radens `needsReferenceKey` och fält för kravpaket
+som ska ignoreras för kravunderlagslokala krav. Lös behovsreferensen i fliken
+`Föreslagna behovsreferenser` genom att skapa eller länka behovsreferensen.
+Testa även en rad med `verifiable: true` utan verifieringsmetod och fyll sedan i
+metoden innan import. Ladda ner valda kandidater innan import och kontrollera
+att filen innehåller aktuell verifieringsmetod, löst behovsreferens-ID och
+normreferensens verksamhets-ID. Nedladdningen behåller granskningen och filen
+följer det kanoniska schemat.
 
 **Förväntat resultat:** Importen kräver kravunderlagsbehörighet men inget
 kravområde. Rader skapas som kravunderlagslokala krav i aktuellt kravunderlag.
-Dialogrubriken visar `Importera krav för {kravunderlag}`.
+Dialogrubriken visar `Importera lokala krav för {kravunderlag}`.
+Filnamnet står under varje knapp i steg 1 och är detsamma som den nedladdade
+filens namn: `kravimport-ai-anropsmall-kravunderlag.md` och
+`kravimport-referensdata-kravunderlag-{id}.json`, där `{id}` är
+kravunderlagets id. Mallen börjar och slutar med markörraderna, anger
+destinationstypen `requirements_specification` och innehåller
+Importinstruktionens regler för behovsreferenser men ingen referensdata.
+Referensdatafilen är minifierad JSON utan BOM. Dess `destination` har `kind`
+`requirements_specification`, kravunderlagets `id` och kravunderlagets namn,
+och `referenceData` innehåller `needsReferences`. Under stegen står att
+referensdatafilen speglar kravunderlaget just nu och att en ny fil behövs när
+normreferenser, kravpaket eller behovsreferenser har ändrats.
 Verifierbara lokala krav utan verifieringsmetod blockeras tills värdet anges.
 Krav, föreslagna normreferenser och föreslagna behovsreferenser visas i
 separata flikar. Oupplöst `needsReferenceKey` blockerar raden tills förslaget
