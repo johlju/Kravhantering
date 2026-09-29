@@ -23,6 +23,7 @@ import {
   type PromptRuleItem,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
+import type { AppLocale } from '@/lib/locale-preference'
 import {
   DEFAULT_REQUIREMENT_IMPORT_BUDGET,
   type RequirementImportBudget,
@@ -60,12 +61,12 @@ const DISTINCT_BUDGET: RequirementImportBudget = {
 
 const IMPORT_INSTRUCTION_PATH = ['ai', 'prompt', 'importInstruction'] as const
 
-function importInstructionMessage(locale: 'en' | 'sv', key: string): string {
+function importInstructionMessage(locale: AppLocale, key: string): string {
   return getPromptMessage(locale, [...IMPORT_INSTRUCTION_PATH, key])
 }
 
 function importInstructionRuleList(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   key: string,
 ): PromptRuleItem[] {
   return getPromptRuleList(locale, [...IMPORT_INSTRUCTION_PATH, key])
@@ -723,7 +724,7 @@ describe('buildRequirementImportRepairUserPrompt', () => {
 })
 
 function repairPromptErrors(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   requirementCount: number,
   limit = REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
 ): FormattedRequirementImportJsonErrors {
@@ -738,7 +739,7 @@ function repairPromptErrors(
 }
 
 function repairPromptErrorsFor(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   importText: string,
   limit = REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
 ): FormattedRequirementImportJsonErrors {

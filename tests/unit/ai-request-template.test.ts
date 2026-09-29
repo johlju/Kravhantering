@@ -6,6 +6,7 @@ import {
   getPromptMessageList,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
+import type { AppLocale } from '@/lib/locale-preference'
 import {
   DEFAULT_REQUIREMENT_IMPORT_BUDGET,
   type RequirementImportBudget,
@@ -37,11 +38,11 @@ const PRODUCT_NAMES = [
   'VS Code',
 ]
 
-function templateMessage(locale: 'en' | 'sv', key: string) {
+function templateMessage(locale: AppLocale, key: string) {
   return getPromptMessage(locale, ['ai', 'prompt', 'template', key])
 }
 
-function templateList(locale: 'en' | 'sv', key: string) {
+function templateList(locale: AppLocale, key: string) {
   return getPromptMessageList(locale, ['ai', 'prompt', 'template', key])
 }
 
@@ -50,7 +51,7 @@ function lines(template: string): string[] {
 }
 
 function build(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   destinationKind: RequirementImportDestinationKind,
 ) {
   return buildRequirementImportAiRequestTemplate({

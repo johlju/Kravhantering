@@ -3,6 +3,7 @@ import {
   getPromptMessage,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
+import type { AppLocale } from '@/lib/locale-preference'
 import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
 
 const LOCALES = ['sv', 'en'] as const
@@ -20,10 +21,10 @@ export const PERSISTENT_INSTRUCTIONS_LIMIT = 8_000
 interface AiRequestTemplateRulePartOptions {
   budget: RequirementImportBudget
   destinationKind: RequirementImportDestinationKind
-  locale: 'en' | 'sv'
+  locale: AppLocale
 }
 
-function templateMessage(locale: 'en' | 'sv', key: string): string {
+function templateMessage(locale: AppLocale, key: string): string {
   return getPromptMessage(locale, ['ai', 'prompt', 'template', key])
 }
 

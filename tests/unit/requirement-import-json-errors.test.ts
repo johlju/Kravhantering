@@ -1,5 +1,6 @@
 import { createTranslator } from 'next-intl'
 import { describe, expect, it } from 'vitest'
+import type { AppLocale } from '@/lib/locale-preference'
 import { DEFAULT_REQUIREMENT_IMPORT_BUDGET } from '@/lib/requirements/import-budget'
 import {
   describeRequirementImportJsonProblem,
@@ -21,7 +22,7 @@ import svMessages from '@/messages/sv.json'
 
 const NAMESPACE = 'requirementsImportJson'
 
-function translatorFor(locale: 'en' | 'sv') {
+function translatorFor(locale: AppLocale) {
   const translate = createTranslator({
     locale,
     messages: locale === 'sv' ? svMessages : enMessages,

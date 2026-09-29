@@ -2,8 +2,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { createTranslator, NextIntlClientProvider } from 'next-intl'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RequirementsImportSupportPanel from '@/components/RequirementsImportSupportPanel'
-import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
 import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
+import type { RequirementsImportMode } from '@/lib/requirements/import-service'
 import svMessages from '@/messages/sv.json'
 
 const t = createTranslator({
@@ -16,10 +16,10 @@ const LIBRARY: AiRequestFileDestination = { kind: 'requirements_library' }
 
 function renderPanel({
   destination = LIBRARY,
-  destinationKind = 'requirements_library',
+  mode = 'library',
 }: {
   destination?: AiRequestFileDestination | null
-  destinationKind?: RequirementImportDestinationKind
+  mode?: RequirementsImportMode
 } = {}) {
   const handlers = {
     onDownloadError: vi.fn(),
@@ -30,9 +30,9 @@ function renderPanel({
     <NextIntlClientProvider locale="sv" messages={svMessages}>
       <RequirementsImportSupportPanel
         destination={destination}
-        destinationKind={destinationKind}
         headingId="support-heading"
         locale="sv"
+        mode={mode}
         {...handlers}
       />
     </NextIntlClientProvider>,
@@ -85,7 +85,7 @@ describe('RequirementsImportSupportPanel', () => {
         kind: 'requirements_specification',
         specificationId: 7,
       },
-      destinationKind: 'requirements_specification',
+      mode: 'specification-local',
     })
 
     expect(
@@ -136,7 +136,7 @@ describe('RequirementsImportSupportPanel', () => {
   it('disables the destination downloads with a reason when the specification is missing', () => {
     renderPanel({
       destination: null,
-      destinationKind: 'requirements_specification',
+      mode: 'specification-local',
     })
 
     for (const name of [t('downloadTemplate'), t('downloadReferenceData')]) {

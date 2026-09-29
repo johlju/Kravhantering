@@ -7,7 +7,10 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import type { buildRequirementImportRepairPrompt } from '@/lib/ai/requirement-prompt'
 import { devMarker } from '@/lib/developer-mode-markers'
 import type { AppLocale } from '@/lib/locale-preference'
-import { collapsiblePanelMotion } from '@/lib/reduced-motion'
+import {
+  COLLAPSIBLE_REGION_CLIP_CLASS,
+  collapsiblePanelMotion,
+} from '@/lib/reduced-motion'
 import {
   formatRequirementImportJsonErrors,
   REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
@@ -34,12 +37,6 @@ interface CopyResult {
 const MARKER_CONTEXT = 'requirements import'
 
 const STATUS_TEXT = 'text-secondary-800 dark:text-secondary-200'
-
-/**
- * Clips the preview while its height animates. The horizontal padding, offset
- * by a negative margin, keeps the textarea's focus outline visible.
- */
-const COLLAPSIBLE_CLIP = '-mx-1 overflow-hidden px-1'
 
 /**
  * Loads the prompt module on demand. It bundles the prompt texts for both
@@ -119,6 +116,11 @@ export default function RequirementsImportRepairPrompt({
         className="btn-secondary inline-flex items-center gap-2"
         disabled={prompt === null}
         onClick={() => void copy()}
+        title={
+          builder.status === 'failed'
+            ? t('repairPrompt.unavailable')
+            : undefined
+        }
         type="button"
         {...devMarker({
           context: MARKER_CONTEXT,
@@ -169,7 +171,7 @@ export default function RequirementsImportRepairPrompt({
             <AnimatePresence initial={false}>
               {previewOpen ? (
                 <motion.div
-                  className={COLLAPSIBLE_CLIP}
+                  className={COLLAPSIBLE_REGION_CLIP_CLASS}
                   key="preview"
                   {...collapsiblePanelMotion(shouldReduceMotion)}
                 >

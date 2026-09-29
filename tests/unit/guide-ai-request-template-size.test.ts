@@ -4,6 +4,7 @@ import {
   getPromptMessage,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
+import type { AppLocale } from '@/lib/locale-preference'
 import { DEFAULT_REQUIREMENT_IMPORT_BUDGET } from '@/lib/requirements/import-budget'
 import {
   aiRequestTemplateRulePartLengthRange,
@@ -22,7 +23,7 @@ const CASES = (['sv', 'en'] as const).flatMap(locale =>
   ).map(destinationKind => [locale, destinationKind] as const),
 )
 
-function templateMessage(locale: 'en' | 'sv', key: string) {
+function templateMessage(locale: AppLocale, key: string) {
   return getPromptMessage(locale, ['ai', 'prompt', 'template', key])
 }
 

@@ -199,9 +199,11 @@ describe('RequirementsImportRepairPrompt', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       t('repairPrompt.unavailable'),
     )
-    expect(
-      screen.getByRole('button', { name: t('repairPrompt.copy') }),
-    ).toBeDisabled()
+    const copyButton = screen.getByRole('button', {
+      name: t('repairPrompt.copy'),
+    })
+    expect(copyButton).toBeDisabled()
+    expect(copyButton).toHaveAttribute('title', t('repairPrompt.unavailable'))
     expect(
       screen.queryByRole('button', { name: t('repairPrompt.previewToggle') }),
     ).not.toBeInTheDocument()

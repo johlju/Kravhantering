@@ -10,6 +10,7 @@ import {
   buildRequirementImportUserPrompt,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
+import type { AppLocale } from '@/lib/locale-preference'
 import type { RequestContext } from '@/lib/requirements/auth'
 import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
 import { buildRequirementsImportJsonSchema } from '@/lib/requirements/import-schema'
@@ -47,7 +48,7 @@ const REFERENCE_DATA = {
 }
 
 function internalSystemPrompt(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   destinationKind: RequirementImportDestinationKind,
 ) {
   return buildRequirementImportSystemPrompt(

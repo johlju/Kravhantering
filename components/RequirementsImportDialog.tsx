@@ -43,10 +43,7 @@ import { devMarker } from '@/lib/developer-mode-markers'
 import { escapeCsvField } from '@/lib/export-csv'
 import { apiFetch } from '@/lib/http/api-fetch'
 import { readResponseMessage } from '@/lib/http/response-message'
-import {
-  importDestinationKindForMode,
-  resolveAiRequestFileDestination,
-} from '@/lib/requirements/ai-request-files'
+import { resolveAiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
 import {
   RequirementImportCandidateError,
@@ -2465,9 +2462,9 @@ export default function RequirementsImportDialog({
                 >
                   <RequirementsImportSupportPanel
                     destination={aiRequestFileDestination}
-                    destinationKind={importDestinationKindForMode(mode)}
                     headingId={`${titleId}-support`}
                     locale={locale}
+                    mode={mode}
                     onDownloadError={setErrorMessage}
                     onDownloadImportInstruction={() =>
                       void downloadArtifact('instruction')

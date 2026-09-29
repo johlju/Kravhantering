@@ -5,11 +5,17 @@ import { ChevronDown, Download, FileJson } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useId, useState } from 'react'
 import AiRequestFileDownloads from '@/components/AiRequestFileDownloads'
-import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
 import { devMarker } from '@/lib/developer-mode-markers'
 import type { AppLocale } from '@/lib/locale-preference'
-import { collapsiblePanelMotion } from '@/lib/reduced-motion'
-import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
+import {
+  COLLAPSIBLE_REGION_CLIP_CLASS,
+  collapsiblePanelMotion,
+} from '@/lib/reduced-motion'
+import {
+  type AiRequestFileDestination,
+  importDestinationKindForMode,
+} from '@/lib/requirements/ai-request-files'
+import type { RequirementsImportMode } from '@/lib/requirements/import-service'
 
 interface RequirementsImportSupportPanelProps {
   /**
@@ -17,9 +23,9 @@ interface RequirementsImportSupportPanelProps {
    * `null` disables their buttons.
    */
   destination: AiRequestFileDestination | null
-  destinationKind: RequirementImportDestinationKind
   headingId: string
   locale: AppLocale
+  mode: RequirementsImportMode
   onDownloadError: (message: string) => void
   onDownloadImportInstruction: () => void
   onDownloadSchema: () => void
@@ -39,19 +45,13 @@ const STEP_TITLE =
 const HELP_TEXT = 'text-xs leading-relaxed'
 
 /**
- * Clips the section while its height animates. The horizontal padding, offset
- * by a negative margin, keeps the buttons' focus outlines visible.
- */
-const COLLAPSIBLE_CLIP = '-mx-1 overflow-hidden px-1'
-
-/**
  * The import dialog's support panel: a three-step guide for letting an
  * external AI assistant draft requirements, and a collapsed section with the
  * schema and import instruction for writing the whole prompt yourself.
  */
 export default function RequirementsImportSupportPanel({
   destination,
-  destinationKind,
+  mode,
   headingId,
   locale,
   onDownloadError,
@@ -127,7 +127,7 @@ export default function RequirementsImportSupportPanel({
         ))}
       </ol>
       <p className={HELP_TEXT}>
-        {destinationKind === 'requirements_specification'
+        {importDestinationKindForMode(mode) === 'requirements_specification'
           ? t('referenceDataFreshnessSpecification')
           : t('referenceDataFreshnessLibrary')}
       </p>
@@ -158,7 +158,7 @@ export default function RequirementsImportSupportPanel({
           <AnimatePresence initial={false}>
             {ownPromptOpen ? (
               <motion.div
-                className={COLLAPSIBLE_CLIP}
+                className={COLLAPSIBLE_REGION_CLIP_CLASS}
                 key="own-prompt"
                 {...collapsiblePanelMotion(shouldReduceMotion)}
               >
