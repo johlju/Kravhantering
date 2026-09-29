@@ -51,9 +51,9 @@ const HELP_TEXT = 'text-xs leading-relaxed'
  */
 export default function RequirementsImportSupportPanel({
   destination,
-  mode,
   headingId,
   locale,
+  mode,
   onDownloadError,
   onDownloadImportInstruction,
   onDownloadSchema,

@@ -3,10 +3,9 @@ import {
   getPromptMessage,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
-import type { AppLocale } from '@/lib/locale-preference'
+import { APP_LOCALES, type AppLocale } from '@/lib/locale-preference'
 import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
 
-const LOCALES = ['sv', 'en'] as const
 const DESTINATION_KINDS = [
   'requirements_library',
   'requirements_specification',
@@ -64,7 +63,7 @@ export function characterCount(text: string): number {
 export function aiRequestTemplateRulePartLengthRange(
   budget: RequirementImportBudget,
 ): { max: number; min: number } {
-  const lengths = LOCALES.flatMap(locale =>
+  const lengths = APP_LOCALES.flatMap(locale =>
     DESTINATION_KINDS.map(destinationKind =>
       characterCount(
         buildAiRequestTemplateRulePart({ budget, destinationKind, locale }),

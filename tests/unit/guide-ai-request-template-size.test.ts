@@ -4,7 +4,7 @@ import {
   getPromptMessage,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
-import type { AppLocale } from '@/lib/locale-preference'
+import { APP_LOCALES, type AppLocale } from '@/lib/locale-preference'
 import { DEFAULT_REQUIREMENT_IMPORT_BUDGET } from '@/lib/requirements/import-budget'
 import {
   aiRequestTemplateRulePartLengthRange,
@@ -14,7 +14,7 @@ import {
   PERSISTENT_INSTRUCTIONS_LIMIT,
 } from '@/scripts/guide/ai-request-template-size'
 
-const CASES = (['sv', 'en'] as const).flatMap(locale =>
+const CASES = APP_LOCALES.flatMap(locale =>
   (
     [
       'requirements_library',
