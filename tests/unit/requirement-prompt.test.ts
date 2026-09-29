@@ -727,11 +727,23 @@ function repairPromptErrors(
   requirementCount: number,
   limit = REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
 ): FormattedRequirementImportJsonErrors {
-  const { problem } = readRequirementImportJson(
+  return repairPromptErrorsFor(
+    locale,
     JSON.stringify({
       requirements: Array.from({ length: requirementCount }, () => ({})),
       schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
     }),
+    limit,
+  )
+}
+
+function repairPromptErrorsFor(
+  locale: 'en' | 'sv',
+  importText: string,
+  limit = REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
+): FormattedRequirementImportJsonErrors {
+  const { problem } = readRequirementImportJson(
+    importText,
     buildRequirementsImportPayloadSchema(DEFAULT_REQUIREMENT_IMPORT_BUDGET),
   )
   if (!problem) throw new Error('Expected an import JSON problem')
@@ -781,24 +793,6 @@ describe('buildRequirementImportRepairPrompt', () => {
 
       expect(externalRules).toBe(buildRequirementImportRepairRules(locale))
       expect(internalRules).toBe(buildRequirementImportRepairRules(locale))
-    },
-  )
-
-  it.each([
-    ['en', /\bsingle code block\b/u],
-    ['sv', /\bett enda kodblock\b/u],
-  ] as const)(
-    'asks for the whole JSON in a single code block in the first repair rule for %s',
-    (locale, codeBlockPattern) => {
-      const [firstRule] = getPromptMessageList(locale, [
-        'ai',
-        'prompt',
-        'repair',
-        'rules',
-      ])
-
-      expect(firstRule).toMatch(codeBlockPattern)
-      expect(firstRule).not.toMatch(/response format|svarsformat/iu)
     },
   )
 
@@ -896,4 +890,38 @@ describe('buildRequirementImportRepairPrompt', () => {
       }
     },
   )
+
+  // The AI assistant already has its own response in the conversation, so
+  // the prompt never echoes the pasted JSON back.
+  const PASTED_CONTENT = 'Pasted requirement text 4711'
+  it.each([
+    [
+      'a syntax error',
+      `{\n  "requirements": [{ "description": "${PASTED_CONTENT}" }],,\n}`,
+    ],
+    [
+      'a wrong schemaVersion',
+      JSON.stringify({
+        requirements: [{ description: PASTED_CONTENT }],
+        schemaVersion: 'requirement-import.v1',
+      }),
+    ],
+    [
+      'schema errors',
+      JSON.stringify({
+        requirements: [{ description: PASTED_CONTENT, typeId: 'one' }],
+        schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+      }),
+    ],
+  ])('leaves out the pasted JSON for %s', (_label, importText) => {
+    for (const locale of PROMPT_LOCALES) {
+      const errors = repairPromptErrorsFor(locale, importText)
+      const prompt = buildRequirementImportRepairPrompt({ errors, locale })
+
+      expect(errors.errors.length).toBeGreaterThan(0)
+      expect(prompt).not.toContain(PASTED_CONTENT)
+      expect(prompt).not.toContain('"requirements"')
+      expect(prompt).not.toContain('```')
+    }
+  })
 })

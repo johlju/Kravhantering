@@ -30,6 +30,8 @@ interface CopyResult {
 
 const MARKER_CONTEXT = 'requirements import'
 
+const STATUS_TEXT = 'text-secondary-800 dark:text-secondary-200'
+
 /**
  * Loads the prompt module on demand. It bundles the prompt texts for both
  * locales, so the import dialog only loads it when a repair prompt is needed.
@@ -120,10 +122,14 @@ export default function RequirementsImportRepairPrompt({
           : t('repairPrompt.copy')}
       </button>
       {builder.status === 'failed' ? (
-        <p role="status">{t('repairPrompt.unavailable')}</p>
+        <p className={STATUS_TEXT} role="status">
+          {t('repairPrompt.unavailable')}
+        </p>
       ) : null}
       {copyStatus ? (
-        <p role="status">{t(`repairPrompt.${copyStatus}`)}</p>
+        <p className={STATUS_TEXT} role="status">
+          {t(`repairPrompt.${copyStatus}`)}
+        </p>
       ) : null}
       {prompt === null ? null : (
         <div

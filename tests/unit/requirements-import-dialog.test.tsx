@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RequirementsImportDialog, {
   type ImportPreviewResponse,
 } from '@/components/RequirementsImportDialog'
+import { getPromptMessage } from '@/lib/ai/requirement-prompt'
 import { apiFetch } from '@/lib/http/api-fetch'
 import {
   DEFAULT_REQUIREMENT_IMPORT_BUDGET,
@@ -301,6 +302,11 @@ function specificationLocalPreviewResponse(): Response {
   } as Response
 }
 
+const originalClipboard = Object.getOwnPropertyDescriptor(
+  globalThis.navigator,
+  'clipboard',
+)
+
 function mockClipboardWriteText() {
   const writeText = vi.fn<(text: string) => Promise<void>>()
   Object.defineProperty(globalThis.navigator, 'clipboard', {
@@ -308,6 +314,14 @@ function mockClipboardWriteText() {
     value: { writeText },
   })
   return writeText
+}
+
+function restoreClipboard() {
+  if (originalClipboard) {
+    Object.defineProperty(globalThis.navigator, 'clipboard', originalClipboard)
+  } else {
+    Reflect.deleteProperty(globalThis.navigator, 'clipboard')
+  }
 }
 
 describe('RequirementsImportDialog', () => {
@@ -322,6 +336,7 @@ describe('RequirementsImportDialog', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    restoreClipboard()
   })
 
   it('shows the external AI step guide in a named support panel after the import inputs', async () => {
@@ -2627,7 +2642,12 @@ describe('RequirementsImportDialog', () => {
         .split('\n')
         .filter(line => line.startsWith('- $.requirements[')),
     ).toHaveLength(50)
-    expect(schemaPrompt.endsWith('\n\nand 7 more errors')).toBe(true)
+    expect(schemaPrompt.split('\n\n').at(-1)).toBe(
+      getPromptMessage('en', ['ai', 'prompt', 'repair', 'moreErrors']).replace(
+        '{count}',
+        '7',
+      ),
+    )
 
     fireEvent.change(rawJson, { target: { value: 'I need the file first.' } })
     expect(screen.getByRole('status')).toHaveTextContent(
