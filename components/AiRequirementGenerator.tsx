@@ -1700,7 +1700,7 @@ export default function AiRequirementGenerator({
                   {repairPromptText ? (
                     <div className="rounded-lg border border-secondary-200 p-4 dark:border-secondary-800">
                       <h3 className="text-sm font-semibold text-secondary-900 dark:text-secondary-50">
-                        {t('repairPrompt')}
+                        {t('repairRequestContent')}
                       </h3>
                       <textarea
                         className={`${textareaRows4ClassName} mt-2 font-mono text-xs`}

@@ -710,6 +710,11 @@ describe('AiRequirementGenerator', () => {
     ).toBeVisible()
     expect(screen.getByText('Raw result')).toBeVisible()
     expect(screen.getByText('{"requirements":')).toBeInTheDocument()
+    // The internal repair step is a repair request, not a repair prompt; the
+    // repair prompt is the text for an external AI assistant.
+    expect(
+      screen.getByRole('heading', { name: 'repairRequestContent' }),
+    ).toBeVisible()
 
     const repairButton = screen.getByRole('button', { name: 'repair' })
     expect(repairButton).toBeDisabled()

@@ -3151,7 +3151,7 @@
       },
       "actions": {
         "heading": "Actions",
-        "body": "Use the toolbar to create a new requirement, export the visible list to CSV, or create the Requirements List as PDF. Select rows with the checkboxes when you want to add multiple requirements to a requirements specification or generate a combined review report."
+        "body": "Use the toolbar to create a new requirement, export the visible list to CSV, or create the Requirements List as PDF. Select rows with the checkboxes when you want to add multiple requirements to a requirements specification or generate a combined review report. Import requirements opens the import dialog. There, the step guide Let an external AI draft requirements shows how to get the AI request template and the reference data file for your AI assistant and add its response. If the response does not validate, you copy a repair prompt into the same conversation. If you write the whole prompt yourself, the schema and import instruction are under Own prompt or validation."
       }
     },
     "newRequirement": {
@@ -3253,7 +3253,7 @@
       },
       "export": {
         "heading": "More actions",
-        "body": "Use New unique requirement to create a requirement that belongs only to this specification. More actions contains AI-assisted authoring, import, reports, and exports when they are available."
+        "body": "Use New unique requirement to create a requirement that belongs only to this specification. More actions contains AI-assisted authoring, import, reports, and exports when they are available. Import unique requirements has the same step guide for an external AI assistant as the requirements library, with a reference data file for this specification."
       },
       "specificationItemStatus": {
         "heading": "Usage status",
@@ -3787,7 +3787,7 @@
     "rawResultTab": "Raw result",
     "repair": "Repair JSON",
     "repairFailed": "Repair failed",
-    "repairPrompt": "Suggested repair prompt",
+    "repairRequestContent": "Repair request content",
     "repairPromptLead": "Send the invalid JSON and validation errors to the selected model and ask it to preserve the content while fixing the import format.",
     "repairSuccess": "The generated JSON was repaired.",
     "repairing": "Repairing…",

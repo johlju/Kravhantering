@@ -3151,7 +3151,7 @@
       },
       "actions": {
         "heading": "Åtgärder",
-        "body": "Använd verktygsfältet för att skapa ett nytt krav, exportera den synliga listan till CSV eller skapa Kravlista som PDF. Markera rader med kryssrutorna när du vill lägga till flera krav i ett kravunderlag eller skapa en kombinerad granskningsrapport."
+        "body": "Använd verktygsfältet för att skapa ett nytt krav, exportera den synliga listan till CSV eller skapa Kravlista som PDF. Markera rader med kryssrutorna när du vill lägga till flera krav i ett kravunderlag eller skapa en kombinerad granskningsrapport. Importera krav öppnar importdialogen. Där visar stegguiden Låt en extern AI ta fram krav hur du hämtar AI-anropsmallen och referensdatafilen till din AI-assistent och lägger in svaret. Om svaret inte validerar kopierar du en reparationsprompt till samma samtal. Den som skriver hela prompten själv hittar schema och importinstruktion under Egen prompt eller validering."
       }
     },
     "newRequirement": {
@@ -3253,7 +3253,7 @@
       },
       "export": {
         "heading": "Fler åtgärder",
-        "body": "Använd Nytt unikt krav för att skapa ett krav som bara hör till detta kravunderlag. Fler åtgärder innehåller AI-assisterat författande, import, rapporter och exporter när de är tillgängliga."
+        "body": "Använd Nytt unikt krav för att skapa ett krav som bara hör till detta kravunderlag. Fler åtgärder innehåller AI-assisterat författande, import, rapporter och exporter när de är tillgängliga. Importera unika krav har samma stegguide för en extern AI-assistent som kravbiblioteket, med en referensdatafil för det här kravunderlaget."
       },
       "specificationItemStatus": {
         "heading": "Användningsstatus",
@@ -3787,7 +3787,7 @@
     "rawResultTab": "Råresultat",
     "repair": "Reparera JSON",
     "repairFailed": "Reparationen misslyckades",
-    "repairPrompt": "Föreslagen reparationsprompt",
+    "repairRequestContent": "Innehåll i reparationsanropet",
     "repairPromptLead": "Skicka ogiltig JSON och valideringsfel till vald modell och be den bevara innehållet men rätta importformatet.",
     "repairSuccess": "Den genererade JSON:en reparerades.",
     "repairing": "Reparerar…",
