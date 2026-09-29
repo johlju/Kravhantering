@@ -2358,6 +2358,7 @@ export default function RequirementsImportDialog({
                       <p
                         className="mt-2 flex items-start gap-2 text-sm text-secondary-700 dark:text-secondary-300"
                         id={`${titleId}-json-extracted`}
+                        role="status"
                         {...devMarker({
                           context: 'requirements import',
                           name: 'status banner',
@@ -2394,6 +2395,7 @@ export default function RequirementsImportDialog({
                   {importJsonErrors && importJsonErrors.errors.length > 0 ? (
                     <div
                       className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
+                      role="status"
                       {...devMarker({
                         context: 'requirements import',
                         name: 'status banner',

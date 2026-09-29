@@ -2387,13 +2387,12 @@ describe('RequirementsImportDialog', () => {
         }),
       },
     })
-    expect(screen.getByRole('status')).toHaveTextContent(
+    const [schemaBlocker, schemaErrors] = screen.getAllByRole('status')
+    expect(schemaBlocker).toHaveTextContent(
       'JSON följer inte importschemat. Rätta 1 fel:',
     )
     expect(
-      within(screen.getByRole('list', { name: 'Valideringsfel' })).getByRole(
-        'listitem',
-      ),
+      within(schemaErrors).getByRole('list', { name: 'Valideringsfel' }),
     ).toHaveTextContent('$.requirements: Måste innehålla minst 1 post.')
     fireEvent.change(rawJson, { target: { value: validImportPayload() } })
     expect(screen.getByRole('status')).toHaveTextContent('Välj kravområde')
@@ -2444,6 +2443,7 @@ describe('RequirementsImportDialog', () => {
     )
     expect(rawJson).toHaveValue(response)
     expect(rawJson).toHaveAccessibleDescription(notice.textContent ?? '')
+    expect(screen.getByRole('status')).toBe(notice.closest('p'))
     expect(notice.closest('p')).toHaveAttribute(
       'data-developer-mode-value',
       'code block extracted',
@@ -2528,10 +2528,12 @@ describe('RequirementsImportDialog', () => {
       },
     })
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
+    const [blocker, errorStatus] = await screen.findAllByRole('status')
+    expect(blocker).toHaveTextContent(
       'The JSON does not match the import schema. Fix 23 errors:',
     )
-    const errorList = screen.getByRole('list', {
+    // The error list is its own status region, so its updates are announced.
+    const errorList = within(errorStatus).getByRole('list', {
       name: 'Validation errors',
     })
     const items = within(errorList).getAllByRole('listitem')
