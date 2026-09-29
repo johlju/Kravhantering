@@ -1221,6 +1221,9 @@ granskningen laddas, och `Förhandsgranska krav` är inaktiverad för fall 1–6
    oförändrad. Fältet innehåller fortfarande hela svaret, och granskningen
    laddas med kravet från kodblocket.
 
+Skärmläsare meddelar meddelandet under fältet, fellistan och informationen om
+att JSON togs ut ur kodblocket som status utan att fokus flyttas.
+
 `Kopiera reparationsprompt` finns bara för fall 4–6. Förhandsvisningen är
 stängd tills du öppnar den och visar reparationsprompten för det aktuella
 felet:

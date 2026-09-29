@@ -630,6 +630,13 @@ test.describe('Requirements import', () => {
         'JSON följer inte importschemat. Rätta 23 fel:',
       )
       const errors = dialog.getByRole('list', { name: 'Valideringsfel' })
+      // `has` matches relative to each status, so the inner locator starts
+      // at the page.
+      await expect(
+        dialog.getByRole('status').filter({
+          has: page.getByRole('list', { name: 'Valideringsfel' }),
+        }),
+      ).toHaveCount(1)
       await expect(errors.getByRole('listitem')).toHaveCount(20)
       await expect(errors.getByRole('listitem').first()).toHaveText(
         '$.requirements[0].description: Fältet saknas men är obligatoriskt.',
@@ -664,9 +671,10 @@ test.describe('Requirements import', () => {
       const response = `Här är kraven:\n\n\`\`\`json\n${validJson}\n\`\`\`\n\nSäg till om du vill ha fler.`
       await rawJson.fill(response)
       await expect(
-        dialog.getByText(
-          'JSON togs ut ur kodblocket i svaret. Texten i fältet är oförändrad.',
-        ),
+        dialog.getByRole('status').filter({
+          hasText:
+            'JSON togs ut ur kodblocket i svaret. Texten i fältet är oförändrad.',
+        }),
       ).toHaveCount(1)
       await expect(rawJson).toHaveValue(response)
       await expect(previewButton).toBeEnabled()
