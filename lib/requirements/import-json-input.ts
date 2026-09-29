@@ -503,10 +503,12 @@ function readSource<T>(
 /**
  * Reads requirement import JSON from the text in the import dialog.
  *
- * - Valid JSON is validated against `schema` after a `schemaVersion` check.
- * - Text that is not valid JSON and does not start with `{` may contain
- *   exactly one fenced code block, whose content is then read instead. The
- *   caller's text is never changed.
+ * - Text that starts with `{` is validated against `schema` after a
+ *   `schemaVersion` check.
+ * - Other text may contain exactly one fenced code block, whose content is
+ *   then read instead. Without a code block the text holds no JSON, also when
+ *   it parses as an array, a string or a number. The caller's text is never
+ *   changed.
  * - Several code blocks are rejected without extracting any of them.
  */
 export function readRequirementImportJson<T>(
@@ -518,12 +520,9 @@ export function readRequirementImportJson<T>(
   if (direct.text.startsWith('{')) {
     return readSource(text, direct, schema, false)
   }
-  try {
-    JSON.parse(direct.text)
-    return readSource(text, direct, schema, false)
-  } catch {
-    // Not JSON on its own. Look for a code block below.
-  }
+  // Text that does not start with `{` is never a JSON object, even when it
+  // parses as an array, a string or a number. Such a reply holds no import
+  // JSON unless it contains a code block.
   const blocks = findCodeBlocks(text)
   if (blocks.length > 1) {
     return invalidImportJson({
