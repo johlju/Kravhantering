@@ -3,7 +3,10 @@ import {
   DEFAULT_REQUIREMENT_IMPORT_BUDGET,
   type RequirementImportBudget,
 } from '@/lib/requirements/import-budget'
-import { buildRequirementsImportJsonSchema } from '@/lib/requirements/import-schema'
+import {
+  buildRequirementsImportJsonSchema,
+  REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+} from '@/lib/requirements/import-schema'
 import enMessages from '@/messages/en.json'
 import svMessages from '@/messages/sv.json'
 
@@ -117,20 +120,202 @@ export function getPromptMessageList(
   return current
 }
 
-export const DEFAULT_INSTRUCTION_EN = getPromptMessage('en', [
-  'ai',
-  'prompt',
-  'defaultInstruction',
-])
+/**
+ * One prompt rule. A string is a top-level rule; an array holds the sub-rules
+ * of the preceding top-level rule.
+ */
+export type PromptRuleItem = string | readonly string[]
 
-export const DEFAULT_INSTRUCTION_SV = getPromptMessage('sv', [
-  'ai',
-  'prompt',
-  'defaultInstruction',
-])
+export function getPromptRuleList(
+  locale: 'en' | 'sv',
+  path: readonly string[],
+): PromptRuleItem[] {
+  const current = getPromptValue(locale, path)
 
-export function getDefaultInstruction(locale: 'en' | 'sv' = 'en'): string {
-  return locale === 'sv' ? DEFAULT_INSTRUCTION_SV : DEFAULT_INSTRUCTION_EN
+  if (
+    !Array.isArray(current) ||
+    current.some(
+      item =>
+        typeof item !== 'string' &&
+        !(
+          Array.isArray(item) &&
+          item.length > 0 &&
+          item.every(subItem => typeof subItem === 'string')
+        ),
+    )
+  ) {
+    throw invalidPromptLocalizationTypeError(
+      locale,
+      path,
+      'Array<string | string[]>',
+      current,
+    )
+  }
+
+  return current as PromptRuleItem[]
+}
+
+const PROMPT_PLACEHOLDER_PATTERN = /\{([A-Za-z][A-Za-z0-9]*)\}/gu
+
+/**
+ * Replaces `{name}` value placeholders in a prompt text. Prompt texts are not
+ * read through next-intl formatting, so every placeholder must have a value.
+ */
+function fillPromptPlaceholders(
+  text: string,
+  values: Readonly<Record<string, number | string>>,
+): string {
+  return text.replace(PROMPT_PLACEHOLDER_PATTERN, (_match, name: string) => {
+    const value = values[name]
+    if (value === undefined) {
+      throw new Error(`Missing prompt placeholder value for {${name}}`)
+    }
+    return String(value)
+  })
+}
+
+function renderPromptRuleList(
+  items: readonly PromptRuleItem[],
+  values: Readonly<Record<string, number | string>> = {},
+): string {
+  return items
+    .flatMap(item =>
+      typeof item === 'string'
+        ? [`- ${fillPromptPlaceholders(item, values)}`]
+        : item.map(subItem => `  - ${fillPromptPlaceholders(subItem, values)}`),
+    )
+    .join('\n')
+}
+
+export type RequirementImportDestinationKind =
+  | 'requirements_library'
+  | 'requirements_specification'
+
+/** Shared part: the channel-neutral role intro. */
+export function buildRequirementImportRoleIntro(
+  locale: 'en' | 'sv' = 'en',
+): string {
+  return getPromptMessage(locale, ['ai', 'prompt', 'system', 'intro'])
+}
+
+/** Shared part: the rule order that ranks schema, instructions, and input. */
+export function buildRequirementImportRuleOrder(
+  locale: 'en' | 'sv' = 'en',
+): string {
+  const intro = getPromptMessage(locale, ['ai', 'prompt', 'ruleOrder', 'intro'])
+  const items = getPromptMessageList(locale, [
+    'ai',
+    'prompt',
+    'ruleOrder',
+    'items',
+  ])
+
+  return [intro, ...items.map((item, index) => `${index + 1}. ${item}`)].join(
+    '\n',
+  )
+}
+
+/** Shared part: the app-owned AI instruction (author rules for candidates). */
+export function buildRequirementImportAiInstruction(
+  locale: 'en' | 'sv' = 'en',
+): string {
+  return getPromptMessage(locale, ['ai', 'prompt', 'defaultInstruction'])
+}
+
+export interface BuildRequirementImportInstructionRulesOptions {
+  budget: RequirementImportBudget
+  destinationKind: RequirementImportDestinationKind
+  locale: 'en' | 'sv'
+}
+
+function importInstructionMessage(locale: 'en' | 'sv', key: string): string {
+  return getPromptMessage(locale, ['ai', 'prompt', 'importInstruction', key])
+}
+
+function importInstructionRules(
+  locale: 'en' | 'sv',
+  key: string,
+): PromptRuleItem[] {
+  return getPromptRuleList(locale, ['ai', 'prompt', 'importInstruction', key])
+}
+
+/**
+ * Shared part: the import instruction rules for one destination kind, without
+ * the title and without reference data.
+ */
+export function buildRequirementImportInstructionRules({
+  budget,
+  destinationKind,
+  locale,
+}: BuildRequirementImportInstructionRulesOptions): string {
+  const values = {
+    maxJsonDepth: budget.maxJsonDepth,
+    maxNestedItems: budget.maxNestedItems,
+    maxProposedNeedsReferences: budget.maxProposedNeedsReferences,
+    maxProposedNormReferences: budget.maxProposedNormReferences,
+    maxRows: budget.maxRows,
+    schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+  }
+  const needsReferenceRules = importInstructionRules(
+    locale,
+    destinationKind === 'requirements_specification'
+      ? 'specificationNeedsReferences'
+      : 'libraryNeedsReferences',
+  )
+
+  return [
+    `## ${importInstructionMessage(locale, 'rulesHeading')}`,
+    renderPromptRuleList(importInstructionRules(locale, 'rules'), values),
+    `## ${importInstructionMessage(locale, 'conflictsHeading')}`,
+    renderPromptRuleList(importInstructionRules(locale, 'conflicts'), values),
+    `## ${importInstructionMessage(locale, 'fieldSelectionHeading')}`,
+    renderPromptRuleList(
+      [
+        ...importInstructionRules(locale, 'fieldSelection'),
+        ...needsReferenceRules,
+        ...importInstructionRules(locale, 'fieldSelectionAfterNeedsReferences'),
+      ],
+      values,
+    ),
+  ].join('\n\n')
+}
+
+export interface BuildRequirementImportInstructionOptions
+  extends BuildRequirementImportInstructionRulesOptions {
+  /** The destination's reference data object, built on the server. */
+  referenceData: Readonly<Record<string, unknown>>
+}
+
+/**
+ * The standalone import instruction: title, the shared rules part, and the
+ * indented reference data. Used by the internal AI request, REST, and MCP.
+ */
+export function buildRequirementImportInstruction({
+  referenceData,
+  ...ruleOptions
+}: BuildRequirementImportInstructionOptions): string {
+  const { locale } = ruleOptions
+
+  return [
+    `# ${importInstructionMessage(locale, 'title')}`,
+    '',
+    buildRequirementImportInstructionRules(ruleOptions),
+    '',
+    `## ${importInstructionMessage(locale, 'referenceDataHeading')}`,
+    '',
+    '```json',
+    JSON.stringify(referenceData, null, 2),
+    '```',
+  ].join('\n')
+}
+
+/** Shared part: the repair rules as a Markdown list. */
+export function buildRequirementImportRepairRules(
+  locale: 'en' | 'sv' = 'en',
+): string {
+  return renderPromptRuleList(
+    getPromptMessageList(locale, ['ai', 'prompt', 'repair', 'rules']),
+  )
 }
 
 function isJsonSchemaRecord(value: unknown): value is Record<string, unknown> {
@@ -232,16 +417,14 @@ export function buildRequirementImportResponseFormatSchema(
   ) as Record<string, unknown>
 }
 
+/**
+ * Internal composer: the system message of the internal AI request, the repair
+ * request, and the AI request explanation dialog.
+ */
 export function buildRequirementImportSystemPrompt(
   importInstruction: string,
   locale: 'en' | 'sv' = 'en',
 ): string {
-  const systemIntro = getPromptMessage(locale, [
-    'ai',
-    'prompt',
-    'system',
-    'intro',
-  ])
   const importHeading = getPromptMessage(locale, [
     'ai',
     'prompt',
@@ -249,11 +432,12 @@ export function buildRequirementImportSystemPrompt(
     'importContractHeading',
   ])
 
-  return `${systemIntro}
-
-${importHeading}
-
-${importInstruction}`
+  return [
+    buildRequirementImportRoleIntro(locale),
+    buildRequirementImportRuleOrder(locale),
+    importHeading,
+    importInstruction,
+  ].join('\n\n')
 }
 
 export interface BuildRequirementImportUserPromptOptions {
@@ -283,7 +467,7 @@ export function buildRequirementImportUserPrompt({
     'prompt',
     'instructionHeader',
   ])
-  const instruction = getDefaultInstruction(locale)
+  const instruction = buildRequirementImportAiInstruction(locale)
 
   return [
     `${instructionHeader}
@@ -313,12 +497,6 @@ export function buildRequirementImportRepairPrompt({
   locale = 'en',
 }: BuildRequirementImportRepairPromptOptions): string {
   const intro = getPromptMessage(locale, ['ai', 'prompt', 'repair', 'intro'])
-  const rules = getPromptMessageList(locale, [
-    'ai',
-    'prompt',
-    'repair',
-    'rules',
-  ])
   const errorHeading = getPromptMessage(locale, [
     'ai',
     'prompt',
@@ -350,7 +528,7 @@ export function buildRequirementImportRepairPrompt({
 
   return `${intro}
 
-${rules.map(rule => `- ${rule}`).join('\n')}
+${buildRequirementImportRepairRules(locale)}
 
 ${errorHeading}
 ${formattedErrors}

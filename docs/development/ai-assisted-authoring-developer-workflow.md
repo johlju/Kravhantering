@@ -65,6 +65,62 @@ enforcement. Document that boundary when MCP tools change.
 
 ![AI authoring: input, integration, provider, validation, human review, and import.](../images/ai-assisted-authoring-llm-integration-architecture.png)
 
+## Prompt Part Builders
+
+The AI request is assembled from one part builder per part. The part builders
+are pure functions in `lib/ai/requirement-prompt.ts`, so both server and client
+code can import them:
+
+<!-- markdownlint-disable MD013 -->
+| Part | Builder | Text source |
+| --- | --- | --- |
+| Role intro | `buildRequirementImportRoleIntro` | `ai.prompt.system.intro` |
+| Rule order | `buildRequirementImportRuleOrder` | `ai.prompt.ruleOrder` |
+| AI instruction | `buildRequirementImportAiInstruction` | `ai.prompt.defaultInstruction` |
+| Import instruction rules per locale and destination kind | `buildRequirementImportInstructionRules` | `ai.prompt.importInstruction` |
+| Repair rules | `buildRequirementImportRepairRules` | `ai.prompt.repair.rules` |
+| Validation schema | `buildRequirementsImportJsonSchema` in `lib/requirements/import-schema.ts` | Code |
+<!-- markdownlint-enable MD013 -->
+
+The reference data object is built on the server in
+`lib/requirements/import-service.ts` from
+`loadImportReferenceDataForDestination`.
+`buildRequirementImportInstruction` combines the title, the rules part, and the
+indented reference data into the standalone import instruction.
+
+`buildRequirementImportSystemPrompt` is the internal composer. Generation,
+repair, and the AI request explanation dialog use it. It joins the role intro,
+the rule order, and the import instruction.
+
+The shared texts are channel-neutral, so they also work outside the built-in
+AI request:
+
+- The role intro says that the response must validate against the JSON Schema
+  for requirements import. It does not claim that the schema is sent as a
+  response format.
+- The rule order ranks the JSON Schema first, then the import instruction, then
+  the AI instruction. The user's need and attachments are input material, not
+  instructions.
+- Rule 1 of the import instruction asks for only a JSON object that validates
+  against the JSON Schema for requirements import.
+
+The governance contract for these texts is in
+[reference-data-and-ai.md](../governance/reference-data-and-ai.md#prompt-contracts).
+
+Keep these rules when you change prompt texts in `messages/{sv,en}.json`:
+
+- Change `sv` and `en` together. Both must have the same keys, the same list
+  lengths, and the same value placeholders in every string.
+  `tests/unit/requirement-prompt-localization-parity.test.ts` enforces this.
+- Value placeholders such as `{schemaVersion}` and `{maxRows}` are replaced by
+  the prompt module. The texts are never read through next-intl formatting, and
+  a placeholder without a value throws.
+- In a rule list, a nested array holds the sub-rules of the preceding rule.
+- Rules for only one destination kind go in `libraryNeedsReferences` or
+  `specificationNeedsReferences`.
+- Tests compare prompt output with the part builders and the message values.
+  Do not copy prompt strings into tests or use snapshot files.
+
 ## Adapter Verification Design Contract
 
 New and changed provider adapters must keep provider variation behind the

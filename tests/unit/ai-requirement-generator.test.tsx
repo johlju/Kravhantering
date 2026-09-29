@@ -119,6 +119,7 @@ const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
 
 import AiRequirementGenerator from '@/components/AiRequirementGenerator'
+import { buildRequirementImportSystemPrompt } from '@/lib/ai/requirement-prompt'
 import type { ImportRequirementsPayload } from '@/lib/requirements/import-schema'
 
 const testAreas = [
@@ -732,13 +733,19 @@ describe('AiRequirementGenerator', () => {
 
     await userEvent.click(screen.getByText('Show exact text sent'))
 
+    const expectedSystemMessage = buildRequirementImportSystemPrompt(
+      '# Import instruction\n\nUse schemaVersion.',
+      'en',
+    )
     await waitFor(() => {
       expect(
-        screen.getByText(/experienced requirements engineer/),
+        screen.getByText(
+          (_content, element) =>
+            element?.tagName === 'PRE' &&
+            element.textContent === expectedSystemMessage,
+        ),
       ).toBeInTheDocument()
     })
-    expect(screen.getAllByText(/Import instruction/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Use schemaVersion/).length).toBeGreaterThan(0)
     expect(
       mockFetch.mock.calls.some(([url]) =>
         String(url).startsWith('/api/requirements/import/schema'),

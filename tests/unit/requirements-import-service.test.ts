@@ -5,6 +5,11 @@ import {
   MCP_IMPORT_MAX_CREATIONS_PER_WINDOW_DEFAULT,
   MCP_IMPORT_MAX_RESERVED_BYTES_DEFAULT,
 } from '@/lib/ai/generation-availability'
+import {
+  buildRequirementImportInstruction,
+  buildRequirementImportInstructionRules,
+  getPromptMessage,
+} from '@/lib/ai/requirement-prompt'
 import { DEFAULT_APPLICATION_SETTINGS } from '@/lib/application-settings'
 import { getMcpRuntimeSettings } from '@/lib/dal/ai-settings'
 import {
@@ -45,7 +50,10 @@ import {
 import { MCP_IMPORT_VALIDATION_MINIMUM_RESERVED_BYTES } from '@/lib/mcp/import-validation-storage'
 import type { RequestContext } from '@/lib/requirements/auth'
 import { forbiddenError } from '@/lib/requirements/errors'
-import { DEFAULT_REQUIREMENT_IMPORT_BUDGET } from '@/lib/requirements/import-budget'
+import {
+  DEFAULT_REQUIREMENT_IMPORT_BUDGET,
+  requirementImportBudgetFromSettings,
+} from '@/lib/requirements/import-budget'
 import { serializeRequirementImportCandidates } from '@/lib/requirements/import-candidates'
 import {
   buildRequirementsImportJsonSchema,
@@ -130,7 +138,7 @@ vi.mock('@/lib/dal/requirements-specifications', () => ({
 
 function extractReferenceData(instruction: string) {
   const referenceDataJson = instruction.match(
-    /## Reference Data\n\n```json\n([\s\S]*?)\n```/,
+    /\n## [^\n]+\n\n```json\n([\s\S]*?)\n```$/,
   )?.[1]
   expect(referenceDataJson).toBeTruthy()
   return JSON.parse(referenceDataJson ?? '{}') as {
@@ -2046,98 +2054,53 @@ describe('requirements import service', () => {
     )
   })
 
-  it('builds the import instruction without EN DASH in JSON values', async () => {
-    const authorization = { assertAuthorized: vi.fn() }
-    const workflow = createRequirementsImportWorkflow({
-      authorization,
-      db: {} as never,
-    })
+  it.each([
+    ['en', { kind: 'requirements_library' }],
+    ['en', { kind: 'requirements_specification', specificationId: 8 }],
+    ['sv', { kind: 'requirements_library' }],
+    ['sv', { kind: 'requirements_specification', specificationId: 8 }],
+  ] as const)(
+    'builds the %s import instruction for %o from the shared prompt parts',
+    async (locale, destination) => {
+      const authorization = { assertAuthorized: vi.fn() }
+      const workflow = createRequirementsImportWorkflow({
+        authorization,
+        db: {} as never,
+      })
+      const budget = requirementImportBudgetFromSettings(
+        DEFAULT_APPLICATION_SETTINGS,
+      )
 
-    const instructionEn = await workflow.buildImportInstruction('en', {
-      kind: 'requirements_library',
-    })
-    const instructionSv = await workflow.buildImportInstruction('sv', {
-      kind: 'requirements_library',
-    })
+      const instruction = await workflow.buildImportInstruction(
+        locale,
+        destination,
+      )
 
-    expect(instructionEn).toContain('Do not use U+2013 EN DASH in JSON values')
-    expect(instructionSv).toContain('Använd inte U+2013 EN DASH i JSON-värden')
-    expect(instructionEn).toContain(
-      "Write free-text values, such as `description`, `acceptanceCriteria`, `verificationMethod`, proposed norm references, and proposed needs references, in English unless the user's input explicitly requests another language.",
-    )
-    expect(instructionSv).toContain(
-      'Skriv fria textvärden, till exempel `description`, `acceptanceCriteria`, `verificationMethod`, föreslagna normreferenser och föreslagna behovsreferenser på svenska om inte användarens indata uttryckligen anger ett annat språk.',
-    )
-    expect(instructionEn).toContain(
-      '- Choose `typeId` before `qualityCharacteristicId`:\n  - Use the functional type for required system behavior or capability',
-    )
-    expect(instructionSv).toContain(
-      '- Välj `typeId` innan `qualityCharacteristicId`:\n  - Använd funktionell typ för krav på systembeteende eller förmåga',
-    )
-    expect(instructionEn).toContain(
-      "Choose `qualityCharacteristicId` only from the selected type's `qualityCharacteristics`",
-    )
-    expect(instructionSv).toContain(
-      'Välj bara `qualityCharacteristicId` från den valda typens `qualityCharacteristics`',
-    )
-    expect(instructionEn).toContain(
-      'Use `acceptanceCriteria` for the conditions and fulfillment level that must be met',
-    )
-    expect(instructionSv).toContain(
-      'Använd `acceptanceCriteria` för villkor och nivå av uppfyllelse som måste vara uppnådda',
-    )
-    expect(instructionEn).toContain(
-      'Use ID fields from the reference data: `categoryId`, `typeId`, `qualityCharacteristicId`, `priorityLevelId`, and `requirementPackageIds`',
-    )
-    expect(instructionEn).toContain('## Conflicts')
-    expect(instructionSv).toContain('## Konflikter')
-    expect(instructionEn).toContain(
-      "Follow the user's input for factual need, scope, requirement content, and factual values.",
-    )
-    expect(instructionSv).toContain(
-      'Följ användarens indata för sakligt behov, omfattning, kravinnehåll och sakvärden.',
-    )
-    expect(instructionEn).toContain(
-      'Follow JSON Schema for allowed fields, data types, required fields, and result format.',
-    )
-    expect(instructionSv).toContain(
-      'Följ JSON Schema för tillåtna fält, datatyper, obligatoriska fält och resultatformat.',
-    )
-    expect(instructionEn).toContain(
-      'Follow reference data for requirement structure, classification, IDs, and labels.',
-    )
-    expect(instructionSv).toContain(
-      'Följ referensdata för kravstruktur, klassificering, ID:n och benämningar.',
-    )
-    expect(instructionEn).toContain(
-      'Choose `priorityLevelId` from `priorityLevels[].id`; compare the requirement with `priorityLevels[].assessmentCriteria` and choose the best match',
-    )
-    expect(instructionSv).toContain(
-      'Välj `priorityLevelId` från `priorityLevels[].id`; jämför kravet med `priorityLevels[].assessmentCriteria` och välj bästa matchning',
-    )
-    expect(instructionEn).toContain(
-      'Return only a JSON object that follows the separate JSON Schema sent as the mandatory response format',
-    )
-    expect(instructionSv).toContain(
-      'Returnera endast ett JSON-objekt som följer det separata JSON Schema som skickas som tvingande svarsformat',
-    )
-    expect(instructionEn).not.toContain('## JSON Schema')
-    expect(instructionSv).not.toContain('## JSON Schema')
-    expect(instructionEn).not.toContain('"$schema"')
-    expect(instructionSv).not.toContain('"$schema"')
-    expect(instructionEn).toContain(
-      `Set the top-level \`schemaVersion\` field to \`${REQUIREMENTS_IMPORT_SCHEMA_VERSION}\``,
-    )
-    expect(instructionSv).toContain(
-      `Sätt toppnivåfältet \`schemaVersion\` till \`${REQUIREMENTS_IMPORT_SCHEMA_VERSION}\``,
-    )
-    expect(instructionSv).toContain(
-      'Använd `normReferenceIds` med värden från `normReferences[].normReferenceId`',
-    )
-    expect(instructionEn).toContain(
-      'Set `verifiable` to `true` when the requirement version has objective conditions that can be checked; then provide `verificationMethod`',
-    )
-  })
+      expect(instruction).toContain(
+        buildRequirementImportInstructionRules({
+          budget,
+          destinationKind: destination.kind,
+          locale,
+        }),
+      )
+      expect(instruction).toBe(
+        buildRequirementImportInstruction({
+          budget,
+          destinationKind: destination.kind,
+          locale,
+          referenceData: extractReferenceData(instruction),
+        }),
+      )
+      expect(instruction).toContain(
+        `\n## ${getPromptMessage(locale, [
+          'ai',
+          'prompt',
+          'importInstruction',
+          'referenceDataHeading',
+        ])}\n\n\`\`\`json\n{\n  "categories": [],`,
+      )
+    },
+  )
 
   it('keeps requirement package guidance in the shared import instruction', async () => {
     vi.mocked(listRequirementPackages).mockResolvedValue([
