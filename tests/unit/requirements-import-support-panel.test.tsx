@@ -1,10 +1,19 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { createTranslator, NextIntlClientProvider } from 'next-intl'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RequirementsImportSupportPanel from '@/components/RequirementsImportSupportPanel'
 import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 import type { RequirementsImportMode } from '@/lib/requirements/import-service'
 import svMessages from '@/messages/sv.json'
+
+const downloadBlobMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/browser-download', () => ({ downloadBlob: downloadBlobMock }))
 
 const t = createTranslator({
   locale: 'sv',
@@ -25,6 +34,7 @@ function renderPanel({
     onDownloadError: vi.fn(),
     onDownloadImportInstruction: vi.fn(),
     onDownloadSchema: vi.fn(),
+    onDownloadStart: vi.fn(),
   }
   render(
     <NextIntlClientProvider locale="sv" messages={svMessages}>
@@ -91,6 +101,22 @@ describe('RequirementsImportSupportPanel', () => {
     expect(
       screen.getByText(t('referenceDataFreshnessSpecification')),
     ).toBeInTheDocument()
+  })
+
+  it('reports the start of an AI request file download', async () => {
+    global.fetch = vi.fn(
+      async () =>
+        ({ blob: async () => new Blob(['file']), ok: true }) as Response,
+    )
+    const handlers = renderPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: t('downloadTemplate') }))
+
+    await waitFor(() =>
+      expect(handlers.onDownloadStart).toHaveBeenCalledTimes(1),
+    )
+    await waitFor(() => expect(downloadBlobMock).toHaveBeenCalledTimes(1))
+    expect(handlers.onDownloadError).not.toHaveBeenCalled()
   })
 
   it('keeps "Own prompt or validation" collapsed until it is toggled', () => {

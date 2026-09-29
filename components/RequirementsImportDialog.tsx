@@ -2470,6 +2470,7 @@ export default function RequirementsImportDialog({
                       void downloadArtifact('instruction')
                     }
                     onDownloadSchema={() => void downloadArtifact('schema')}
+                    onDownloadStart={() => setErrorMessage(null)}
                   />
                 </aside>
               </div>

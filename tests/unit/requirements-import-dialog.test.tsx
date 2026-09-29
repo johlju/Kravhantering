@@ -17,6 +17,7 @@ import {
   type RequirementImportBudget,
 } from '@/lib/requirements/import-budget'
 import { buildRequirementsImportJsonSchema } from '@/lib/requirements/import-schema'
+import svMessages from '@/messages/sv.json'
 
 const confirmMock = vi.hoisted(() => vi.fn())
 const downloadBlobMock = vi.hoisted(() => vi.fn())
@@ -443,6 +444,46 @@ describe('RequirementsImportDialog', () => {
     expect(
       screen.queryByRole('button', { name: 'Ladda ner schema' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('clears an earlier AI request file download error when a new download starts', async () => {
+    const downloadFailed = svMessages.requirementsImportAiRequest.downloadFailed
+    let templateRequests = 0
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/requirements/import/ai-request-template')) {
+        templateRequests += 1
+        return templateRequests === 1
+          ? ({
+              headers: new Headers(),
+              ok: false,
+              text: async () => '',
+            } as Response)
+          : ({ blob: async () => new Blob(['file']), ok: true } as Response)
+      }
+      return { json: async () => ({}), ok: true } as Response
+    })
+
+    render(
+      <RequirementsImportDialog
+        areas={[{ id: 1, name: 'Informationssäkerhet' }]}
+        mode="library"
+        onClose={vi.fn()}
+        open
+      />,
+    )
+    const template = await screen.findByRole('button', {
+      name: 'AI-anropsmall',
+    })
+
+    fireEvent.click(template)
+    expect(await screen.findByText(downloadFailed)).toBeInTheDocument()
+
+    await waitFor(() => expect(template).toBeEnabled())
+    fireEvent.click(template)
+
+    await waitFor(() => expect(downloadBlobMock).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(downloadFailed)).not.toBeInTheDocument()
   })
 
   it.each([

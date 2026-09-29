@@ -29,6 +29,8 @@ interface RequirementsImportSupportPanelProps {
   onDownloadError: (message: string) => void
   onDownloadImportInstruction: () => void
   onDownloadSchema: () => void
+  /** Called when an AI request file download starts, before its request. */
+  onDownloadStart?: () => void
 }
 
 const MARKER_CONTEXT = 'requirements import'
@@ -57,6 +59,7 @@ export default function RequirementsImportSupportPanel({
   onDownloadError,
   onDownloadImportInstruction,
   onDownloadSchema,
+  onDownloadStart,
 }: RequirementsImportSupportPanelProps) {
   const t = useTranslations('requirementsImportAiRequest')
   const idPrefix = useId()
@@ -72,6 +75,7 @@ export default function RequirementsImportSupportPanel({
           destination={destination}
           locale={locale}
           markerContext={MARKER_CONTEXT}
+          onDownloadStart={onDownloadStart}
           onError={onDownloadError}
         />
       ),
