@@ -13,10 +13,11 @@
 5. [Kravunderlag](#kravunderlag)
 6. [Avsteg](#avsteg)
 7. [Import av krav](#import-av-krav)
-8. [Förbättringsförslag](#förbättringsförslag)
-9. [Administrationscenter](#administrationscenter)
-10. [Taxonomi och statusar](#taxonomi-och-statusar)
-11. [Rapporter](#rapporter)
+8. [Låt en extern AI ta fram krav](#låt-en-extern-ai-ta-fram-krav)
+9. [Förbättringsförslag](#förbättringsförslag)
+10. [Administrationscenter](#administrationscenter)
+11. [Taxonomi och statusar](#taxonomi-och-statusar)
+12. [Rapporter](#rapporter)
 
 ## Översikt och navigering
 
@@ -651,6 +652,117 @@ hanteras som unika krav i underlaget och kan senare granskas, följas upp eller
 lyftas till kravbiblioteket vid behov.
 
 ![Importerade unika krav i kravunderlag](images/057-import-kravunderlag-resultat.png)
+
+## Låt en extern AI ta fram krav
+
+Du kan låta en extern AI-assistent ta fram kravkandidater och sedan importera
+svaret. Stegguiden **"Låt en extern AI ta fram krav"** finns i importdialogen,
+både när du importerar krav till kravbiblioteket och när du importerar unika
+krav till ett kravunderlag. AI-anropsmallen ger AI-assistenten samma regler som
+det inbyggda AI-assisterade författandet. Kravhantering validerar svaret när du
+lägger in det, och du granskar kraven innan något sparas.
+
+Använd bara en AI-assistent som din organisation har godkänt för informationen i
+behovet och i referensdatan.
+
+### Stegguiden i importdialogen
+
+Välj **"Importera krav"** i kravbiblioteket, eller **"Fler åtgärder"** och
+**"Importera unika krav"** i ett kravunderlag. Stegguiden har tre steg:
+
+1. **Hämta två filer.** Välj **"AI-anropsmall"** och **"Referensdatafil"**.
+   Filnamnet står under varje knapp, till exempel
+   `kravimport-ai-anropsmall-kravbibliotek.md` och
+   `kravimport-referensdata-kravbibliotek.json`. För ett kravunderlag slutar
+   referensdatafilens namn med kravunderlagets id.
+2. **Fråga AI-assistenten.** Skriv behovet i chatten hos din AI-assistent,
+   klistra in hela AI-anropsmallen och bifoga referensdatafilen eller lägg till
+   den som kontext. Mallen har inga platshållare, så du ändrar ingenting i den.
+   Skriv hur många krav du vill ha om du vill styra antalet; annars föreslår
+   AI-assistenten 8 krav.
+3. **Lägg in svaret här.** Spara JSON-svaret som fil och släpp den i fältet,
+   eller klistra in svaret. Om svaret har förklarande text och ett enda kodblock
+   tar dialogen ut JSON ur kodblocket och lämnar texten i fältet orörd. Välj
+   sedan **"Förhandsgranska krav"** och granska kraven som vid annan import.
+
+Filerna följer gränssnittets språk. Om behovet eller referensdatafilen saknas,
+eller om filen hör till en annan destinationstyp eller schemaversion, svarar
+AI-assistenten kort utan JSON och förklarar vad som saknas.
+
+![Stegguiden i importdialogen](images/058-extern-ai-stegguide.png)
+
+### Referensdatafilen och när du behöver en ny
+
+Referensdatafilen är en ögonblicksbild av importens referensdata för
+destinationen: kategorier, kravtyper med kvalitetsegenskaper, prioriteter,
+normreferenser och kravpaket. För ett kravunderlag innehåller filen också
+kravunderlagets behovsreferenser. AI-assistenten använder referensdatan för att
+välja befintliga värden i stället för att gissa.
+
+Filen speglar destinationen när du hämtar den. Hämta en ny referensdatafil om
+normreferenser eller kravpaket har ändrats, och för ett kravunderlag även om
+behovsreferenserna har ändrats. En referensdatafil för ett kravunderlag gäller
+bara det kravunderlaget. Om Kravhantering får ett nytt importformat hämtar du
+både mallen och referensdatafilen igen, eftersom de ska ha samma
+`schemaVersion`.
+
+### Om svaret inte kan läsas in — reparationsprompten
+
+Dialogen kontrollerar svaret innan granskningen laddas och visar vad som är fel
+under fältet:
+
+- **Ingen JSON:** läs AI-assistentens svar. Behovet eller referensdatafilen kan
+  saknas.
+- **Avkortat svar:** be om färre krav per förfrågan.
+- **Flera kodblock:** klistra in bara JSON eller ett svar med ett enda kodblock.
+- **Syntaxfel, fel `schemaVersion` eller schemafel:** dialogen visar felen med
+  JSON-sökväg, högst 20 åt gången, och knappen **"Kopiera reparationsprompt"**.
+
+Klistra in reparationsprompten i samma samtal med AI-assistenten och lägg in det
+nya svaret i fältet. Prompten innehåller reparationsreglerna och felen, men
+ingen JSON och inget schema, eftersom AI-assistenten redan har dem i samtalet.
+Öppna **"Förhandsvisa reparationsprompt"** om du vill läsa texten innan du
+kopierar den. Fel och varningar på enskilda rader i granskningen rättar du i
+granskningen som vid annan import.
+
+### Egen prompt eller validering
+
+Den infällda sektionen **"Egen prompt eller validering"** under stegguiden är
+stängd från början. Där finns **"Ladda ner schema"** och **"Ladda ner
+importinstruktion"**. Filerna innehåller bara formatregler och referensdata,
+inte AI-anropsmallens roll, regelordning, kontroller eller AI-instruktion.
+Använd dem när du skriver hela prompten själv, till exempel för en egen agent,
+eller när du validerar importfiler i ett eget verktyg. Kravhantering validerar
+filen vid import på samma sätt oavsett hur den har tagits fram.
+
+### Fortsätt från AI-assisterat författande
+
+I AI-assisterat författande öppnar **"Så byggs AI-anropet"** en förklaring av
+det inbyggda AI-anropet. Sista sektionen, **"Fortsätt i en extern
+AI-assistent"**, har samma två knappar och filnamn som stegguidens första steg,
+för samma destination och språk. Lägg sedan in svaret i importdialogen.
+
+### Tips för olika AI-assistenter
+
+- **Microsoft 365 Copilot Chat:** skriv behovet, klistra in hela AI-anropsmallen
+  i samma meddelande och bifoga referensdatafilen. Om AI-assistenten svarar att
+  referensdatafilen saknas, bifoga den igen i samma samtal.
+- **GitHub Copilot Chat i Visual Studio Code:** spara båda filerna i arbetsytan
+  och lägg till dem som kontext i chatten, till exempel genom att dra filerna
+  till chatten. Skriv sedan behovet. Be gärna AI-assistenten spara JSON-svaret
+  som fil, så att du kan släppa filen i importdialogen.
+- **ChatGPT:** använd bara i undantagsfall och bara om din organisation tillåter
+  det för informationen. Flödet är detsamma: klistra in mallen och bifoga
+  referensdatafilen.
+
+Om du ofta tar fram krav kan du spara mallens regeldel i beständiga
+instruktioner, till exempel i fältet Instructions för en Microsoft 365-agent,
+som rymmer högst 8 000 tecken. Regeldelen är mallen utan avsnittet "JSON Schema
+för kravimport", alltså utan schemarubriken, texten om utdatakontraktet och
+`json`-kodblocket. Den är cirka 5 800–7 700 tecken beroende på språk och
+destination. Hämta schemat med **"Ladda ner schema"** och lägg till det som
+kunskapskälla eller bifoga det i samtalet. Bifoga referensdatafilen i varje
+samtal. Byt ut instruktionerna när Kravhantering får ett nytt importformat.
 
 ## Förbättringsförslag
 

@@ -123,6 +123,14 @@ These tests stop the composers from drifting apart:
 - `tests/unit/requirements-import-service.test.ts` checks that the reference
   data file and the import instruction carry deep-equal reference data.
 
+The user guide tells users that the template without its schema section fits
+in the persistent instructions of a Microsoft 365 agent, which hold at most
+8,000 characters. The guide generator states the size range with
+`scripts/guide/ai-request-template-size.ts`, and
+`tests/unit/guide-ai-request-template-size.test.ts` fails when a prompt text
+change makes that part longer than the limit. Then shorten the text or change
+the tip in `scripts/guide/generate-guide.ts`.
+
 The shared texts are channel-neutral, so they also work outside the built-in
 AI request:
 

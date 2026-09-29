@@ -24,6 +24,13 @@ import {
   type Route,
   test,
 } from '@playwright/test'
+import { DEFAULT_REQUIREMENT_CANDIDATE_COUNT } from '@/lib/ai/requirement-prompt'
+import { DEFAULT_REQUIREMENT_IMPORT_BUDGET } from '@/lib/requirements/import-budget'
+import {
+  aiRequestTemplateRulePartLengthRange,
+  formatApproximateCharacterCount,
+  PERSISTENT_INSTRUCTIONS_LIMIT,
+} from './ai-request-template-size'
 
 // ─── Lokalisering ──────────────────────────────────────────────────────────
 
@@ -693,7 +700,7 @@ async function snap(
   name: string,
   heading: string,
   description: string,
-  options: { fullPage?: boolean; selector?: string } = {},
+  options: { fullPage?: boolean; locator?: Locator; selector?: string } = {},
 ): Promise<void> {
   // Wait for any in-flight data fetches to finish before screenshotting
   await page
@@ -715,12 +722,18 @@ async function snap(
     seq,
     name,
     selector: options.selector,
-    fullPage: options.selector ? undefined : (options.fullPage ?? true),
+    fullPage:
+      options.selector || options.locator
+        ? undefined
+        : (options.fullPage ?? true),
     url: compactUrl(page.url()),
   })
   try {
-    if (options.selector) {
-      await page.locator(options.selector).screenshot({
+    const target =
+      options.locator ??
+      (options.selector ? page.locator(options.selector) : null)
+    if (target) {
+      await target.screenshot({
         path: filepath,
         animations: 'disabled',
       })
@@ -885,6 +898,9 @@ function wrapProse(text: string, width = 80): string {
       out.push(line)
       continue
     }
+    // Indent continuation lines of a list item under the item's text
+    const listMarker = /^(?:[-*]|\d+\.) /.exec(line)?.[0] ?? ''
+    const continuationIndent = ' '.repeat(listMarker.length)
     const words = line.split(' ')
     let current = ''
     for (const word of words) {
@@ -894,7 +910,7 @@ function wrapProse(text: string, width = 80): string {
         current += ` ${word}`
       } else {
         out.push(current)
-        current = word
+        current = `${continuationIndent}${word}`
       }
     }
     if (current !== '') out.push(current)
@@ -2491,6 +2507,117 @@ test.describe('Kravhantering — Guidegenerering', () => {
         { fullPage: false },
       )
     })
+
+    // ── Sektion 7b: Låt en extern AI ta fram krav ─────────────────────────
+    const aiRequest = (key: string) => t(`requirementsImportAiRequest.${key}`)
+    currentSection = aiRequest('guideTitle')
+    setSectionIntro(
+      `Du kan låta en extern AI-assistent ta fram kravkandidater och sedan importera svaret. Stegguiden **"${aiRequest('guideTitle')}"** finns i importdialogen, både när du importerar krav till kravbiblioteket och när du importerar unika krav till ett kravunderlag. AI-anropsmallen ger AI-assistenten samma regler som det inbyggda AI-assisterade författandet. Kravhantering validerar svaret när du lägger in det, och du granskar kraven innan något sparas.\n\nAnvänd bara en AI-assistent som din organisation har godkänt för informationen i behovet och i referensdatan.`,
+    )
+
+    await guideStep(
+      page,
+      'Låt en extern AI ta fram krav — stegguide',
+      async () => {
+        await guideGoto(page, '/sv/requirements')
+        await expect(
+          page.locator('[data-sticky-table-header="true"]'),
+        ).toBeVisible({ timeout: 10_000 })
+
+        await page
+          .getByRole('button', { name: 'Importera krav' })
+          .first()
+          .click()
+        const dialog = dialogWithHeading(page, 'Importera krav')
+        await expect(dialog).toBeVisible({ timeout: 5_000 })
+        const stepGuide = dialog.getByRole('complementary', {
+          name: aiRequest('guideTitle'),
+        })
+        await expect(stepGuide).toBeVisible({ timeout: 5_000 })
+        for (const stepTitle of ['step1Title', 'step2Title', 'step3Title']) {
+          await expect(
+            stepGuide.getByText(aiRequest(stepTitle), { exact: true }),
+          ).toBeVisible()
+        }
+        await expect(
+          stepGuide.getByRole('button', {
+            exact: true,
+            name: aiRequest('downloadTemplate'),
+          }),
+        ).toBeEnabled()
+        await expect(
+          stepGuide.getByText('kravimport-ai-anropsmall-kravbibliotek.md'),
+        ).toBeVisible()
+        await expect(
+          stepGuide.getByRole('button', { name: aiRequest('ownPromptToggle') }),
+        ).toHaveAttribute('aria-expanded', 'false')
+
+        await snap(
+          page,
+          'extern-ai-stegguide',
+          'Stegguiden i importdialogen',
+          [
+            `Välj **"Importera krav"** i kravbiblioteket, eller **"Fler åtgärder"** och **"Importera unika krav"** i ett kravunderlag. Stegguiden har tre steg:`,
+            '',
+            `1. **${aiRequest('step1Title')}.** Välj **"${aiRequest('downloadTemplate')}"** och **"${aiRequest('downloadReferenceData')}"**. Filnamnet står under varje knapp, till exempel \`kravimport-ai-anropsmall-kravbibliotek.md\` och \`kravimport-referensdata-kravbibliotek.json\`. För ett kravunderlag slutar referensdatafilens namn med kravunderlagets id.`,
+            `2. **${aiRequest('step2Title')}.** Skriv behovet i chatten hos din AI-assistent, klistra in hela AI-anropsmallen och bifoga referensdatafilen eller lägg till den som kontext. Mallen har inga platshållare, så du ändrar ingenting i den. Skriv hur många krav du vill ha om du vill styra antalet; annars föreslår AI-assistenten ${DEFAULT_REQUIREMENT_CANDIDATE_COUNT} krav.`,
+            `3. **${aiRequest('step3Title')}.** Spara JSON-svaret som fil och släpp den i fältet, eller klistra in svaret. Om svaret har förklarande text och ett enda kodblock tar dialogen ut JSON ur kodblocket och lämnar texten i fältet orörd. Välj sedan **"Förhandsgranska krav"** och granska kraven som vid annan import.`,
+            '',
+            'Filerna följer gränssnittets språk. Om behovet eller referensdatafilen saknas, eller om filen hör till en annan destinationstyp eller schemaversion, svarar AI-assistenten kort utan JSON och förklarar vad som saknas.',
+          ].join('\n'),
+          { locator: stepGuide },
+        )
+
+        await closeImportDialog(dialog)
+
+        textEntry(
+          'Referensdatafilen och när du behöver en ny',
+          [
+            'Referensdatafilen är en ögonblicksbild av importens referensdata för destinationen: kategorier, kravtyper med kvalitetsegenskaper, prioriteter, normreferenser och kravpaket. För ett kravunderlag innehåller filen också kravunderlagets behovsreferenser. AI-assistenten använder referensdatan för att välja befintliga värden i stället för att gissa.',
+            '',
+            'Filen speglar destinationen när du hämtar den. Hämta en ny referensdatafil om normreferenser eller kravpaket har ändrats, och för ett kravunderlag även om behovsreferenserna har ändrats. En referensdatafil för ett kravunderlag gäller bara det kravunderlaget. Om Kravhantering får ett nytt importformat hämtar du både mallen och referensdatafilen igen, eftersom de ska ha samma `schemaVersion`.',
+          ].join('\n'),
+        )
+
+        textEntry(
+          'Om svaret inte kan läsas in — reparationsprompten',
+          [
+            'Dialogen kontrollerar svaret innan granskningen laddas och visar vad som är fel under fältet:',
+            '',
+            '- **Ingen JSON:** läs AI-assistentens svar. Behovet eller referensdatafilen kan saknas.',
+            '- **Avkortat svar:** be om färre krav per förfrågan.',
+            '- **Flera kodblock:** klistra in bara JSON eller ett svar med ett enda kodblock.',
+            '- **Syntaxfel, fel `schemaVersion` eller schemafel:** dialogen visar felen med JSON-sökväg, högst 20 åt gången, och knappen **"Kopiera reparationsprompt"**.',
+            '',
+            'Klistra in reparationsprompten i samma samtal med AI-assistenten och lägg in det nya svaret i fältet. Prompten innehåller reparationsreglerna och felen, men ingen JSON och inget schema, eftersom AI-assistenten redan har dem i samtalet. Öppna **"Förhandsvisa reparationsprompt"** om du vill läsa texten innan du kopierar den. Fel och varningar på enskilda rader i granskningen rättar du i granskningen som vid annan import.',
+          ].join('\n'),
+        )
+
+        textEntry(
+          'Egen prompt eller validering',
+          `Den infällda sektionen **"${aiRequest('ownPromptToggle')}"** under stegguiden är stängd från början. Där finns **"${aiRequest('downloadSchema')}"** och **"${aiRequest('downloadImportInstruction')}"**. Filerna innehåller bara formatregler och referensdata, inte AI-anropsmallens roll, regelordning, kontroller eller AI-instruktion. Använd dem när du skriver hela prompten själv, till exempel för en egen agent, eller när du validerar importfiler i ett eget verktyg. Kravhantering validerar filen vid import på samma sätt oavsett hur den har tagits fram.`,
+        )
+
+        textEntry(
+          'Fortsätt från AI-assisterat författande',
+          `I AI-assisterat författande öppnar **"${t('ai.requestExplanation.title')}"** en förklaring av det inbyggda AI-anropet. Sista sektionen, **"${t('ai.requestExplanation.externalAssistantTitle')}"**, har samma två knappar och filnamn som stegguidens första steg, för samma destination och språk. Lägg sedan in svaret i importdialogen.`,
+        )
+
+        const rulePartRange = aiRequestTemplateRulePartLengthRange(
+          DEFAULT_REQUIREMENT_IMPORT_BUDGET,
+        )
+        textEntry(
+          'Tips för olika AI-assistenter',
+          [
+            '- **Microsoft 365 Copilot Chat:** skriv behovet, klistra in hela AI-anropsmallen i samma meddelande och bifoga referensdatafilen. Om AI-assistenten svarar att referensdatafilen saknas, bifoga den igen i samma samtal.',
+            '- **GitHub Copilot Chat i Visual Studio Code:** spara båda filerna i arbetsytan och lägg till dem som kontext i chatten, till exempel genom att dra filerna till chatten. Skriv sedan behovet. Be gärna AI-assistenten spara JSON-svaret som fil, så att du kan släppa filen i importdialogen.',
+            '- **ChatGPT:** använd bara i undantagsfall och bara om din organisation tillåter det för informationen. Flödet är detsamma: klistra in mallen och bifoga referensdatafilen.',
+            '',
+            `Om du ofta tar fram krav kan du spara mallens regeldel i beständiga instruktioner, till exempel i fältet Instructions för en Microsoft 365-agent, som rymmer högst ${formatApproximateCharacterCount(PERSISTENT_INSTRUCTIONS_LIMIT)} tecken. Regeldelen är mallen utan avsnittet "${t('ai.prompt.template.schemaHeading')}", alltså utan schemarubriken, texten om utdatakontraktet och \`json\`-kodblocket. Den är cirka ${formatApproximateCharacterCount(rulePartRange.min)}–${formatApproximateCharacterCount(rulePartRange.max)} tecken beroende på språk och destination. Hämta schemat med **"${aiRequest('downloadSchema')}"** och lägg till det som kunskapskälla eller bifoga det i samtalet. Bifoga referensdatafilen i varje samtal. Byt ut instruktionerna när Kravhantering får ett nytt importformat.`,
+          ].join('\n'),
+        )
+      },
+    )
 
     // ── Sektion 8: Förbättringsförslag ────────────────────────────────────
     currentSection = 'Förbättringsförslag'
