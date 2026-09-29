@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createTranslator, NextIntlClientProvider } from 'next-intl'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import AiRequestFileDownloads from '@/components/AiRequestFileDownloads'
 import {
   type AiRequestFileDestination,
@@ -33,9 +33,12 @@ function createDeferred<T>() {
 
 function renderDownloads(
   destination: AiRequestFileDestination | null,
-  callbacks: { onDownloadStart?: () => void; onError?: () => void } = {},
+  callbacks: {
+    onDownloadStart?: () => void
+    onError?: Mock<(message: string) => void>
+  } = {},
 ) {
-  const onError = callbacks.onError ?? vi.fn()
+  const onError = callbacks.onError ?? vi.fn<(message: string) => void>()
   render(
     <NextIntlClientProvider locale="sv" messages={svMessages}>
       <AiRequestFileDownloads

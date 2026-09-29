@@ -29,11 +29,13 @@ vi.mock('@/lib/ai/requirement-prompt', async importOriginal => {
   }
 })
 
-const t = createTranslator({
+const translate = createTranslator({
   locale: 'sv',
   messages: svMessages,
   namespace: 'requirementsImportJson',
 })
+const t = (key: string, values?: Record<string, number | string>) =>
+  translate(key as never, values as never)
 
 const WRONG_VERSION: ImportJsonProblem = {
   expectedVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
