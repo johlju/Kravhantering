@@ -1240,6 +1240,66 @@ Med engelskt gränssnitt visas samma meddelanden och knappen
 `Copy repair prompt` på engelska. Radfel och varningar i granskningen behåller
 sina befintliga åtgärder och ger ingen reparationsprompt.
 
+### REQ-17d: ta fram krav med en extern AI-assistent i riktiga klienter
+
+Detta testfall är manuellt endast enligt undantaget i issue `#1559`. Det har
+avsiktligt inget Playwright-scenario, eftersom det kräver riktiga externa
+AI-klienter som testmiljön inte kan styra.
+
+**Steg:** Använd Microsoft 365 Copilot Chat och GitHub Copilot Chat i Visual
+Studio Code med konton som organisationen har godkänt för testdata. Använd bara
+seedad testdata och skriv inga verkliga uppgifter i behoven.
+
+1. Logga in som `petra.specresp`, öppna ett kravunderlag där användaren är
+   ansvarig, välj `Fler åtgärder` och sedan `Importera unika krav`. Hämta
+   `AI-anropsmall` och `Referensdatafil` i steg 1 i stödytan `Låt en extern AI
+   ta fram krav`. Notera referensdatafilens storlek, antalet objekt i listorna
+   `normReferences`, `requirementPackages` och `needsReferences` och det sista
+   objektet i varje lista.
+1. Starta ett nytt samtal i Microsoft 365 Copilot Chat, bifoga bara
+   referensdatafilen och fråga hur många objekt listorna har och vilket det
+   sista objektet i varje lista är.
+1. Starta ett nytt samtal i Microsoft 365 Copilot Chat. Skriv ett behov med
+   ett begärt antal krav, till exempel
+   `Ta fram 5 krav för inloggning med e-legitimation.`, klistra in hela
+   AI-anropsmallen i samma meddelande och bifoga referensdatafilen. Notera om
+   hela mallen fram till slutmarkören ryms i meddelandet. Om den inte ryms,
+   notera hur många tecken som ryms.
+1. Spara svaret som JSON-fil, släpp filen i fältet `Import-JSON` i
+   importdialogen och välj `Förhandsgranska krav`. Om dialogen visar
+   `Kopiera reparationsprompt`, kopiera prompten, klistra in den i samma samtal
+   och lägg in det nya svaret.
+1. Starta ett nytt samtal i Microsoft 365 Copilot Chat. Klistra in
+   AI-anropsmallen och bifoga referensdatafilen utan att skriva något behov.
+   Öppna importdialogen på nytt och klistra in svaret i fältet `Import-JSON`.
+1. Starta ett nytt samtal i Microsoft 365 Copilot Chat. Skriv ett behov och
+   klistra in AI-anropsmallen utan att bifoga referensdatafilen.
+1. Logga in som `olle.areaowner`, öppna `/sv/requirements`, välj
+   `Importera krav` och ett kravområde och hämta båda filerna i steg 1. Spara
+   filerna i en arbetsyta i Visual Studio Code. Lägg till båda filerna som
+   kontext i GitHub Copilot Chat och skriv ett behov utan antal. Lägg in
+   svaret i importdialogen och välj `Förhandsgranska krav`.
+1. Starta ett nytt samtal i GitHub Copilot Chat, lägg till bara
+   AI-anropsmallen som kontext och skriv ett behov.
+
+**Förväntat resultat:** Microsoft 365 Copilot Chat anger samma antal och samma
+sista objekt som referensdatafilen, vilket visar att hela bilagan har lästs.
+Hela mallen fram till slutmarkören ryms i meddelandet, eller så är gränsen
+noterad. Svaren med behov och referensdatafil innehåller JSON som dialogen
+läser in, direkt eller ur ett enda kodblock, eventuellt efter en
+reparationsprompt i samma samtal. Granskningen visar det begärda antalet
+kravkandidater för Microsoft 365 Copilot Chat och 8 kravkandidater för GitHub
+Copilot Chat. Kategorier, kravtyper, kvalitetsegenskaper, prioriteter och
+kravpaket i svaren finns i referensdatafilen. Normreferenser och
+behovsreferenser finns i referensdatafilen eller är förslag på nya referenser.
+Utan behov och utan referensdatafil svarar AI-assistenten kort utan JSON och
+förklarar vad som saknas. När ett sådant svar klistras in visar dialogen
+`Svaret innehåller ingen JSON. Läs AI-assistentens svar. Behovet eller
+referensdatafilen kan saknas.` Anteckna klient, datum, filstorlek, antal tecken
+som ryms och varje avvikelse i testrapporten. Om en klient inte läser hela
+bilagan eller inte rymmer mallen, uppdatera tipsen i användarguidens avsnitt
+`Låt en extern AI ta fram krav`.
+
 ### REQ-18: exportera kravbiblioteket till CSV
 
 **Steg:** Använd en fixture med minst 205 publicerade krav och sätt CSV-gränsen
