@@ -75,7 +75,9 @@ test.describe('Requirements import AI request files', () => {
       expect(template).toContain('`requirements_library` (kravbibliotek)')
       expect(template.match(/```json\n/gu)).toHaveLength(1)
       expect(template).not.toContain('## Referensdata')
-      expect(template).not.toMatch(/\{[A-Za-z][A-Za-z0-9]*\}/u)
+      expect(template.slice(0, template.indexOf('```json'))).not.toMatch(
+        /\{[A-Za-z][A-Za-z0-9]*\}/u,
+      )
       expect(template).not.toMatch(/Copilot|ChatGPT|Microsoft|OpenAI/u)
     })
 

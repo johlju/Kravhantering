@@ -520,6 +520,58 @@ describe('RequirementsImportDialog', () => {
       'Template unavailable',
     )
     expect(downloadBlobMock).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'AI-anropsmall' })).toBeEnabled()
+  })
+
+  it('shows the downloading label and disables both files while a file downloads', async () => {
+    let resolveTemplate: (response: Response) => void = () => {}
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/requirements/import/ai-request-template')) {
+        return new Promise<Response>(resolve => {
+          resolveTemplate = resolve
+        })
+      }
+      return Promise.resolve({
+        json: async () =>
+          url.includes('/api/requirements/import/schema')
+            ? buildRequirementsImportJsonSchema('sv')
+            : {},
+        ok: true,
+      } as Response)
+    })
+
+    render(
+      <RequirementsImportDialog
+        areas={[{ id: 1, name: 'Informationssäkerhet' }]}
+        mode="library"
+        onClose={vi.fn()}
+        open
+      />,
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'AI-anropsmall' }),
+    )
+
+    expect(
+      await screen.findByRole('button', { name: 'Laddar ner…' }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Referensdatafil' }),
+    ).toBeDisabled()
+
+    const blob = new Blob(['template'])
+    resolveTemplate({ blob: async () => blob, ok: true } as Response)
+
+    await waitFor(() =>
+      expect(downloadBlobMock).toHaveBeenCalledWith(
+        blob,
+        'kravimport-ai-anropsmall-kravbibliotek.md',
+      ),
+    )
+    expect(
+      await screen.findByRole('button', { name: 'AI-anropsmall' }),
+    ).toBeEnabled()
   })
 
   it.each(['library', 'specification-local'] as const)(
@@ -2606,6 +2658,12 @@ describe('RequirementsImportDialog', () => {
     expect(
       within(support).getByRole('button', { name: 'AI-anropsmall' }),
     ).toBeDisabled()
+    expect(
+      within(support).getByRole('button', { name: 'AI-anropsmall' }),
+    ).toHaveAttribute(
+      'title',
+      'Filerna går ännu inte att hämta för den här importen.',
+    )
     expect(
       within(support).getByRole('button', { name: 'Referensdatafil' }),
     ).toBeDisabled()

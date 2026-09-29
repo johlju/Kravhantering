@@ -4002,7 +4002,9 @@
     "ownPromptHelp": "Schemat och importinstruktionen innehåller bara formatregler och referensdata, för dig som skriver hela prompten själv eller validerar i ett eget verktyg.",
     "downloadSchema": "Ladda ner schema",
     "downloadImportInstruction": "Ladda ner importinstruktion",
-    "downloadFailed": "Filen kunde inte laddas ner. Försök igen."
+    "downloadFailed": "Filen kunde inte laddas ner. Försök igen.",
+    "downloading": "Laddar ner…",
+    "filesUnavailable": "Filerna går ännu inte att hämta för den här importen."
   },
   "onDemandFeature": {
     "aiAuthoring": {

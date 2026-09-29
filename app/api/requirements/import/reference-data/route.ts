@@ -10,9 +10,7 @@ import { serializeRequirementImportReferenceDataFile } from '@/lib/requirements/
 import { createRequirementsRestRuntime } from '@/lib/requirements/server'
 
 const MISSING_REFERENCE_DATA_DESTINATION_MESSAGE =
-  'Reference data destination is required. ' +
-  'Use kind=requirements_library, or kind=requirements_specification with a ' +
-  'positive integer specificationId.'
+  'Reference data destination is required. Use kind=requirements_library.'
 
 const UNSUPPORTED_REFERENCE_DATA_DESTINATION_MESSAGE =
   'Reference data files are available for requirements_library destinations.'

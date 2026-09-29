@@ -1,5 +1,8 @@
 import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
-import { validationError } from '@/lib/requirements/errors'
+import {
+  type RequirementsServiceError,
+  validationError,
+} from '@/lib/requirements/errors'
 import type { McpImportInstructionDestinationRef } from '@/lib/requirements/import-service'
 
 /**
@@ -26,7 +29,7 @@ function positiveIntegerQueryValue(
   return Number.isInteger(value) && value > 0 ? value : null
 }
 
-function missingDestination(message: string) {
+function missingDestination(message: string): RequirementsServiceError {
   return validationError(message, {
     reason: MISSING_IMPORT_DESTINATION_REASON,
   })

@@ -98,6 +98,7 @@ export default function AiRequestFileDownloads({
               className={BUTTON_CLASS[file]}
               disabled={!destination || pendingFile !== null}
               onClick={() => void download(file)}
+              title={destination ? undefined : t('filesUnavailable')}
               type="button"
               {...devMarker({
                 context: markerContext,
@@ -113,7 +114,7 @@ export default function AiRequestFileDownloads({
               ) : (
                 <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
               )}
-              {t(labelKey)}
+              {pendingFile === file ? t('downloading') : t(labelKey)}
             </button>
             {fileName ? (
               <span

@@ -1157,9 +1157,9 @@ referensdata och kravimportbudget valideras på nytt.
 
 ### REQ-17b: hämta AI-anropsmall och referensdatafil för kravbiblioteket
 
-**Steg:** Öppna `/sv/requirements` och välj `Importera krav`. Välj
-`AI-anropsmall` och sedan `Referensdatafil` i steg 1 i stödytan `Låt en extern
-AI ta fram krav`. Öppna båda filerna.
+**Steg:** Logga in som `ada.admin`, öppna `/sv/requirements` och välj
+`Importera krav`. Välj `AI-anropsmall` och sedan `Referensdatafil` i steg 1
+i stödytan `Låt en extern AI ta fram krav`. Öppna båda filerna.
 
 **Förväntat resultat:** Filnamnet står under varje knapp och är detsamma som
 den nedladdade filens namn: `kravimport-ai-anropsmall-kravbibliotek.md` och
@@ -1167,7 +1167,8 @@ den nedladdade filens namn: `kravimport-ai-anropsmall-kravbibliotek.md` och
 med raden `===== BÖRJAN PÅ AI-ANROPSMALL FÖR KRAVIMPORT =====` och slutar med
 raden `===== SLUT PÅ AI-ANROPSMALL =====`. Den anger `schemaVersion` och
 destinationstypen `requirements_library`, har ett enda `json`-kodblock med
-schemat och innehåller varken referensdata, platshållare eller produktnamn.
+schemat och innehåller varken referensdata, platshållare eller namn på
+AI-assistenter.
 Referensdatafilen är minifierad JSON utan BOM med `generatedAt`,
 `schemaVersion`, `locale`, `destination` med `kind` `requirements_library`
 och `referenceData`. Under stegen står att referensdatafilen speglar
