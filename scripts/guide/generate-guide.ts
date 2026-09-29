@@ -158,6 +158,8 @@ const STATUS_REVIEW_ID = 2
 const STATUS_PUBLISHED_ID = 3
 const SPECIFICATION_ITEMS_PANEL_SELECTOR =
   '[data-specification-detail-list-panel="items"]'
+const AVAILABLE_REQUIREMENTS_PANEL_SELECTOR =
+  '[data-specification-detail-list-panel="available"]'
 const GUIDE_DEBUG = process.env.GUIDE_DEBUG !== '0'
 
 function loadImportSampleJson(): string | null {
@@ -1594,7 +1596,7 @@ test.describe('Kravhantering — Guidegenerering', () => {
         page,
         'kravunderlagslista',
         'Kravunderlagslista',
-        'Listan visar underlagens namn, ID, kravunderlagets livscykelstatus och genomförandeform. Klicka på ett underlag för att se dess detaljer.',
+        'Listan visar kravunderlagets namn och kod, ansvarigs namn och HSA-id samt klassningar. Klicka på namnet för att öppna underlaget och arbeta med dess krav. Underlagen sorteras i stigande namnordning enligt valt språk.\n\nKnapparna **Tabellvy**, **Tvåradersvy** och **Kortvy** bredvid rubriken väljer hur listan visas. Använd piltangenterna när vyvalet har fokus, eller Home och End för första respektive sista vyn. Sidan öppnar tabellvyn efter omladdning. Tillåtna åtgärder visas vid varje underlag; i kortvyn ligger de bredvid namnet.',
       )
     })
 
@@ -1611,7 +1613,7 @@ test.describe('Kravhantering — Guidegenerering', () => {
           page,
           'kravunderlagslista-sok',
           'Sökning bland kravunderlag',
-          'Filtrera kravunderlag genom att skriva i sökrutan. Listan uppdateras i realtid.',
+          'Filtrera kravunderlag genom att skriva hela eller delar av namnet i sökrutan. Sökningen följer med när du byter vy. Använd **Rensa sökning** för att visa hela listan igen. Frågetecknet i sökfältet öppnar hjälp om sökningen.',
         )
         await searchInput.clear()
         await page.waitForTimeout(300)
@@ -1661,69 +1663,67 @@ test.describe('Kravhantering — Guidegenerering', () => {
       await expect(leftRequirementPackageFilter).not.toContainText(
         'Kravpaketen kunde inte läsas in.',
       )
+      await expect(
+        page.getByText('Hämtar krav…').filter({ visible: true }),
+      ).toHaveCount(0, { timeout: 30_000 })
+      // Editing controls appear once the specification access has loaded.
+      await expect(
+        page.getByRole('button', { name: 'Nytt unikt krav' }),
+      ).toBeVisible({ timeout: 30_000 })
       await snap(
         page,
         'kravunderlagsdetalj',
         'Kravunderlagsdetalj — delad vy',
-        'Kravunderlagsdetaljsidan har en delad layout: **vänster panel** har tabbarna **Krav i underlaget** och **Behovsreferenser** i listans rubrik, och **höger panel** har tabbarna **Tillgängliga krav** och **Kravurvalsfrågor** i samma typ av sticky rubrik. I tabben för krav visas både bibliotekskrav och eventuella kravunderlagets unika krav med deras användningsstatus. Knapparna till höger i rubriken byts när du växlar tabb: tabben för krav har kravtabellens verktyg, medan tabben för behovsreferenser har åtgärden för att skapa en ny referens. Knappen **"Nytt unikt krav"** skapar krav som bara finns i detta kravunderlag. Knappen **"Fler åtgärder"** innehåller AI-assisterat författande, import, rapporter och exporter när de är tillgängliga. Klicka på en rad för att se kravets fullständiga detaljer.\n\nOvanför båda kravlistorna finns samma kompakta kravpaketsfilter som i kravbiblioteket. I **Tillgängliga krav** kan du välja bland alla aktiva kravpaket, även om ett paket inte ger någon träff med de övriga filtren. I **Krav i underlaget** visas bara aktiva paket som något bibliotekskrav i hela underlaget tillhör enligt kravets aktuella medlemskap. Unika krav i underlaget har inga kravpaket. Paketvalen är separata för vänster och höger lista och finns kvar när du byter tabb på detaljsidan.\n\nVänster katalog läses in oberoende av kravlistan i avgränsade omgångar. Om inläsningen tar längre än en sekund visas dess status direkt i kravpaketsfilterraden; kravlistan kan användas medan katalogen färdigställs.',
+        'Kravunderlagsdetaljsidan har en delad layout: **vänster panel** har tabbarna **Krav i underlaget**, **Behovsreferenser** och **RFI-frågelista** i listans rubrik, och **höger panel**, **Kravbibliotek**, har tabbarna **Tillgängliga krav** och **Kravurvalsfrågor** i samma typ av sticky rubrik. I tabben för krav visas både bibliotekskrav och eventuella kravunderlagets unika krav med deras användningsstatus. Knapparna till höger i rubriken byts när du växlar tabb: tabben för krav har kravtabellens verktyg, medan tabben för behovsreferenser har åtgärden för att skapa en ny referens. Knappen **"Nytt unikt krav"** skapar krav som bara finns i detta kravunderlag. Knappen **"Fler åtgärder"** innehåller AI-assisterat författande, import, rapporter och exporter när de är tillgängliga. Klicka på en rad för att se kravets fullständiga detaljer.\n\nAnvänd panelknappen till vänster om tabbarna för att fälla ihop hela panelen. Den andra panelen får mer utrymme. Öppna panelen igen med fliken vid kanten, eller med rubrikknappen på en smal skärm. Om du fäller ihop den enda öppna panelen öppnas den andra automatiskt. Sökning, filter, markeringar, aktiv tabb och osparad inmatning finns kvar under sidbesöket. Hopfällning sparar inga redigeringar.\n\nEtt tomt kravunderlag öppnar båda panelerna. Ett underlag med krav öppnar bara vänster panel. Din senaste layout för det senast besökta underlaget sparas i webbläsaren och används vid omladdning. Besöker du ett annat underlag ersätts minnet; när du återvänder används grundlayouten igen. Andra slags sidor raderar inte minnet. Layouten följer inte ditt konto till andra webbläsare eller enheter.\n\nNär båda panelerna står bredvid varandra kan du dra linjen mellan dem för att ändra deras bredder. Valet sparas för det senast besökta kravunderlaget på samma sätt som panelernas öppna eller hopfällda läge. Byten av tabb påverkar inte bredderna. Dubbelklicka på linjen för att återställa lika breda paneler.\n\nNär en panel blir smal visar linjen en uppmaning att fortsätta dra för att fälla ihop panelen. Dra vidare tills panelen tonas ned och släpp för att fälla ihop. Dra tillbaka för att avbryta hopfällningen, eller tryck Escape för att avbryta hela dragningen. När panelen öppnas igen återställs bredderna från före dragningen.\n\nMed tangentbord: fokusera linjen med Tab och använd vänster- eller högerpil. Håll Shift för större steg och tryck Enter för lika breda paneler. Piltangenterna fäller inte ihop paneler; använd panelknapparna för det.\n\nOvanför båda kravlistorna finns samma kompakta kravpaketsfilter som i kravbiblioteket. I **Tillgängliga krav** kan du välja bland alla aktiva kravpaket, även om ett paket inte ger någon träff med de övriga filtren. I **Krav i underlaget** visas bara aktiva paket som något bibliotekskrav i hela underlaget tillhör enligt kravets aktuella medlemskap. Unika krav i underlaget har inga kravpaket. Paketvalen är separata för vänster och höger lista och finns kvar när du byter tabb på detaljsidan.\n\nVänster katalog läses in oberoende av kravlistan i avgränsade omgångar. Om inläsningen tar längre än en sekund visas dess status direkt i kravpaketsfilterraden; kravlistan kan användas medan katalogen färdigställs.',
         { fullPage: false },
       )
     })
 
     await guideStep(page, 'Lägg till krav i underlag', async () => {
-      // The page has two tables side by side; right panel = second tbody.
-      const rightRows = page.locator('tbody').nth(1).locator('tr')
-      const hasRightRows = (await rightRows.count()) > 0
+      // A specification with requirements opens only the left panel, so
+      // open the library panel before selecting available requirements.
+      await page
+        .getByRole('button', { name: 'Öppna Kravbibliotek', exact: true })
+        .click()
+      const availablePanel = page.locator(AVAILABLE_REQUIREMENTS_PANEL_SELECTOR)
+      const firstRow = availablePanel.locator('tbody tr').first()
+      await expect(firstRow).toBeVisible({ timeout: 30_000 })
+      await firstRow.locator('input[type="checkbox"]').click()
+      await page.evaluate(() => (document.activeElement as HTMLElement)?.blur())
+      await page.waitForTimeout(300)
 
-      if (hasRightRows) {
-        // Click the checkbox cell of the first row to select it
-        const firstCheckbox = rightRows
-          .first()
-          .locator('input[type="checkbox"]')
-        if ((await firstCheckbox.count()) > 0) {
-          await firstCheckbox.click()
-        } else {
-          await rightRows
-            .first()
-            .evaluate((el: Element) => (el as HTMLElement).click())
-        }
-        await page.evaluate(() =>
-          (document.activeElement as HTMLElement)?.blur(),
-        )
-        await page.waitForTimeout(300)
+      await snap(
+        page,
+        'lagg-till-krav-valt',
+        'Välj krav att lägga till',
+        'Öppna den högra panelen **Kravbibliotek** med fliken vid kanten. Markera ett eller flera krav i tabben **Tillgängliga krav**. Knappen **"Lägg till valda (N)"** visas i panelens rubrik när minst ett krav är markerat.',
+        { fullPage: false },
+      )
 
-        await snap(
-          page,
-          'lagg-till-krav-valt',
-          'Välj krav att lägga till',
-          'Markera ett eller flera krav i den högra panelen "Tillgängliga krav". Knappen **"Lägg till valda (N)"** visas i panelens rubrik när minst ett krav är markerat.',
-          { fullPage: false },
-        )
+      await page.getByRole('button', { name: /Lägg till valda/i }).click()
+      await expect(page.locator('[role="dialog"]')).toBeVisible({
+        timeout: 5_000,
+      })
 
-        const addBtn = page.getByRole('button', { name: /Lägg till valda/i })
-        if ((await addBtn.count()) > 0) {
-          await addBtn.click()
-          await expect(page.locator('[role="dialog"]')).toBeVisible({
-            timeout: 5_000,
-          })
+      await snap(
+        page,
+        'lagg-till-krav-modal',
+        'Lägg till krav — behovsreferens',
+        'När du lägger till krav i ett kravunderlag kan du koppla en **behovsreferens** till kravtillämpningen. En behovsreferens är en fritext som förklarar varför kravet behövs i just det här kravunderlaget och kan ge stöd för när kravet ska verifieras — t.ex. ett ärendenummer, ett mål eller ett avsnitt i ett kravunderlag. Du kan välja en befintlig referens eller skriva en ny med valfri beskrivning. I efter hand hanteras registret i tabben **Behovsreferenser**, medan kolumnen **Behovsreferens** används för att välja eller rensa befintliga referenser i tabellen.',
+        { fullPage: false },
+      )
 
-          await snap(
-            page,
-            'lagg-till-krav-modal',
-            'Lägg till krav — behovsreferens',
-            'När du lägger till krav i ett kravunderlag kan du koppla en **behovsreferens** till kravtillämpningen. En behovsreferens är en fritext som förklarar varför kravet behövs i just det här kravunderlaget och kan ge stöd för när kravet ska verifieras — t.ex. ett ärendenummer, ett mål eller ett avsnitt i ett kravunderlag. Du kan välja en befintlig referens eller skriva en ny med valfri beskrivning. I efter hand hanteras registret i tabben **Behovsreferenser**, medan kolumnen **Behovsreferens** används för att välja eller rensa befintliga referenser i tabellen.',
-            { fullPage: false },
-          )
+      await page.getByRole('button', { name: 'Avbryt' }).last().click()
+      await expect(page.locator('[role="dialog"]')).toBeHidden({
+        timeout: 5_000,
+      })
 
-          const cancelAddBtn = page
-            .getByRole('button', { name: 'Avbryt' })
-            .last()
-          await cancelAddBtn.click()
-          await expect(page.locator('[role="dialog"]')).toBeHidden({
-            timeout: 5_000,
-          })
-        }
-      }
+      // The layout is remembered for the specification; restore the default
+      // so later screenshots of it show only the left panel.
+      await page
+        .getByRole('button', { name: 'Fäll ihop Kravbibliotek', exact: true })
+        .click()
+      await expect(availablePanel).toBeHidden({ timeout: 5_000 })
     })
 
     await guideStep(page, 'Redigera kravunderlag', async () => {
@@ -1815,6 +1815,10 @@ test.describe('Kravhantering — Guidegenerering', () => {
         'Krav expanderat i underlagskontext',
         '**Steg 2 — Expandera ett krav.** Klicka på en rad i listan för att öppna kravets detaljpanel. Om inget aktivt avsteg finns visas knappen **"Begär ett avsteg"** — klicka på den för att starta avstegsprocessen.',
         { fullPage: false },
+      )
+      textEntry(
+        'Ta bort krav ur kravunderlaget',
+        'Bibliotekskrav och lokala krav kan bara tas bort med användningsstatus **Inkluderad**. Regeln gäller enskilda krav och markerade krav, både utan avtal och i redigerbara avtalsutkast. Alla markerade krav måste vara Inkluderad. Skrivbehörighet, avtalslåsning och avstegsregler gäller samtidigt. Ett väntande avsteg måste avslutas först; ett gällande godkännande kräver ansvarigs beslut om avstegsavslut. Den inaktiverade åtgärden förklarar hindret vid hovring eller tangentbordsfokus. Borttagningen sparas, men själva bibliotekskravet finns kvar i kravbiblioteket. Om status ändras i en annan session kan servern avvisa borttagningen; ladda då om och kontrollera statusen.',
       )
 
       await guideStep(page, 'Avstegsformulär — öppet', async () => {
