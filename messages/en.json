@@ -3892,8 +3892,9 @@
       },
       "repair": {
         "intro": "Repair the JSON so it can be imported through the requirement import flow.",
+        "externalIntro": "Your JSON response did not validate against the import contract. Correct the errors below.",
         "rules": [
-          "Return only corrected JSON matching the import schema.",
+          "Return only the complete corrected JSON object in a single code block, so that it validates against the JSON Schema for requirements import.",
           "Preserve the requirement content as far as possible.",
           "Change only what is needed to make the JSON valid and importable.",
           "Treat every validation path as the exact field location. A field with the same name at another level does not satisfy a missing-property error.",
@@ -3903,7 +3904,9 @@
         ],
         "errorHeading": "Validation errors",
         "jsonHeading": "Broken JSON",
-        "defaultValidationError": "JSON did not validate against the import contract."
+        "defaultValidationError": "JSON did not validate against the import contract.",
+        "moreErrorsOne": "and 1 more error",
+        "moreErrors": "and {count} more errors"
       },
       "template": {
         "startMarker": "===== START OF AI REQUEST TEMPLATE FOR REQUIREMENTS IMPORT =====",
@@ -3995,7 +3998,7 @@
     "step2Title": "Ask the AI assistant",
     "step2Body": "Write the need in your AI assistant's chat, paste the AI request template, and attach the reference data file or add it as context.",
     "step3Title": "Add the response here",
-    "step3Body": "Save the JSON response as a file and drop it in the field, or paste it.",
+    "step3Body": "Save the JSON response as a file and drop it in the field, or paste it. If the response does not validate, copy the repair prompt under the errors and paste it into the same conversation.",
     "referenceDataFreshnessLibrary": "The reference data file reflects the requirements library right now. Get a new file if norm references or requirement packages have changed.",
     "referenceDataFreshnessSpecification": "The reference data file reflects the requirements specification right now. Get a new file if norm references, requirement packages, or needs references have changed.",
     "ownPromptToggle": "Own prompt or validation",
@@ -4203,6 +4206,16 @@
     "schemaInvalid": "The JSON does not match the import schema. Fix {count, plural, one {# error} other {# errors}}:",
     "errorListLabel": "Validation errors",
     "moreErrors": "{count, plural, one {and # more error} other {and # more errors}}",
+    "repairPrompt": {
+      "lead": "Ask the AI assistant to correct the response. Copy the repair prompt and paste it into the same conversation.",
+      "copy": "Copy repair prompt",
+      "copied": "The repair prompt is copied. Paste it into the same conversation with the AI assistant.",
+      "copyFailed": "The repair prompt could not be copied. Open the preview and copy the text from there.",
+      "loading": "Creating repair prompt…",
+      "unavailable": "The repair prompt could not be created. Close the dialog and try again.",
+      "previewToggle": "Preview repair prompt",
+      "previewLabel": "Repair prompt"
+    },
     "issue": {
       "required": "The field is required but missing.",
       "invalidType": "Expected {expected} but got {received}.",

@@ -4,6 +4,10 @@ import {
   type RequirementImportBudget,
 } from '@/lib/requirements/import-budget'
 import {
+  type FormattedRequirementImportJsonErrors,
+  REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
+} from '@/lib/requirements/import-json-errors'
+import {
   buildRequirementsImportJsonSchema,
   REQUIREMENTS_IMPORT_SCHEMA_VERSION,
 } from '@/lib/requirements/import-schema'
@@ -564,7 +568,7 @@ ${candidateCount}`,
   ].join('\n\n')
 }
 
-export interface BuildRequirementImportRepairPromptOptions {
+export interface BuildRequirementImportRepairUserPromptOptions {
   brokenJson: string
   errors: readonly string[]
   locale?: 'en' | 'sv'
@@ -576,11 +580,15 @@ function sanitizeRequirementImportRepairInput(rawInput: string): string {
   return fenceMatch?.[1]?.trim() ?? trimmed
 }
 
-export function buildRequirementImportRepairPrompt({
+/**
+ * The user message of the internal repair request. It carries the broken JSON
+ * as a JSON string value, so the model sees it as data.
+ */
+export function buildRequirementImportRepairUserPrompt({
   brokenJson,
   errors,
   locale = 'en',
-}: BuildRequirementImportRepairPromptOptions): string {
+}: BuildRequirementImportRepairUserPromptOptions): string {
   const intro = getPromptMessage(locale, ['ai', 'prompt', 'repair', 'intro'])
   const errorHeading = getPromptMessage(locale, [
     'ai',
@@ -620,6 +628,52 @@ ${formattedErrors}
 
 ${jsonHeading}
 ${encodedBrokenJson}`
+}
+
+export interface BuildRequirementImportRepairPromptOptions {
+  /**
+   * Errors from `formatRequirementImportJsonErrors`, preferably capped at
+   * `REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT`.
+   */
+  errors: FormattedRequirementImportJsonErrors
+  locale: 'en' | 'sv'
+}
+
+/**
+ * The repair prompt for an external AI assistant. The import dialog builds it
+ * when pasted JSON does not validate, and the user pastes it into the same
+ * conversation. It holds a follow-up intro, the shared repair rules, and at
+ * most 50 errors, but no JSON, no template, and no schema.
+ */
+export function buildRequirementImportRepairPrompt({
+  errors,
+  locale,
+}: BuildRequirementImportRepairPromptOptions): string {
+  const repairMessage = (key: string) =>
+    getPromptMessage(locale, ['ai', 'prompt', 'repair', key])
+  const listedErrors = errors.errors.slice(
+    0,
+    REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
+  )
+  const omittedCount =
+    errors.omittedCount + errors.errors.length - listedErrors.length
+
+  return [
+    repairMessage('externalIntro'),
+    buildRequirementImportRepairRules(locale),
+    [
+      repairMessage('errorHeading'),
+      ...listedErrors.map(error => `- ${error.path}: ${error.message}`),
+    ].join('\n'),
+    ...(omittedCount > 0
+      ? [
+          fillPromptPlaceholders(
+            repairMessage(omittedCount === 1 ? 'moreErrorsOne' : 'moreErrors'),
+            { count: omittedCount },
+          ),
+        ]
+      : []),
+  ].join('\n\n')
 }
 
 function formatIssuePath(path: ZodError['issues'][number]['path']): string {

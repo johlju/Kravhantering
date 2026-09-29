@@ -78,7 +78,7 @@ code can import them:
 | Rule order | `buildRequirementImportRuleOrder` | `ai.prompt.ruleOrder` |
 | AI instruction | `buildRequirementImportAiInstruction` | `ai.prompt.defaultInstruction` |
 | Import instruction rules per locale and destination kind | `buildRequirementImportInstructionRules` | `ai.prompt.importInstruction` |
-| Repair rules | `buildRequirementImportRepairRules` | `ai.prompt.repair.rules` |
+| Repair rules for the internal repair request and the external repair prompt | `buildRequirementImportRepairRules` | `ai.prompt.repair.rules` |
 | Validation schema | `buildRequirementsImportJsonSchema` in `lib/requirements/import-schema.ts` | Code |
 <!-- markdownlint-enable MD013 -->
 
@@ -130,6 +130,9 @@ AI request:
   instructions.
 - Rule 1 of the import instruction asks for only a JSON object that validates
   against the JSON Schema for requirements import.
+- Rule 1 of the repair rules asks for only the complete corrected JSON object
+  in a single code block. The internal repair route already reads JSON inside
+  a code fence.
 
 The governance contract for these texts is in
 [reference-data-and-ai.md](../governance/reference-data-and-ai.md#prompt-contracts).
@@ -147,6 +150,36 @@ Keep these rules when you change prompt texts in `messages/{sv,en}.json`:
   `specificationNeedsReferences`.
 - Tests compare prompt output with the part builders and the message values.
   Do not copy prompt strings into tests or use snapshot files.
+
+### Repair Prompts
+
+Two builders use the repair rules part:
+
+- `buildRequirementImportRepairUserPrompt` builds the user message of the
+  internal repair request in
+  `app/api/ai/repair-requirement-import-json/route.ts`. It holds the intro,
+  the repair rules, the validation errors, and the broken JSON as a JSON
+  string value.
+- `buildRequirementImportRepairPrompt({ locale, errors })` builds the repair
+  prompt for an external AI assistant in the client. It holds a follow-up
+  intro, the repair rules, and at most
+  `REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT` (50) errors from
+  `formatRequirementImportJsonErrors`, followed by the line
+  `och N fel till` / `and N more errors`. It holds no JSON, no template, and
+  no schema, because the AI assistant already has them in the conversation.
+
+`components/RequirementsImportRepairPrompt.tsx` shows the copy button and the
+collapsed preview under the error list in the import dialog. It appears only
+for problems that `isRequirementImportJsonProblemRepairable` accepts: syntax
+errors, a wrong `schemaVersion`, and schema errors. The component loads
+`lib/ai/requirement-prompt.ts` with a dynamic import, because that module
+bundles the prompt texts for both locales. A static import would add them to
+the import review chunk and its bundle budget in
+`scripts/check-requirement-workflow-bundle.mjs`.
+
+`tests/unit/requirement-prompt.test.ts` checks that both prompts contain the
+same repair rules part and that the external prompt caps the errors and
+contains no JSON, schema, code fence, or AI product name.
 
 ## Adapter Verification Design Contract
 

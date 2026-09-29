@@ -5,6 +5,7 @@ import {
   describeRequirementImportJsonProblem,
   formatRequirementImportJsonErrors,
   formatRequirementImportJsonPath,
+  isRequirementImportJsonProblemRepairable,
   REQUIREMENT_IMPORT_JSON_DIALOG_ERROR_LIMIT,
 } from '@/lib/requirements/import-json-errors'
 import {
@@ -402,6 +403,31 @@ describe('schema issue texts', () => {
       ),
     ).toBe(
       'The JSON has a syntax error at line 1, column 1: the text cannot be read as JSON.',
+    )
+  })
+})
+
+describe('isRequirementImportJsonProblemRepairable', () => {
+  it.each([
+    ['a syntax error', '{\n  "schemaVersion": "requirement-import.v4",,\n}'],
+    ['a wrong schemaVersion', { requirements: [{}], schemaVersion: 'v1' }],
+    [
+      'schema errors',
+      { requirements: [], schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION },
+    ],
+  ])('offers a repair prompt for %s', (_label, value) => {
+    expect(isRequirementImportJsonProblemRepairable(problemFor(value))).toBe(
+      true,
+    )
+  })
+
+  it.each([
+    ['a response without JSON', 'I need the reference data file first.'],
+    ['truncated JSON', '{"requirements": ['],
+    ['several code blocks', '```json\n{"a": 1}\n```\n```json\n{"b": 2}\n```'],
+  ])('gives %s a hint instead of a repair prompt', (_label, value) => {
+    expect(isRequirementImportJsonProblemRepairable(problemFor(value))).toBe(
+      false,
     )
   })
 })

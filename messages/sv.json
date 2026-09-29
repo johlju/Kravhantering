@@ -3892,8 +3892,9 @@
       },
       "repair": {
         "intro": "Reparera JSON så att den kan importeras genom kravimportflödet.",
+        "externalIntro": "Ditt JSON-svar validerade inte mot importkontraktet. Rätta felen nedan.",
         "rules": [
-          "Returnera endast korrigerad JSON som matchar importschemat.",
+          "Returnera endast hela det korrigerade JSON-objektet i ett enda kodblock, så att det validerar mot JSON Schema för kravimport.",
           "Bevara kravens innehåll så långt det går.",
           "Ändra bara det som krävs för att JSON ska bli giltig och importerbar.",
           "Behandla varje valideringssökväg som den exakta fältplatsen. Ett fält med samma namn på en annan nivå uppfyller inte ett fel om saknad egenskap.",
@@ -3903,7 +3904,9 @@
         ],
         "errorHeading": "Valideringsfel",
         "jsonHeading": "Trasig JSON",
-        "defaultValidationError": "JSON validerade inte mot importkontraktet."
+        "defaultValidationError": "JSON validerade inte mot importkontraktet.",
+        "moreErrorsOne": "och 1 fel till",
+        "moreErrors": "och {count} fel till"
       },
       "template": {
         "startMarker": "===== BÖRJAN PÅ AI-ANROPSMALL FÖR KRAVIMPORT =====",
@@ -3995,7 +3998,7 @@
     "step2Title": "Fråga AI-assistenten",
     "step2Body": "Skriv behovet i chatten hos din AI-assistent, klistra in AI-anropsmallen och bifoga referensdatafilen eller lägg till den som kontext.",
     "step3Title": "Lägg in svaret här",
-    "step3Body": "Spara JSON-svaret som fil och släpp det i fältet, eller klistra in det.",
+    "step3Body": "Spara JSON-svaret som fil och släpp det i fältet, eller klistra in det. Om svaret inte validerar kopierar du reparationsprompten under felen och klistrar in den i samma samtal.",
     "referenceDataFreshnessLibrary": "Referensdatafilen speglar kravbiblioteket just nu. Hämta en ny fil om normreferenser eller kravpaket har ändrats.",
     "referenceDataFreshnessSpecification": "Referensdatafilen speglar kravunderlaget just nu. Hämta en ny fil om normreferenser, kravpaket eller behovsreferenser har ändrats.",
     "ownPromptToggle": "Egen prompt eller validering",
@@ -4203,6 +4206,16 @@
     "schemaInvalid": "JSON följer inte importschemat. Rätta {count} fel:",
     "errorListLabel": "Valideringsfel",
     "moreErrors": "och {count} fel till",
+    "repairPrompt": {
+      "lead": "Be AI-assistenten rätta svaret. Kopiera reparationsprompten och klistra in den i samma samtal.",
+      "copy": "Kopiera reparationsprompt",
+      "copied": "Reparationsprompten är kopierad. Klistra in den i samma samtal med AI-assistenten.",
+      "copyFailed": "Reparationsprompten kunde inte kopieras. Öppna förhandsvisningen och kopiera texten därifrån.",
+      "loading": "Skapar reparationsprompt…",
+      "unavailable": "Reparationsprompten kunde inte skapas. Stäng dialogen och försök igen.",
+      "previewToggle": "Förhandsvisa reparationsprompt",
+      "previewLabel": "Reparationsprompt"
+    },
     "issue": {
       "required": "Fältet saknas men är obligatoriskt.",
       "invalidType": "Förväntade {expected} men fick {received}.",

@@ -35,6 +35,7 @@ import NormReferenceModal, {
 import QualityCharacteristicSelectOptions from '@/components/QualityCharacteristicSelectOptions'
 import RequiredFieldMarker from '@/components/RequiredFieldMarker'
 import RequirementPackagePurposeTooltip from '@/components/RequirementPackagePurposeTooltip'
+import RequirementsImportRepairPrompt from '@/components/RequirementsImportRepairPrompt'
 import RequirementsImportSupportPanel from '@/components/RequirementsImportSupportPanel'
 import StatusBadge from '@/components/StatusBadge'
 import { downloadBlob } from '@/lib/browser-download'
@@ -57,6 +58,7 @@ import {
 import {
   describeRequirementImportJsonProblem,
   formatRequirementImportJsonErrors,
+  isRequirementImportJsonProblemRepairable,
   REQUIREMENT_IMPORT_JSON_DIALOG_ERROR_LIMIT,
 } from '@/lib/requirements/import-json-errors'
 import {
@@ -2426,6 +2428,15 @@ export default function RequirementsImportDialog({
                         </p>
                       ) : null}
                     </div>
+                  ) : null}
+                  {importJsonProblem &&
+                  isRequirementImportJsonProblemRepairable(
+                    importJsonProblem,
+                  ) ? (
+                    <RequirementsImportRepairPrompt
+                      locale={locale}
+                      problem={importJsonProblem}
+                    />
                   ) : null}
                   <button
                     className="btn-primary inline-flex w-full items-center justify-center gap-2 sm:w-auto"

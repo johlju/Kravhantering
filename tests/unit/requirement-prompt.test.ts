@@ -1,3 +1,4 @@
+import { createTranslator } from 'next-intl'
 import { describe, expect, it } from 'vitest'
 import {
   buildRequirementImportAiInstruction,
@@ -5,6 +6,7 @@ import {
   buildRequirementImportInstructionRules,
   buildRequirementImportRepairPrompt,
   buildRequirementImportRepairRules,
+  buildRequirementImportRepairUserPrompt,
   buildRequirementImportResponseFormatSchema,
   buildRequirementImportRoleIntro,
   buildRequirementImportRuleOrder,
@@ -21,11 +23,23 @@ import {
   type PromptRuleItem,
   type RequirementImportDestinationKind,
 } from '@/lib/ai/requirement-prompt'
-import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
+import {
+  DEFAULT_REQUIREMENT_IMPORT_BUDGET,
+  type RequirementImportBudget,
+} from '@/lib/requirements/import-budget'
+import {
+  type FormattedRequirementImportJsonErrors,
+  formatRequirementImportJsonErrors,
+  REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
+} from '@/lib/requirements/import-json-errors'
+import { readRequirementImportJson } from '@/lib/requirements/import-json-input'
 import {
   buildRequirementsImportJsonSchema,
+  buildRequirementsImportPayloadSchema,
   REQUIREMENTS_IMPORT_SCHEMA_VERSION,
 } from '@/lib/requirements/import-schema'
+import enMessages from '@/messages/en.json'
+import svMessages from '@/messages/sv.json'
 
 const PROMPT_LOCALES = ['en', 'sv'] as const
 const DESTINATION_KINDS = [
@@ -653,9 +667,9 @@ describe('clampRequirementCandidateCount', () => {
   })
 })
 
-describe('buildRequirementImportRepairPrompt', () => {
+describe('buildRequirementImportRepairUserPrompt', () => {
   it('builds a narrow repair prompt with errors and broken JSON', () => {
-    const prompt = buildRequirementImportRepairPrompt({
+    const prompt = buildRequirementImportRepairUserPrompt({
       brokenJson: '{"requirements":[]}',
       errors: ['requirements: must contain at least 1 item'],
     })
@@ -679,7 +693,7 @@ describe('buildRequirementImportRepairPrompt', () => {
   it.each(PROMPT_LOCALES)(
     'uses the shared repair rules part for %s',
     locale => {
-      const prompt = buildRequirementImportRepairPrompt({
+      const prompt = buildRequirementImportRepairUserPrompt({
         brokenJson: '{}',
         errors: [],
         locale,
@@ -695,7 +709,7 @@ describe('buildRequirementImportRepairPrompt', () => {
   )
 
   it('strips outer markdown fences and uses the fallback repair error', () => {
-    const prompt = buildRequirementImportRepairPrompt({
+    const prompt = buildRequirementImportRepairUserPrompt({
       brokenJson: '```json\n{"requirements":[]}\n```',
       errors: [],
     })
@@ -706,4 +720,180 @@ describe('buildRequirementImportRepairPrompt', () => {
     expect(prompt).toContain('"invalidJsonPayload": "{\\"requirements\\":[]}"')
     expect(prompt).not.toMatch(/^```/m)
   })
+})
+
+function repairPromptErrors(
+  locale: 'en' | 'sv',
+  requirementCount: number,
+  limit = REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
+): FormattedRequirementImportJsonErrors {
+  const { problem } = readRequirementImportJson(
+    JSON.stringify({
+      requirements: Array.from({ length: requirementCount }, () => ({})),
+      schemaVersion: REQUIREMENTS_IMPORT_SCHEMA_VERSION,
+    }),
+    buildRequirementsImportPayloadSchema(DEFAULT_REQUIREMENT_IMPORT_BUDGET),
+  )
+  if (!problem) throw new Error('Expected an import JSON problem')
+  const translate = createTranslator({
+    locale,
+    messages: locale === 'sv' ? svMessages : enMessages,
+    namespace: 'requirementsImportJson',
+  })
+  return formatRequirementImportJsonErrors(problem, {
+    limit,
+    t: (key, values) => translate(key as never, values as never),
+  })
+}
+
+function repairPromptParagraphs(prompt: string): string[] {
+  return prompt.split('\n\n')
+}
+
+// External AI products that the repair prompt must stay neutral about.
+const PRODUCT_NAMES = [
+  'ChatGPT',
+  'Claude',
+  'Copilot',
+  'Gemini',
+  'Microsoft',
+  'OpenAI',
+  'VS Code',
+]
+
+describe('buildRequirementImportRepairPrompt', () => {
+  it.each(PROMPT_LOCALES)(
+    'uses the same repair rule list as the internal repair request for %s',
+    locale => {
+      const externalRules = repairPromptParagraphs(
+        buildRequirementImportRepairPrompt({
+          errors: repairPromptErrors(locale, 1),
+          locale,
+        }),
+      )[1]
+      const internalRules = repairPromptParagraphs(
+        buildRequirementImportRepairUserPrompt({
+          brokenJson: '{}',
+          errors: ['requirements: must contain at least 1 item'],
+          locale,
+        }),
+      )[1]
+
+      expect(externalRules).toBe(buildRequirementImportRepairRules(locale))
+      expect(internalRules).toBe(buildRequirementImportRepairRules(locale))
+    },
+  )
+
+  it.each([
+    ['en', /\bsingle code block\b/u],
+    ['sv', /\bett enda kodblock\b/u],
+  ] as const)(
+    'asks for the whole JSON in a single code block in the first repair rule for %s',
+    (locale, codeBlockPattern) => {
+      const [firstRule] = getPromptMessageList(locale, [
+        'ai',
+        'prompt',
+        'repair',
+        'rules',
+      ])
+
+      expect(firstRule).toMatch(codeBlockPattern)
+      expect(firstRule).not.toMatch(/response format|svarsformat/iu)
+    },
+  )
+
+  it.each(PROMPT_LOCALES)(
+    'starts with the follow-up intro and lists each formatted error with its JSON path for %s',
+    locale => {
+      const errors = repairPromptErrors(locale, 2)
+      const paragraphs = repairPromptParagraphs(
+        buildRequirementImportRepairPrompt({ errors, locale }),
+      )
+
+      expect(paragraphs[0]).toBe(
+        getPromptMessage(locale, ['ai', 'prompt', 'repair', 'externalIntro']),
+      )
+      expect(paragraphs[2]).toBe(
+        [
+          getPromptMessage(locale, ['ai', 'prompt', 'repair', 'errorHeading']),
+          ...errors.errors.map(error => `- ${error.path}: ${error.message}`),
+        ].join('\n'),
+      )
+      expect(paragraphs).toHaveLength(3)
+    },
+  )
+
+  it.each(PROMPT_LOCALES)(
+    'lists at most 50 errors followed by the remaining count for %s',
+    locale => {
+      const errors = repairPromptErrors(locale, 57)
+      const prompt = buildRequirementImportRepairPrompt({ errors, locale })
+      const errorLines = prompt
+        .split('\n')
+        .filter(line => line.startsWith('- $.'))
+
+      expect(errors.omittedCount).toBe(7)
+      expect(errorLines).toHaveLength(
+        REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
+      )
+      expect(repairPromptParagraphs(prompt).at(-1)).toBe(
+        getPromptMessage(locale, [
+          'ai',
+          'prompt',
+          'repair',
+          'moreErrors',
+        ]).replace('{count}', '7'),
+      )
+    },
+  )
+
+  it.each(PROMPT_LOCALES)(
+    'uses the singular remaining-count line for one omitted error for %s',
+    locale => {
+      const prompt = buildRequirementImportRepairPrompt({
+        errors: repairPromptErrors(locale, 51),
+        locale,
+      })
+
+      expect(repairPromptParagraphs(prompt).at(-1)).toBe(
+        getPromptMessage(locale, ['ai', 'prompt', 'repair', 'moreErrorsOne']),
+      )
+    },
+  )
+
+  it('caps an uncapped error list at 50 and counts the rest as remaining', () => {
+    const errors = repairPromptErrors('en', 57, 100)
+    const prompt = buildRequirementImportRepairPrompt({ errors, locale: 'en' })
+
+    expect(errors.errors).toHaveLength(57)
+    expect(
+      prompt.split('\n').filter(line => line.startsWith('- $.')),
+    ).toHaveLength(REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT)
+    expect(repairPromptParagraphs(prompt).at(-1)).toBe(
+      getPromptMessage('en', ['ai', 'prompt', 'repair', 'moreErrors']).replace(
+        '{count}',
+        '7',
+      ),
+    )
+  })
+
+  it.each(PROMPT_LOCALES)(
+    'contains no JSON, no schema, no code fences, and no AI product names for %s',
+    locale => {
+      const prompt = buildRequirementImportRepairPrompt({
+        errors: repairPromptErrors(locale, 57),
+        locale,
+      })
+
+      expect(prompt).not.toMatch(/[{}]/u)
+      expect(prompt).not.toContain('```')
+      expect(prompt).not.toContain('$schema')
+      expect(prompt).not.toContain(
+        JSON.stringify(buildRequirementsImportJsonSchema(locale)),
+      )
+      for (const productName of PRODUCT_NAMES) {
+        expect(prompt).not.toContain(productName)
+      }
+    },
+  )
 })

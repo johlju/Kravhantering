@@ -301,6 +301,15 @@ function specificationLocalPreviewResponse(): Response {
   } as Response
 }
 
+function mockClipboardWriteText() {
+  const writeText = vi.fn<(text: string) => Promise<void>>()
+  Object.defineProperty(globalThis.navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  })
+  return writeText
+}
+
 describe('RequirementsImportDialog', () => {
   beforeEach(() => {
     importLocaleState.locale = 'sv'
@@ -2514,6 +2523,153 @@ describe('RequirementsImportDialog', () => {
       'data-developer-mode-value',
       'import JSON errors',
     )
+  })
+
+  it('copies a repair prompt for a syntax error and shows it in a collapsed preview', async () => {
+    const writeText = mockClipboardWriteText().mockResolvedValue()
+    render(
+      <RequirementsImportDialog
+        mode="specification-local"
+        onClose={vi.fn()}
+        open
+        specificationId={8}
+      />,
+    )
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText(/Import-JSON/), {
+      target: { value: '{\n  "schemaVersion": "requirement-import.v4",,\n}' },
+    })
+
+    const copyButton = await screen.findByRole('button', {
+      name: 'Kopiera reparationsprompt',
+    })
+    await waitFor(() => expect(copyButton).toBeEnabled())
+    expect(copyButton).toHaveAttribute(
+      'data-developer-mode-value',
+      'repair prompt',
+    )
+    const previewToggle = screen.getByRole('button', {
+      name: 'Förhandsvisa reparationsprompt',
+    })
+    expect(previewToggle).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.queryByRole('textbox', { name: 'Reparationsprompt' }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(copyButton)
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const copiedPrompt = String(writeText.mock.calls[0]?.[0])
+    expect(copiedPrompt).toContain(
+      '- $: JSON har ett syntaxfel på rad 2, kolumn 44: oväntat tecken ”,”.',
+    )
+    expect(copiedPrompt).not.toContain('"schemaVersion"')
+    expect(
+      await screen.findByText(
+        'Reparationsprompten är kopierad. Klistra in den i samma samtal med AI-assistenten.',
+      ),
+    ).toHaveAttribute('role', 'status')
+
+    fireEvent.click(previewToggle)
+    expect(previewToggle).toHaveAttribute('aria-expanded', 'true')
+    const preview = screen.getByRole('textbox', { name: 'Reparationsprompt' })
+    expect(preview).toHaveValue(copiedPrompt)
+    expect(preview).toHaveAttribute('readonly')
+    expect(previewToggle.parentElement).toHaveAttribute(
+      'data-developer-mode-value',
+      'repair prompt preview',
+    )
+  })
+
+  it('offers the repair prompt for a wrong schemaVersion and schema errors but not for responses without JSON or truncated JSON', async () => {
+    importLocaleState.locale = 'en'
+    const writeText = mockClipboardWriteText().mockResolvedValue()
+    render(
+      <RequirementsImportDialog
+        mode="specification-local"
+        onClose={vi.fn()}
+        open
+        specificationId={8}
+      />,
+    )
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    const rawJson = screen.getByLabelText(/Import JSON/)
+    const copyButtonName = { name: 'Copy repair prompt' }
+
+    fireEvent.change(rawJson, {
+      target: {
+        value: JSON.stringify({ requirements: [{}], schemaVersion: 'v1' }),
+      },
+    })
+    fireEvent.click(await screen.findByRole('button', copyButtonName))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    expect(String(writeText.mock.calls[0]?.[0])).toContain(
+      '- $.schemaVersion: schemaVersion must be requirement-import.v4.',
+    )
+
+    fireEvent.change(rawJson, {
+      target: {
+        value: JSON.stringify({
+          requirements: Array.from({ length: 57 }, () => ({})),
+          schemaVersion: 'requirement-import.v4',
+        }),
+      },
+    })
+    expect(
+      screen.queryByText(/The repair prompt is copied/),
+    ).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', copyButtonName))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+    const schemaPrompt = String(writeText.mock.calls[1]?.[0])
+    expect(
+      schemaPrompt
+        .split('\n')
+        .filter(line => line.startsWith('- $.requirements[')),
+    ).toHaveLength(50)
+    expect(schemaPrompt.endsWith('\n\nand 7 more errors')).toBe(true)
+
+    fireEvent.change(rawJson, { target: { value: 'I need the file first.' } })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The response contains no JSON.',
+    )
+    expect(screen.queryByRole('button', copyButtonName)).not.toBeInTheDocument()
+
+    fireEvent.change(rawJson, { target: { value: '{"requirements": [' } })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The response is probably truncated.',
+    )
+    expect(screen.queryByRole('button', copyButtonName)).not.toBeInTheDocument()
+  })
+
+  it('tells the user to copy from the preview when the clipboard is unavailable', async () => {
+    mockClipboardWriteText().mockRejectedValue(new Error('denied'))
+    render(
+      <RequirementsImportDialog
+        mode="specification-local"
+        onClose={vi.fn()}
+        open
+        specificationId={8}
+      />,
+    )
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText(/Import-JSON/), {
+      target: {
+        value: JSON.stringify({ requirements: [{}], schemaVersion: 'v1' }),
+      },
+    })
+
+    const copyButton = await screen.findByRole('button', {
+      name: 'Kopiera reparationsprompt',
+    })
+    await waitFor(() => expect(copyButton).toBeEnabled())
+    fireEvent.click(copyButton)
+
+    expect(
+      await screen.findByText(
+        'Reparationsprompten kunde inte kopieras. Öppna förhandsvisningen och kopiera texten därifrån.',
+      ),
+    ).toHaveAttribute('role', 'status')
   })
 
   it('keeps preview disabled until the independently loaded schema budget resolves', async () => {

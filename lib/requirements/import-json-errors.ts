@@ -12,6 +12,9 @@ import type {
 /** The most errors the import dialog lists next to the JSON field. */
 export const REQUIREMENT_IMPORT_JSON_DIALOG_ERROR_LIMIT = 20
 
+/** The most errors a repair prompt for an external AI assistant lists. */
+export const REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT = 50
+
 /**
  * Translates keys in the `requirementsImportJson` message namespace. A
  * `useTranslations('requirementsImportJson')` or `createTranslator` function
@@ -211,6 +214,21 @@ export function describeRequirementImportJsonProblem(
         count: schemaIssueErrors(problem.issues, t).length,
       })
   }
+}
+
+/**
+ * Reports whether the import dialog offers a repair prompt for the problem:
+ * syntax errors, a wrong `schemaVersion`, and schema errors. A response
+ * without JSON, truncated JSON, or several code blocks gets a hint instead.
+ */
+export function isRequirementImportJsonProblemRepairable(
+  problem: ImportJsonProblem,
+): boolean {
+  return (
+    problem.kind === 'syntax' ||
+    problem.kind === 'wrong-version' ||
+    problem.kind === 'schema'
+  )
 }
 
 /**

@@ -256,7 +256,26 @@ Generated output is parsed as JSON and validated with
 `requirementsImportPayloadSchema`. Valid output is previewed through the same
 editable import review surface as uploaded import files. Invalid output is
 reported as schema issues, logged without raw prompt/content, and can be sent
-to the repair route together with a generated repair prompt.
+to the repair route. The route builds the user message of the repair request
+with `buildRequirementImportRepairUserPrompt`: the repair rules, the
+validation errors, and the broken JSON as a JSON string value.
+
+The repair rules in `ai.prompt.repair.rules` are channel-neutral. Rule 1 asks
+for only the complete corrected JSON object in a single code block. The repair
+route already reads JSON inside a code fence, and provider schema steering
+still applies when the model revision supports it.
+
+JSON from an external AI assistant does not pass through the repair route.
+When pasted JSON has a syntax error, a wrong `schemaVersion`, or schema
+errors, the import dialog offers `Kopiera reparationsprompt` / `Copy repair
+prompt` and a collapsed preview under the error list. The **repair prompt** is
+built in the browser by `buildRequirementImportRepairPrompt` from a follow-up
+intro, the same repair rules part as the repair route, and at most 50 errors
+from the dialog's error formatter, followed by `och N fel till` /
+`and N more errors`. It contains no JSON, no AI request template, no schema,
+and no AI product names; the user pastes it into the same conversation. A
+response without JSON, truncated JSON, several code blocks, and row errors or
+warnings after the review loads get no repair prompt.
 
 ## 5 — Requirement Import Schema and Import Instruction
 

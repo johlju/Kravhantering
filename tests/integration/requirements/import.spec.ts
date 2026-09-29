@@ -481,9 +481,11 @@ test.describe('Requirements import', () => {
     }
   })
 
-  test('REQ-17c: reads external JSON responses and explains each problem before review', async ({
+  test('REQ-17c: reads external JSON responses, explains each problem before review, and copies a repair prompt', async ({
+    context,
     page,
   }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     const previewRequests: Array<{ payload: unknown }> = []
     await page.route('**/api/requirements/import/preview', async route => {
       previewRequests.push(route.request().postDataJSON())
@@ -532,7 +534,13 @@ test.describe('Requirements import', () => {
     const previewButton = dialog.getByRole('button', {
       name: 'Förhandsgranska krav',
     })
-    const blocker = dialog.getByRole('status')
+    const blocker = dialog.getByRole('status').first()
+    const copyRepairPrompt = dialog.getByRole('button', {
+      name: 'Kopiera reparationsprompt',
+    })
+    const repairPromptPreview = dialog.getByRole('textbox', {
+      name: 'Reparationsprompt',
+    })
     await dialog.getByLabel('Kravområde').selectOption({ index: 1 })
 
     await test.step('explain a response without JSON', async () => {
@@ -541,6 +549,7 @@ test.describe('Requirements import', () => {
         'Svaret innehåller ingen JSON. Läs AI-assistentens svar. Behovet eller referensdatafilen kan saknas.',
       )
       await expect(previewButton).toBeDisabled()
+      await expect(copyRepairPrompt).toHaveCount(0)
     })
 
     await test.step('explain a truncated JSON response', async () => {
@@ -549,6 +558,7 @@ test.describe('Requirements import', () => {
         'Svaret är troligen avkortat. Be om färre krav per förfrågan.',
       )
       await expect(previewButton).toBeDisabled()
+      await expect(copyRepairPrompt).toHaveCount(0)
     })
 
     await test.step('reject several code blocks without extracting JSON', async () => {
@@ -560,9 +570,10 @@ test.describe('Requirements import', () => {
       await expect(dialog.getByText(/JSON togs ut ur kodblocket/)).toHaveCount(
         0,
       )
+      await expect(copyRepairPrompt).toHaveCount(0)
     })
 
-    await test.step('show syntax errors with line and column', async () => {
+    await test.step('show syntax errors with line and column and a repair prompt', async () => {
       await rawJson.fill(
         '{\n  "schemaVersion": "requirement-import.v4",\n  "requirements": [{ "description": "Krav" }],\n}',
       )
@@ -570,9 +581,24 @@ test.describe('Requirements import', () => {
         'JSON har ett syntaxfel på rad 4, kolumn 1: oväntat tecken ”}”.',
       )
       await expect(previewButton).toBeDisabled()
+      await expect(copyRepairPrompt).toBeEnabled()
+      const previewToggle = dialog.getByRole('button', {
+        name: 'Förhandsvisa reparationsprompt',
+      })
+      await expect(previewToggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(repairPromptPreview).toBeHidden()
+      await previewToggle.click()
+      await expect(previewToggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(repairPromptPreview).toHaveValue(
+        new RegExp(
+          escapeRegExp(
+            '- $: JSON har ett syntaxfel på rad 4, kolumn 1: oväntat tecken ”}”.',
+          ),
+        ),
+      )
     })
 
-    await test.step('explain a wrong schemaVersion', async () => {
+    await test.step('explain a wrong schemaVersion and offer a repair prompt', async () => {
       await rawJson.fill(
         JSON.stringify({
           ...codeBlockPayload,
@@ -583,6 +609,14 @@ test.describe('Requirements import', () => {
         'schemaVersion ska vara requirement-import.v4.',
       )
       await expect(previewButton).toBeDisabled()
+      await expect(copyRepairPrompt).toBeEnabled()
+      await expect(repairPromptPreview).toHaveValue(
+        new RegExp(
+          escapeRegExp(
+            '- $.schemaVersion: schemaVersion ska vara requirement-import.v4.',
+          ),
+        ),
+      )
     })
 
     await test.step('list at most 20 schema errors with JSON paths', async () => {
@@ -602,6 +636,28 @@ test.describe('Requirements import', () => {
       )
       await expect(dialog.getByText('och 3 fel till')).toHaveCount(1)
       await expect(previewButton).toBeDisabled()
+    })
+
+    await test.step('copy the repair prompt for the schema errors', async () => {
+      await copyRepairPrompt.click()
+      await expect(
+        dialog.getByRole('status').filter({
+          hasText:
+            'Reparationsprompten är kopierad. Klistra in den i samma samtal med AI-assistenten.',
+        }),
+      ).toHaveCount(1)
+      const copied = await page.evaluate(() => navigator.clipboard.readText())
+      await expect(repairPromptPreview).toHaveValue(copied)
+      expect(copied).toMatch(
+        /^Ditt JSON-svar validerade inte mot importkontraktet\./u,
+      )
+      expect(
+        copied.split('\n').filter(line => line.startsWith('- $.requirements[')),
+      ).toHaveLength(23)
+      expect(copied).toContain(
+        '- $.requirements[22].description: Fältet saknas men är obligatoriskt.',
+      )
+      expect(copied).not.toMatch(/[{}]/u)
     })
 
     await test.step('preview JSON taken from exactly one code block', async () => {

@@ -1175,12 +1175,15 @@ och `referenceData`. Under stegen står att referensdatafilen speglar
 kravbiblioteket just nu och att en ny fil behövs när normreferenser eller
 kravpaket har ändrats.
 
-### REQ-17c: läs in extern JSON och visa detaljerade fel i importdialogen
+### REQ-17c: läs in extern JSON, visa detaljerade fel och kopiera reparationsprompt
 
 **Steg:** Logga in som `olle.areaowner`, öppna `/sv/requirements`, välj
 importknappen och välj ett kravområde. Klistra in följande texter i tur och
 ordning i fältet `Import-JSON` och läs meddelandet under fältet efter varje
-inklistring:
+inklistring. Kontrollera också om knappen `Kopiera reparationsprompt` finns
+under meddelandet. Öppna `Förhandsvisa reparationsprompt` vid fall 4 och läs
+texten i förhandsvisningen vid fall 4–6. Välj `Kopiera reparationsprompt` vid
+fall 6 och klistra in urklippet i ett textfält:
 
 1. Ett svar utan JSON, till exempel `Jag behöver referensdatafilen först.`
 2. Början av ett giltigt importobjekt som slutar mitt i listan `requirements`.
@@ -1211,8 +1214,24 @@ granskningen laddas, och `Förhandsgranska krav` är inaktiverad för fall 1–6
    oförändrad. Fältet innehåller fortfarande hela svaret, och granskningen
    laddas med kravet från kodblocket.
 
-Med engelskt gränssnitt visas samma meddelanden på engelska. Radfel och
-varningar i granskningen behåller sina befintliga åtgärder.
+`Kopiera reparationsprompt` finns bara för fall 4–6. Förhandsvisningen är
+stängd tills du öppnar den och visar reparationsprompten för det aktuella
+felet:
+
+- Fall 4: `- $: JSON har ett syntaxfel på rad 4, kolumn 1: oväntat tecken ”}”.`
+- Fall 5: `- $.schemaVersion: schemaVersion ska vara requirement-import.v4.`
+- Fall 6: alla 23 fel med JSON-sökväg och översatt text.
+
+Efter kopieringen visar dialogen `Reparationsprompten är kopierad. Klistra in
+den i samma samtal med AI-assistenten.` Den inklistrade texten är densamma som
+förhandsvisningen. Den börjar med `Ditt JSON-svar validerade inte mot
+importkontraktet. Rätta felen nedan.`, följt av reparationsreglerna och
+felen. Den innehåller ingen JSON, inget schema och inga produktnamn. Om fler än
+50 fel finns, listar prompten 50 fel och sedan raden `och N fel till`.
+
+Med engelskt gränssnitt visas samma meddelanden och knappen
+`Copy repair prompt` på engelska. Radfel och varningar i granskningen behåller
+sina befintliga åtgärder och ger ingen reparationsprompt.
 
 ### REQ-18: exportera kravbiblioteket till CSV
 
