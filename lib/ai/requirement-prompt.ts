@@ -1,4 +1,5 @@
 import type { ZodError } from 'zod'
+import type { AppLocale } from '@/lib/locale-preference'
 import {
   DEFAULT_REQUIREMENT_IMPORT_BUDGET,
   type RequirementImportBudget,
@@ -28,10 +29,10 @@ export interface FormattedSchemaIssue {
 const PROMPT_MESSAGES = {
   en: enMessages,
   sv: svMessages,
-} satisfies Record<'en' | 'sv', Record<string, unknown>>
+} satisfies Record<AppLocale, Record<string, unknown>>
 
 function promptLocalizationPath(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   path: readonly string[],
 ): string {
   return `${locale}:${path.join('.')}`
@@ -49,7 +50,7 @@ function promptValueType(value: unknown): string {
 }
 
 function missingPromptLocalizationError(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   path: readonly string[],
 ): Error {
   return new Error(
@@ -58,7 +59,7 @@ function missingPromptLocalizationError(
 }
 
 function invalidPromptLocalizationTypeError(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   path: readonly string[],
   expected: string,
   actual: unknown,
@@ -72,7 +73,7 @@ function invalidPromptLocalizationTypeError(
 }
 
 export function getPromptValue(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   path: readonly string[],
 ): unknown {
   let current: unknown = PROMPT_MESSAGES[locale]
@@ -96,7 +97,7 @@ export function getPromptValue(
 }
 
 export function getPromptMessage(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   path: readonly string[],
 ): string {
   const current = getPromptValue(locale, path)
@@ -109,7 +110,7 @@ export function getPromptMessage(
 }
 
 export function getPromptMessageList(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   path: readonly string[],
 ): string[] {
   const current = getPromptValue(locale, path)
@@ -131,7 +132,7 @@ export function getPromptMessageList(
 export type PromptRuleItem = string | readonly string[]
 
 export function getPromptRuleList(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   path: readonly string[],
 ): PromptRuleItem[] {
   const current = getPromptValue(locale, path)
@@ -197,14 +198,14 @@ export type RequirementImportDestinationKind =
 
 /** Shared part: the channel-neutral role intro. */
 export function buildRequirementImportRoleIntro(
-  locale: 'en' | 'sv' = 'en',
+  locale: AppLocale = 'en',
 ): string {
   return getPromptMessage(locale, ['ai', 'prompt', 'system', 'intro'])
 }
 
 /** Shared part: the rule order that ranks schema, instructions, and input. */
 export function buildRequirementImportRuleOrder(
-  locale: 'en' | 'sv' = 'en',
+  locale: AppLocale = 'en',
 ): string {
   const intro = getPromptMessage(locale, ['ai', 'prompt', 'ruleOrder', 'intro'])
   const items = getPromptMessageList(locale, [
@@ -221,23 +222,27 @@ export function buildRequirementImportRuleOrder(
 
 /** Shared part: the app-owned AI instruction (author rules for candidates). */
 export function buildRequirementImportAiInstruction(
-  locale: 'en' | 'sv' = 'en',
+  locale: AppLocale = 'en',
 ): string {
   return getPromptMessage(locale, ['ai', 'prompt', 'defaultInstruction'])
 }
 
+/**
+ * The inputs of the import instruction rules. The AI request template takes
+ * the same inputs, since it embeds those rules without reference data.
+ */
 export interface BuildRequirementImportInstructionRulesOptions {
   budget: RequirementImportBudget
   destinationKind: RequirementImportDestinationKind
-  locale: 'en' | 'sv'
+  locale: AppLocale
 }
 
-function importInstructionMessage(locale: 'en' | 'sv', key: string): string {
+function importInstructionMessage(locale: AppLocale, key: string): string {
   return getPromptMessage(locale, ['ai', 'prompt', 'importInstruction', key])
 }
 
 function importInstructionRules(
-  locale: 'en' | 'sv',
+  locale: AppLocale,
   key: string,
 ): PromptRuleItem[] {
   return getPromptRuleList(locale, ['ai', 'prompt', 'importInstruction', key])
@@ -315,7 +320,7 @@ export function buildRequirementImportInstruction({
 
 /** Shared part: the repair rules as a Markdown list. */
 export function buildRequirementImportRepairRules(
-  locale: 'en' | 'sv' = 'en',
+  locale: AppLocale = 'en',
 ): string {
   return renderPromptRuleList(
     getPromptMessageList(locale, ['ai', 'prompt', 'repair', 'rules']),
@@ -413,7 +418,7 @@ function toStructuredOutputStrictSchema(value: unknown): unknown {
 }
 
 export function buildRequirementImportResponseFormatSchema(
-  locale: 'en' | 'sv' = 'en',
+  locale: AppLocale = 'en',
   budget: RequirementImportBudget = DEFAULT_REQUIREMENT_IMPORT_BUDGET,
 ): Record<string, unknown> {
   return toStructuredOutputStrictSchema(
@@ -427,7 +432,7 @@ export function buildRequirementImportResponseFormatSchema(
  */
 export function buildRequirementImportSystemPrompt(
   importInstruction: string,
-  locale: 'en' | 'sv' = 'en',
+  locale: AppLocale = 'en',
 ): string {
   const importHeading = getPromptMessage(locale, [
     'ai',
@@ -444,17 +449,11 @@ export function buildRequirementImportSystemPrompt(
   ].join('\n\n')
 }
 
-export interface BuildRequirementImportAiRequestTemplateOptions {
-  budget: RequirementImportBudget
-  destinationKind: RequirementImportDestinationKind
-  locale: 'en' | 'sv'
-}
-
-function templateMessage(locale: 'en' | 'sv', key: string): string {
+function templateMessage(locale: AppLocale, key: string): string {
   return getPromptMessage(locale, ['ai', 'prompt', 'template', key])
 }
 
-function templateList(locale: 'en' | 'sv', key: string): string[] {
+function templateList(locale: AppLocale, key: string): string[] {
   return getPromptMessageList(locale, ['ai', 'prompt', 'template', key])
 }
 
@@ -468,7 +467,7 @@ export function buildRequirementImportAiRequestTemplate({
   budget,
   destinationKind,
   locale,
-}: BuildRequirementImportAiRequestTemplateOptions): string {
+}: BuildRequirementImportInstructionRulesOptions): string {
   const values = {
     defaultCount: DEFAULT_REQUIREMENT_CANDIDATE_COUNT,
     destinationKind,
@@ -531,7 +530,7 @@ export function buildRequirementImportAiRequestTemplate({
 
 export interface BuildRequirementImportUserPromptOptions {
   count?: number
-  locale?: 'en' | 'sv'
+  locale?: AppLocale
   need: string
 }
 
@@ -571,7 +570,7 @@ ${candidateCount}`,
 export interface BuildRequirementImportRepairUserPromptOptions {
   brokenJson: string
   errors: readonly string[]
-  locale?: 'en' | 'sv'
+  locale?: AppLocale
 }
 
 function sanitizeRequirementImportRepairInput(rawInput: string): string {
@@ -636,7 +635,7 @@ export interface BuildRequirementImportRepairPromptOptions {
    * `REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT`.
    */
   errors: FormattedRequirementImportJsonErrors
-  locale: 'en' | 'sv'
+  locale: AppLocale
 }
 
 /**

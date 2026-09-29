@@ -1,3 +1,4 @@
+import type { AppLocale } from '@/lib/locale-preference'
 import { REQUIREMENTS_IMPORT_SCHEMA_VERSION } from '@/lib/requirements/import-schema'
 
 /**
@@ -18,7 +19,7 @@ export type RequirementImportReferenceDataFileDestination =
 export interface RequirementImportReferenceDataFile {
   destination: RequirementImportReferenceDataFileDestination
   generatedAt: string
-  locale: 'en' | 'sv'
+  locale: AppLocale
   referenceData: Readonly<Record<string, unknown>>
   schemaVersion: string
 }
@@ -26,7 +27,7 @@ export interface RequirementImportReferenceDataFile {
 export interface BuildRequirementImportReferenceDataFileOptions {
   destination: RequirementImportReferenceDataFileDestination
   generatedAt: Date
-  locale: 'en' | 'sv'
+  locale: AppLocale
   referenceData: Readonly<Record<string, unknown>>
 }
 

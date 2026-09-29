@@ -1,5 +1,9 @@
 import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
-import type { RequirementsImportMode } from '@/lib/requirements/import-service'
+import type { AppLocale } from '@/lib/locale-preference'
+import type {
+  McpImportInstructionDestinationRef,
+  RequirementsImportMode,
+} from '@/lib/requirements/import-service'
 
 /**
  * Client-side names and URLs for the two files that let an external AI
@@ -8,14 +12,15 @@ import type { RequirementsImportMode } from '@/lib/requirements/import-service'
  */
 export type AiRequestFile = 'referenceData' | 'template'
 
-export type AiRequestFileDestination =
-  | { kind: 'requirements_library' }
-  | { kind: 'requirements_specification'; specificationId: number }
-
-type Locale = 'en' | 'sv'
+/**
+ * The destination of the AI request files. It is the import instruction's
+ * destination, since both files use the same destinations as the instruction.
+ * The import is type-only, so client code does not load the server module.
+ */
+export type AiRequestFileDestination = McpImportInstructionDestinationRef
 
 const FILE_NAME_PREFIX: Record<
-  Locale,
+  AppLocale,
   Record<AiRequestFile, Record<RequirementImportDestinationKind, string>>
 > = {
   en: {
@@ -51,7 +56,7 @@ const FILE_PATHS: Record<AiRequestFile, string> = {
 
 export function aiRequestFileName(
   file: AiRequestFile,
-  locale: Locale,
+  locale: AppLocale,
   destination: AiRequestFileDestination,
 ): string {
   const prefix = FILE_NAME_PREFIX[locale][file][destination.kind]
@@ -63,7 +68,7 @@ export function aiRequestFileName(
 
 export function aiRequestFileUrl(
   file: AiRequestFile,
-  locale: Locale,
+  locale: AppLocale,
   destination: AiRequestFileDestination,
 ): string {
   const params = new URLSearchParams({ locale, kind: destination.kind })
@@ -77,6 +82,15 @@ export function aiRequestFileUrl(
   return `${FILE_PATHS[file]}?${params}`
 }
 
+/** The import destination kind for an import dialog mode. */
+export function importDestinationKindForMode(
+  mode: RequirementsImportMode,
+): RequirementImportDestinationKind {
+  return mode === 'library'
+    ? 'requirements_library'
+    : 'requirements_specification'
+}
+
 /**
  * The destination of the AI request files for an import mode. Like the import
  * instruction, a requirements specification import needs the specification
@@ -86,8 +100,7 @@ export function resolveAiRequestFileDestination(
   mode: RequirementsImportMode,
   specificationId: number | null | undefined,
 ): AiRequestFileDestination | null {
-  if (mode === 'library') return { kind: 'requirements_library' }
-  return specificationId != null
-    ? { kind: 'requirements_specification', specificationId }
-    : null
+  const kind = importDestinationKindForMode(mode)
+  if (kind === 'requirements_library') return { kind }
+  return specificationId != null ? { kind, specificationId } : null
 }

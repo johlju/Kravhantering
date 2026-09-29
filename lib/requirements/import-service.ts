@@ -2073,6 +2073,9 @@ async function assertMcpImportDestinationAuthorized(
  * Authorizes reading the import instruction or reference data file for a
  * destination. A requirements specification destination also needs the right
  * to import into that specification.
+ *
+ * The reference data file reuses the `get_import_instruction` permission on
+ * purpose: Spec #1559 requires the same permission as the instruction route.
  */
 async function authorizeImportInstructionDestination(
   authorization: AuthorizationService,
@@ -3364,6 +3367,10 @@ export function createRequirementsImportWorkflow({
         locale: 'en' | 'sv'
       },
     ): Promise<{ aiRequestTemplate: string }> {
+      // The template reuses the `get_import_instruction` permission on
+      // purpose: Spec #1559 requires the same permission as the instruction
+      // route. The template has no destination id, so there is no
+      // destination check.
       await authorize(
         authorization,
         { kind: 'get_import_instruction' },

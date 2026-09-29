@@ -7,20 +7,19 @@ import { useId, useState } from 'react'
 import AiRequestFileDownloads from '@/components/AiRequestFileDownloads'
 import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
 import { devMarker } from '@/lib/developer-mode-markers'
+import type { AppLocale } from '@/lib/locale-preference'
 import { collapsiblePanelMotion } from '@/lib/reduced-motion'
 import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 
 interface RequirementsImportSupportPanelProps {
-  /** Whether the import instruction can be downloaded for the destination. */
-  canDownloadImportInstruction: boolean
   /**
-   * The destination of the AI request files; `null` disables the step 1
-   * buttons.
+   * The destination of the AI request files and the import instruction;
+   * `null` disables their buttons.
    */
   destination: AiRequestFileDestination | null
   destinationKind: RequirementImportDestinationKind
   headingId: string
-  locale: 'en' | 'sv'
+  locale: AppLocale
   onDownloadError: (message: string) => void
   onDownloadImportInstruction: () => void
   onDownloadSchema: () => void
@@ -51,7 +50,6 @@ const COLLAPSIBLE_CLIP = '-mx-1 overflow-hidden px-1'
  * schema and import instruction for writing the whole prompt yourself.
  */
 export default function RequirementsImportSupportPanel({
-  canDownloadImportInstruction,
   destination,
   destinationKind,
   headingId,
@@ -182,8 +180,9 @@ export default function RequirementsImportSupportPanel({
                   <button
                     aria-describedby={ownPromptHelpId}
                     className={LINK_BUTTON}
-                    disabled={!canDownloadImportInstruction}
+                    disabled={destination === null}
                     onClick={onDownloadImportInstruction}
+                    title={destination ? undefined : t('filesUnavailable')}
                     type="button"
                     {...devMarker({
                       context: MARKER_CONTEXT,

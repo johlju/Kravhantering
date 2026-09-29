@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { buildRequirementImportRepairPrompt } from '@/lib/ai/requirement-prompt'
 import { devMarker } from '@/lib/developer-mode-markers'
+import type { AppLocale } from '@/lib/locale-preference'
 import { collapsiblePanelMotion } from '@/lib/reduced-motion'
 import {
   formatRequirementImportJsonErrors,
@@ -14,7 +15,7 @@ import {
 import type { ImportJsonProblem } from '@/lib/requirements/import-json-input'
 
 interface RequirementsImportRepairPromptProps {
-  locale: 'en' | 'sv'
+  locale: AppLocale
   /** A problem that `isRequirementImportJsonProblemRepairable` accepts. */
   problem: ImportJsonProblem
 }

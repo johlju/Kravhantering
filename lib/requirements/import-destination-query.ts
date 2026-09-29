@@ -1,4 +1,5 @@
 import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
+import type { AppLocale } from '@/lib/locale-preference'
 import {
   type RequirementsServiceError,
   validationError,
@@ -9,13 +10,17 @@ import type { McpImportInstructionDestinationRef } from '@/lib/requirements/impo
  * Query parsing shared by the import instruction, AI request template, and
  * reference data routes, so that they reject the same parameters with the
  * same reason.
+ *
+ * The reason keeps its instruction name on purpose: Spec #1559 requires the
+ * template and reference data routes to give the same reasons as the
+ * instruction route.
  */
 export const MISSING_IMPORT_DESTINATION_REASON =
   'missing_import_instruction_destination'
 
 export function importLocaleFromQuery(
   searchParams: URLSearchParams,
-): 'en' | 'sv' {
+): AppLocale {
   return searchParams.get('locale') === 'sv' ? 'sv' : 'en'
 }
 

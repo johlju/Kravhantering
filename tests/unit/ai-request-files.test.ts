@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   aiRequestFileName,
   aiRequestFileUrl,
+  importDestinationKindForMode,
   resolveAiRequestFileDestination,
 } from '@/lib/requirements/ai-request-files'
 
@@ -90,6 +91,16 @@ describe('AI request file names and URLs', () => {
       expect(resolveAiRequestFileDestination(mode, specificationId)).toEqual(
         expected,
       )
+    },
+  )
+
+  it.each([
+    ['library', 'requirements_library'],
+    ['specification-local', 'requirements_specification'],
+  ] as const)(
+    'maps the %s import mode to the %s destination kind',
+    (mode, kind) => {
+      expect(importDestinationKindForMode(mode)).toBe(kind)
     },
   )
 })

@@ -43,7 +43,10 @@ import { devMarker } from '@/lib/developer-mode-markers'
 import { escapeCsvField } from '@/lib/export-csv'
 import { apiFetch } from '@/lib/http/api-fetch'
 import { readResponseMessage } from '@/lib/http/response-message'
-import { resolveAiRequestFileDestination } from '@/lib/requirements/ai-request-files'
+import {
+  importDestinationKindForMode,
+  resolveAiRequestFileDestination,
+} from '@/lib/requirements/ai-request-files'
 import type { RequirementImportBudget } from '@/lib/requirements/import-budget'
 import {
   RequirementImportCandidateError,
@@ -907,7 +910,6 @@ export default function RequirementsImportDialog({
     mode,
     specificationId,
   )
-  const canDownloadImportInstruction = aiRequestFileDestination !== null
   const canLoadPreview =
     !loading && parsedImportPayload !== null && hasRequiredImportTarget
   const startImportDisabledReason = useMemo(() => {
@@ -1821,12 +1823,15 @@ export default function RequirementsImportDialog({
   const downloadArtifact = async (kind: 'schema' | 'instruction') => {
     const instructionParams = new URLSearchParams({ locale })
     if (kind === 'instruction') {
-      if (mode === 'specification-local') {
-        if (specificationId == null) return
-        instructionParams.set('kind', 'requirements_specification')
-        instructionParams.set('specificationId', String(specificationId))
-      } else {
-        instructionParams.set('kind', 'requirements_library')
+      // The import instruction has the same destination as the AI request
+      // files and is unavailable without it.
+      if (!aiRequestFileDestination) return
+      instructionParams.set('kind', aiRequestFileDestination.kind)
+      if (aiRequestFileDestination.kind === 'requirements_specification') {
+        instructionParams.set(
+          'specificationId',
+          String(aiRequestFileDestination.specificationId),
+        )
       }
     }
     const path =
@@ -2459,13 +2464,8 @@ export default function RequirementsImportDialog({
                   })}
                 >
                   <RequirementsImportSupportPanel
-                    canDownloadImportInstruction={canDownloadImportInstruction}
                     destination={aiRequestFileDestination}
-                    destinationKind={
-                      mode === 'library'
-                        ? 'requirements_library'
-                        : 'requirements_specification'
-                    }
+                    destinationKind={importDestinationKindForMode(mode)}
                     headingId={`${titleId}-support`}
                     locale={locale}
                     onDownloadError={setErrorMessage}

@@ -208,15 +208,18 @@ describe('readRequirementImportJson', () => {
     ['an array', '[1, 2]'],
     ['a string', '"Jag behöver referensdatafilen"'],
     ['a number', '8'],
-  ])('reports no JSON when the whole text is %s instead of an object', (_label, text) => {
-    const result = read(text)
+  ])(
+    'reports no JSON when the whole text is %s instead of an object',
+    (_label, text) => {
+      const result = read(text)
 
-    expect(result).toEqual({
-      extractedFromCodeBlock: false,
-      payload: null,
-      problem: { kind: 'no-json' },
-    })
-  })
+      expect(result).toEqual({
+        extractedFromCodeBlock: false,
+        payload: null,
+        problem: { kind: 'no-json' },
+      })
+    },
+  )
 
   it('returns a schema issue for a code block whose JSON value is not an object', () => {
     const result = read('```json\n[1, 2]\n```')

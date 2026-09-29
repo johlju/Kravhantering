@@ -58,13 +58,13 @@ describe('describeRequirementImportJsonProblem', () => {
       'sv',
       'Svaret innehåller ingen JSON. Läs AI-assistentens svar. Behovet eller referensdatafilen kan saknas.',
       'Svaret är troligen avkortat. Be om färre krav per förfrågan.',
-      'schemaVersion ska vara requirement-import.v4.',
+      `schemaVersion ska vara ${REQUIREMENTS_IMPORT_SCHEMA_VERSION}.`,
     ],
     [
       'en',
       "The response contains no JSON. Read the AI assistant's response. The need or the reference data file may be missing.",
       'The response is probably truncated. Ask for fewer requirements per request.',
-      'schemaVersion must be requirement-import.v4.',
+      `schemaVersion must be ${REQUIREMENTS_IMPORT_SCHEMA_VERSION}.`,
     ],
   ] as const)(
     'describes each classification in %s',
@@ -253,7 +253,7 @@ describe('formatRequirementImportJsonErrors', () => {
       ).errors,
     ).toEqual([
       {
-        message: 'schemaVersion must be requirement-import.v4.',
+        message: `schemaVersion must be ${REQUIREMENTS_IMPORT_SCHEMA_VERSION}.`,
         path: '$.schemaVersion',
       },
     ])
@@ -409,7 +409,10 @@ describe('schema issue texts', () => {
 
 describe('isRequirementImportJsonProblemRepairable', () => {
   it.each([
-    ['a syntax error', '{\n  "schemaVersion": "requirement-import.v4",,\n}'],
+    [
+      'a syntax error',
+      `{\n  "schemaVersion": "${REQUIREMENTS_IMPORT_SCHEMA_VERSION}",,\n}`,
+    ],
     ['a wrong schemaVersion', { requirements: [{}], schemaVersion: 'v1' }],
     [
       'schema errors',
