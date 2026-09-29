@@ -429,12 +429,13 @@ same destination and locale, including the same minimization. The file is
 never embedded in the template.
 
 Both routes require an authenticated session and the same
-`get_import_instruction` authorization as the import instruction. The reference
-data route also checks a requirements specification destination with
-`assertMcpImportDestinationAuthorized`, as the instruction route does. Missing
-or unknown destination parameters, and a requirements specification without a
-positive integer `specificationId`, are validation errors with the same reason
-as the instruction route. Neither route is exposed through MCP.
+`get_import_instruction` authorization as the import instruction. For a
+requirements specification destination, the reference data route, like the
+instruction route, also requires the right to create specification-local
+requirements in that specification. Missing or unknown destination parameters,
+and a requirements specification without a positive integer `specificationId`,
+are validation errors with the same reason as the instruction route. Neither
+route is exposed through MCP.
 
 ### Human-Facing Import Examples
 

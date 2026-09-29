@@ -2069,6 +2069,26 @@ async function assertMcpImportDestinationAuthorized(
   )
 }
 
+/**
+ * Authorizes reading the import instruction or reference data file for a
+ * destination. A requirements specification destination also needs the right
+ * to import into that specification.
+ */
+async function authorizeImportInstructionDestination(
+  authorization: AuthorizationService,
+  context: RequestContext,
+  destination: McpImportInstructionDestinationRef,
+): Promise<void> {
+  await authorize(authorization, { kind: 'get_import_instruction' }, context)
+  if (destination.kind === 'requirements_specification') {
+    await assertMcpImportDestinationAuthorized(
+      authorization,
+      context,
+      destination,
+    )
+  }
+}
+
 function createValidationToken(): { token: string; tokenHash: string } {
   const token = randomBytes(32).toString('base64url')
   return {
@@ -3298,18 +3318,11 @@ export function createRequirementsImportWorkflow({
         locale: 'en' | 'sv'
       },
     ): Promise<{ importInstruction: string }> {
-      await authorize(
+      await authorizeImportInstructionDestination(
         authorization,
-        { kind: 'get_import_instruction' },
         context,
+        input.destination,
       )
-      if (input.destination.kind === 'requirements_specification') {
-        await assertMcpImportDestinationAuthorized(
-          authorization,
-          context,
-          input.destination,
-        )
-      }
 
       return withLogging(
         logger,
@@ -3383,18 +3396,11 @@ export function createRequirementsImportWorkflow({
         locale: 'en' | 'sv'
       },
     ): Promise<RequirementImportReferenceDataFile> {
-      await authorize(
+      await authorizeImportInstructionDestination(
         authorization,
-        { kind: 'get_import_instruction' },
         context,
+        input.destination,
       )
-      if (input.destination.kind === 'requirements_specification') {
-        await assertMcpImportDestinationAuthorized(
-          authorization,
-          context,
-          input.destination,
-        )
-      }
 
       return withLogging(
         logger,
