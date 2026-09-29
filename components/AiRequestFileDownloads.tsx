@@ -6,6 +6,7 @@ import { useId, useState } from 'react'
 import { downloadBlob } from '@/lib/browser-download'
 import { devMarker } from '@/lib/developer-mode-markers'
 import { readResponseMessage } from '@/lib/http/response-message'
+import type { AppLocale } from '@/lib/locale-preference'
 import {
   type AiRequestFile,
   type AiRequestFileDestination,
@@ -16,7 +17,7 @@ import {
 interface AiRequestFileDownloadsProps {
   /** The destination to download files for; `null` disables both buttons. */
   destination: AiRequestFileDestination | null
-  locale: 'en' | 'sv'
+  locale: AppLocale
   /** Developer Mode context of the surface that shows the buttons. */
   markerContext: string
   /** Called when a download starts, for example to clear an earlier error. */
@@ -102,7 +103,13 @@ export default function AiRequestFileDownloads({
               className={BUTTON_CLASS[file]}
               disabled={!destination || pendingFile !== null}
               onClick={() => void download(file)}
-              title={destination ? undefined : t('filesUnavailable')}
+              title={
+                !destination
+                  ? t('filesUnavailable')
+                  : pendingFile !== null && pendingFile !== file
+                    ? t('otherDownloadPending')
+                    : undefined
+              }
               type="button"
               {...devMarker({
                 context: markerContext,

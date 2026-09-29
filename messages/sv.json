@@ -4009,6 +4009,7 @@
     "downloadImportInstruction": "Ladda ner importinstruktion",
     "downloadFailed": "Filen kunde inte laddas ner. Försök igen.",
     "downloading": "Laddar ner…",
+    "otherDownloadPending": "Vänta tills den andra filen har laddats ner.",
     "filesUnavailable": "Filerna kräver ett kravunderlag."
   },
   "onDemandFeature": {

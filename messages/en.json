@@ -4009,6 +4009,7 @@
     "downloadImportInstruction": "Download import instruction",
     "downloadFailed": "The file could not be downloaded. Try again.",
     "downloading": "Downloading…",
+    "otherDownloadPending": "Wait until the other file has downloaded.",
     "filesUnavailable": "These files need a requirements specification."
   },
   "onDemandFeature": {
