@@ -48,7 +48,9 @@ vi.mock('next-intl', async () => {
     await vi.importActual<typeof import('next-intl')>('next-intl')
   const { default: enMessages } = await import('@/messages/en.json')
   const { default: svMessages } = await import('@/messages/sv.json')
-  const createTranslators = (namespace: string) => ({
+  const createTranslators = (
+    namespace: 'requirementsImportAiRequest' | 'requirementsImportJson',
+  ) => ({
     en: createTranslator({ locale: 'en', messages: enMessages, namespace }),
     sv: createTranslator({ locale: 'sv', messages: svMessages, namespace }),
   })
