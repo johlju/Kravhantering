@@ -1,11 +1,13 @@
 'use client'
 
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ChevronDown, Download, FileJson } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useId, useState } from 'react'
 import AiRequestFileDownloads from '@/components/AiRequestFileDownloads'
 import type { RequirementImportDestinationKind } from '@/lib/ai/requirement-prompt'
 import { devMarker } from '@/lib/developer-mode-markers'
+import { collapsiblePanelMotion } from '@/lib/reduced-motion'
 import type { AiRequestFileDestination } from '@/lib/requirements/ai-request-files'
 
 interface RequirementsImportSupportPanelProps {
@@ -38,6 +40,12 @@ const STEP_TITLE =
 const HELP_TEXT = 'text-xs leading-relaxed'
 
 /**
+ * Clips the section while its height animates. The horizontal padding, offset
+ * by a negative margin, keeps the buttons' focus outlines visible.
+ */
+const COLLAPSIBLE_CLIP = '-mx-1 overflow-hidden px-1'
+
+/**
  * The import dialog's support panel: a three-step guide for letting an
  * external AI assistant draft requirements, and a collapsed section with the
  * schema and import instruction for writing the whole prompt yourself.
@@ -57,6 +65,7 @@ export default function RequirementsImportSupportPanel({
   const ownPromptId = `${idPrefix}-own-prompt`
   const ownPromptHelpId = `${idPrefix}-own-prompt-help`
   const [ownPromptOpen, setOwnPromptOpen] = useState(false)
+  const shouldReduceMotion = useReducedMotion()
 
   const steps = [
     {
@@ -145,43 +154,53 @@ export default function RequirementsImportSupportPanel({
           />
           {t('ownPromptToggle')}
         </button>
-        <div
-          className="mt-2 flex flex-col items-start gap-2"
-          hidden={!ownPromptOpen}
-          id={ownPromptId}
-        >
-          <button
-            aria-describedby={ownPromptHelpId}
-            className={LINK_BUTTON}
-            onClick={onDownloadSchema}
-            type="button"
-            {...devMarker({
-              context: MARKER_CONTEXT,
-              name: 'download button',
-              value: 'schema',
-            })}
-          >
-            <Download aria-hidden="true" className="h-4 w-4 shrink-0" />
-            {t('downloadSchema')}
-          </button>
-          <button
-            aria-describedby={ownPromptHelpId}
-            className={LINK_BUTTON}
-            disabled={!canDownloadImportInstruction}
-            onClick={onDownloadImportInstruction}
-            type="button"
-            {...devMarker({
-              context: MARKER_CONTEXT,
-              name: 'download button',
-              value: 'import instruction',
-            })}
-          >
-            <FileJson aria-hidden="true" className="h-4 w-4 shrink-0" />
-            {t('downloadImportInstruction')}
-          </button>
-          <p className={HELP_TEXT} id={ownPromptHelpId}>
-            {t('ownPromptHelp')}
-          </p>
+        {/* The region stays mounted so aria-controls always resolves. The
+            collapsed section is unmounted and out of the accessibility tree. */}
+        <div id={ownPromptId}>
+          <AnimatePresence initial={false}>
+            {ownPromptOpen ? (
+              <motion.div
+                className={COLLAPSIBLE_CLIP}
+                key="own-prompt"
+                {...collapsiblePanelMotion(shouldReduceMotion)}
+              >
+                <div className="flex flex-col items-start gap-2 pt-2 pb-1">
+                  <button
+                    aria-describedby={ownPromptHelpId}
+                    className={LINK_BUTTON}
+                    onClick={onDownloadSchema}
+                    type="button"
+                    {...devMarker({
+                      context: MARKER_CONTEXT,
+                      name: 'download button',
+                      value: 'schema',
+                    })}
+                  >
+                    <Download aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    {t('downloadSchema')}
+                  </button>
+                  <button
+                    aria-describedby={ownPromptHelpId}
+                    className={LINK_BUTTON}
+                    disabled={!canDownloadImportInstruction}
+                    onClick={onDownloadImportInstruction}
+                    type="button"
+                    {...devMarker({
+                      context: MARKER_CONTEXT,
+                      name: 'download button',
+                      value: 'import instruction',
+                    })}
+                  >
+                    <FileJson aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    {t('downloadImportInstruction')}
+                  </button>
+                  <p className={HELP_TEXT} id={ownPromptHelpId}>
+                    {t('ownPromptHelp')}
+                  </p>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
     </>

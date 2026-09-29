@@ -1,10 +1,12 @@
 'use client'
 
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ChevronDown, ClipboardCopy } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { buildRequirementImportRepairPrompt } from '@/lib/ai/requirement-prompt'
 import { devMarker } from '@/lib/developer-mode-markers'
+import { collapsiblePanelMotion } from '@/lib/reduced-motion'
 import {
   formatRequirementImportJsonErrors,
   REQUIREMENT_IMPORT_REPAIR_PROMPT_ERROR_LIMIT,
@@ -33,6 +35,12 @@ const MARKER_CONTEXT = 'requirements import'
 const STATUS_TEXT = 'text-secondary-800 dark:text-secondary-200'
 
 /**
+ * Clips the preview while its height animates. The horizontal padding, offset
+ * by a negative margin, keeps the textarea's focus outline visible.
+ */
+const COLLAPSIBLE_CLIP = '-mx-1 overflow-hidden px-1'
+
+/**
  * Loads the prompt module on demand. It bundles the prompt texts for both
  * locales, so the import dialog only loads it when a repair prompt is needed.
  */
@@ -57,6 +65,7 @@ export default function RequirementsImportRepairPrompt({
   const [builder, setBuilder] = useState<BuilderState>({ status: 'loading' })
   const [copyResult, setCopyResult] = useState<CopyResult | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const shouldReduceMotion = useReducedMotion()
 
   useEffect(() => {
     let active = true
@@ -152,14 +161,29 @@ export default function RequirementsImportRepairPrompt({
             />
             {t('repairPrompt.previewToggle')}
           </button>
-          <textarea
-            aria-label={t('repairPrompt.previewLabel')}
-            className="mt-2 block min-h-40 w-full resize-y rounded-lg border border-secondary-300 bg-white px-3 py-2 font-mono text-xs text-secondary-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
-            hidden={!previewOpen}
-            id={previewId}
-            readOnly
-            value={prompt}
-          />
+          {/* The region stays mounted so aria-controls always resolves. The
+              collapsed preview is unmounted and out of the accessibility
+              tree. */}
+          <div id={previewId}>
+            <AnimatePresence initial={false}>
+              {previewOpen ? (
+                <motion.div
+                  className={COLLAPSIBLE_CLIP}
+                  key="preview"
+                  {...collapsiblePanelMotion(shouldReduceMotion)}
+                >
+                  <div className="pt-2 pb-1">
+                    <textarea
+                      aria-label={t('repairPrompt.previewLabel')}
+                      className="block min-h-40 w-full resize-y rounded-lg border border-secondary-300 bg-white px-3 py-2 font-mono text-xs text-secondary-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100"
+                      readOnly
+                      value={prompt}
+                    />
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
         </div>
       )}
     </div>
