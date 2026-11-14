@@ -354,6 +354,7 @@ place.
 
    ```bash
    sudo -iu kravhantering
+   set -euo pipefail
    cd /opt/kravhantering/current
    set -a
    . /etc/kravhantering/release.env
