@@ -27,10 +27,6 @@ later optional-catalog or browse-access failure. If the transaction outcome is
 unknown, inspect saved state before retrying. Keep the tested recovery procedure
 for failures after migrations start.
 
-The optional catalogs still use the compatibility phase, which can restore
-missing starter rows. The one-time optional initializer is a separate change;
-do not treat this release as providing its completion guarantee.
-
 ### Archive export and disposal
 
 After rollout, create a new archive export before disposal. Confirm that
