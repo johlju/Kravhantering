@@ -15,9 +15,10 @@
 3. Match the exact advisory, package, installed version, and affected image.
    Record vendor fix status, reachability, and residual risk. Use current
    primary sources and state what is uncertain. For accepted risk, require
-   evidence that fixes, source patches, and removal were assessed. Accept an
-   evidence-backed override directly when authoritative evidence shows the
-   exact installed copy is unaffected or already mitigated.
+   evidence that the earlier [remediation actions](remediation.md#remediate-in-order)
+   were assessed. Accept an evidence-backed override directly when
+   authoritative evidence shows the installed copy is unaffected or already
+   mitigated.
    Use any existing package ticket as evidence. [Assess the finding](remediation.md#assess-scanned-findings)
    if evidence is missing or a fix becomes available.
 

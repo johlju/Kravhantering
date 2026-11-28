@@ -10,9 +10,8 @@ If the user already applied the change, start at
    registry, Dockerfile, or deployment configuration. Find its owner, release
    lane, supported platforms, and consumers. Ask if the evidence does not
    establish which reference to update.
-2. Resolve the exact vendor candidate and verify availability on the supported
-   lane. Preserve the repository's tag, index digest, platform manifest digest,
-   and config digest policy. Verify and use any digest supplied by the user.
+2. [Resolve the upstream candidate](#resolve-the-upstream-candidate) before
+   scanning or changing the reference.
 3. [Recheck open remediation tickets](remediation.md#recheck-existing-tickets)
    for the maintenance unit and exact unmodified candidate. Reuse reviews
    for the same digest and case.
@@ -25,6 +24,23 @@ If the user already applied the change, start at
    cleanup the user selects. Use [exception maintenance](exceptions.md) for
    selected record edits. Account for remaining old references and update
    maintenance coverage when the repository requires it.
+
+## Resolve the upstream candidate
+
+Reuse a target already selected by this step during the same run. Otherwise
+run the read-only detector or registry lookup on the supported release lane
+before scanning, even when the user or ticket specifies a tag or digest. If
+there is a newer compatible release than the named target, show both versions
+and ask whether to check the newer one. Wait for the choice before starting
+a scan. Use the named target if the user chooses it or the lookup finds no
+newer compatible release. When the input names only an image or maintenance
+unit, select the latest compatible release on its supported lane.
+
+Resolve the selected image's immutable identity. Preserve the repository's tag,
+index, platform manifest, and config digest policy. Keep a superseded target in
+the record and retain any supplied scan evidence with its original digest and
+gate result. Scan that digest only for a requested comparison or investigation.
+Treat the choice of scan target and approval to adopt a fix as separate decisions.
 
 ## Verify affected images
 

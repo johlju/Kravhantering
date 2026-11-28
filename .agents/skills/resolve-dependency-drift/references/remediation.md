@@ -33,10 +33,10 @@ fix criteria. For a replacement image, find open tickets with the
 upstream image family. Read the ticket bodies to account for shared bases,
 package locations, and all affected consumers.
 
-Inspect the exact unmodified candidate. When starting from a ticket, resolve
-the current supported upstream candidate. During an image update, reuse the
-selected digest. Use an external SBOM, package metadata, and authoritative
-fixed-version or backport evidence
+Inspect the exact unmodified candidate. When starting from a ticket, use
+[Resolve the upstream candidate](image-update.md#resolve-the-upstream-candidate).
+During an image update, reuse the selected digest. Use an external SBOM,
+package metadata, and authoritative fixed-version or backport evidence
 to prove the affected copy is fixed or absent for every scope to be cleaned up.
 A scan of an adapted image can miss a package its workaround already removes.
 
@@ -66,15 +66,18 @@ the evidence for that copy and state any residual uncertainty. Complete the
 release check in step 1 before presenting that recommendation. Apply this
 rule to supplemental findings too.
 
-1. **Install a fix.** Before presenting the remediation decision, identify the
-   supported upstream release lane or lanes the deployment can use. Check
-   available releases in those lanes. Use published SBOMs, package metadata,
-   or inspection of the released artifacts to verify the dependency versions
-   they actually ship. Compare them with authoritative fix or backport
-   evidence. Record the supported lane, releases checked, packaged versions,
-   and deployment assumptions that affect which fixes can be used or whether
-   an override is appropriate. Recommend a compatible fixed release when one
-   is available. If a fixed release cannot be deployed, state the constraint.
+1. **Update the upstream image.** [Resolve the upstream candidate](image-update.md#resolve-the-upstream-candidate)
+   before considering package changes. For a newer image the user selects,
+   use its SBOM, package metadata, or artifact inspection and authoritative
+   fix or backport evidence to establish which findings it addresses. Run
+   the canonical gate and relevant runtime tests against its exact digest.
+   Record the lane, releases checked, packaged versions, and deployment
+   assumptions. Recommend the update for findings it mitigates. If a newer
+   image is unavailable, unsuitable, still affected, or the user chooses
+   the original target, explain the result and continue with package fixes
+   for the remaining findings.
+2. **Install a fixed package.** Assess package fixes against the selected
+   image. Verify the compatible fixed version with authoritative evidence.
    If evidence is missing or inconclusive, say so and give the next check.
    Use RPM-aware comparisons for RPMs. Inspect the selected base and any
    build-time package update steps for inherited packages.
@@ -86,10 +89,8 @@ rule to supplemental findings too.
    tested image digest, package versions, gate result, and runtime test
    outcome. If a check cannot run, state what remains unverified. Use these
    results to decide whether to recommend adopting the fix.
-   For a base change, use the [image update](image-update.md) instructions
-   with the maintenance unit and candidate.
    A package-list entry passes this step only when a rebuild installs the fix.
-2. **Patch from source.** Obtain authenticated, pinned vendor or upstream
+3. **Patch from source.** Obtain authenticated, pinned vendor or upstream
    sources and the actual fixes. Record source and patch hashes, signature
    verification, builder identity, recipe, output identity, notices, and
    provenance. Build the package and test its ABI, runtime configuration,
@@ -97,7 +98,7 @@ rule to supplemental findings too.
    identity truthful; changing a version to clear a scanner is not a patch.
    Record unavailable inputs, failed builds, or unresolved compatibility
    evidence when this path cannot deliver a verified fix.
-3. **Remove unused software.** Inspect production entrypoints, application
+4. **Remove unused software.** Inspect production entrypoints, application
    calls, health checks, native-library linkage, database and identity clients,
    and operational commands. Resolve the complete dependency removal list and
    report each package's purpose and evidence that production does not need
@@ -107,7 +108,7 @@ rule to supplemental findings too.
    finish. Preserve accurate package inventory, trust material, licenses, and
    required runtime behavior. Record collateral tools removed and how their
    build-time or diagnostic purpose is served. Verify the final workloads.
-4. **Override this advisory.** When the earlier paths cannot fix an affected
+5. **Override this advisory.** When the earlier paths cannot fix an affected
    component, propose an exact override for accepted risk and explain why the
    prior actions are unavailable. Use this action for supplemental findings
    when the evaluator supports their scope. If it does not, report the missing
