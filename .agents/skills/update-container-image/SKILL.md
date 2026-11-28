@@ -69,20 +69,21 @@ Resolve [the canonical gate](#canonical-gate) before making changes. Follow
    checklist entry with a recommendation or concrete next check. Check
    coverage by exact image, affected package copy, and advisory. Merge only
    verified aliases across scanners. A pre-update ticket review does not
-   complete this assessment. If evidence or assessment is missing, report it
-   as pending. Rebuild and verify changes the user selects. Repeat the
+   complete this assessment. Say when evidence is missing or inconclusive and
+   give the next check. Rebuild and verify changes the user selects. Repeat the
    open-ticket review if the selected base digest changes.
-5. Include the completed finding entries in the final report for the exact
-   candidate or commit. Keep the remediation skill's field labels, order,
-   recommendation, reason, status, and next check.
-   Give final counts by severity for each configured scanner. For
-   completed scans, show Critical and High counts even when zero and include
-   every other severity present. Report zero total findings only when all configured
-   scans completed and found nothing. Mark missing or failed scans as
-   incomplete. Diagnose infrastructure and other non-package failures through
-   the owning workflow. Give the gate decision separately, link the evidence,
-   and list pending PR or release checks, including release-only consumers that
-   PR CI omits.
+5. Retain the completed entries in the finding report and link it. In chat,
+   lead with the recommendation, why, gate and runtime results, exception
+   need, and next check. Give results for the candidate and any test build
+   separately. State which findings the tested fix clears and which still
+   block promotion. If reporting a production digest, mark it unverified
+   unless deployment evidence confirms it. Include the entries in chat when
+   requested. Give counts by severity for each configured scanner, including
+   zero Critical and High counts on completed scans. Say the scans found
+   nothing only when they all completed with zero total findings. Mark
+   missing or failed scans incomplete. Diagnose infrastructure failures
+   through the owning workflow. List PR or release checks still needed,
+   including release-only consumers that PR CI omits.
 
 ## Canonical gate
 
@@ -99,9 +100,12 @@ evidence read-only. Leave branch publication, PR creation or edits, and ticket
 mutations to a separate user-directed workflow.
 
 Return the proposed or applied change, completed checks, and checks still
-needed. Recommend a PR when there is a change to publish. Recommend closure on
-merge using the repository's convention once the unmodified candidate fixes or
-omits the affected copy, the change removes the obsolete remediation, and the
-exact PR commit passes checks for every affected image and advisory. List
-pending closure candidates and the evidence they still need. Keep tickets
-open when the change retains a workaround or covers only part of the case.
+needed. When adoption needs approval, ask directly whether to apply the named
+remediation before changing release packaging. If called by another skill,
+return the outstanding decision for it to ask. Recommend a PR when there is
+a change to publish. Recommend closure on merge using the repository's
+convention once the unmodified candidate fixes or omits the affected copy,
+the change removes the obsolete remediation, and the exact PR commit passes
+checks for every affected image and advisory. List closure candidates and the
+evidence they still need. Keep tickets open when the change retains a
+workaround or covers only part of the case.
