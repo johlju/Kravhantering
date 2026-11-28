@@ -25,6 +25,12 @@ shared process lock.
   Keep development services undisturbed. Ask for explicit user permission before
   making any exception.
 
+## Container image vulnerability gate
+
+For built or upstream image checks, use `npm run container:vulnerability:check`.
+See the [Vulnerability Promotion Policy](docs/development/trusted-container-publishing.md#vulnerability-promotion-policy)
+for inputs, evidence, and remediation review.
+
 ## Spelling
 
 - If cSpell reports a misspelling in a Markdown file, add the word to the

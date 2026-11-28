@@ -118,13 +118,14 @@ issue reference, and review or expiry condition.
 ## Container vulnerability workflows
 
 Pull-request and trusted-release container builds use
-`.github/actions/container-vulnerability-gate`. The shared action generates an
-SPDX SBOM from each exact candidate image or OCI archive, scans it with a
-current Grype database, and evaluates
-`.github/container-vulnerability-exceptions.json` through the same policy
-implementation. Fixable unexcepted High or Critical findings and malformed,
-expired, stale or no-longer-matching exceptions fail the gate. Complete scan
-reports remain unfiltered in workflow artifacts.
+`.github/actions/container-vulnerability-gate`, which calls the same
+`npm run container:vulnerability:check` command used locally. The command uses
+Syft and Grype for the policy decision and scans the same OCI archive with
+Trivy. Both scans must complete. Fixable unexcepted High or Critical Grype
+findings and invalid exception records fail the policy. Complete reports stay
+in the workflow artifacts. See the
+[Vulnerability Promotion Policy](../development/trusted-container-publishing.md#vulnerability-promotion-policy)
+for the grouped report and remediation workflow.
 
 The scheduled and manually dispatched
 `.github/workflows/container-vulnerability-monitor.yml` rescans the supported

@@ -76,7 +76,7 @@ runs:
       with:
         candidate: ${{ inputs.candidate }}
         candidate-manifest-digest: ${{ steps.build.outputs.manifest-digest }}
-        source: oci-archive:tmp/container-candidate/${{ inputs.candidate }}.oci.tar
+        archive: tmp/container-candidate/${{ inputs.candidate }}.oci.tar
         artifact-prefix: tmp/container-candidate/vulnerability
 
     - name: Record candidate outcome
@@ -93,8 +93,8 @@ runs:
           echo "Build: ${BUILD_OUTCOME}"
           echo "Vulnerability policy: ${POLICY_OUTCOME}"
           if [[ "$POLICY_OUTCOME" == failure ]]; then
-            decision=tmp/container-candidate/vulnerability/metadata/vulnerability-policy-decision.json
-            if [[ -f "$decision" ]] && jq -e '.summary' "$decision" >/dev/null; then
+            summary=tmp/container-candidate/vulnerability/metadata/vulnerability-scan-summary.json
+            if [[ -f "$summary" ]] && jq -e '.complete and .promotion == "blocked"' "$summary" >/dev/null; then
               echo "Failure category: committed vulnerability policy"
             else
               echo "Failure category: scanner/tool or evidence failure (see step logs)"

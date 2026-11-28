@@ -76,6 +76,8 @@ rebuild the development container before running the check.
 
 Use [dependency workflow](docs/development/dependency-workflow.md) for
 `npm run purge:install` and package-install recovery details.
+For image updates and vulnerability blockers, see the
+[container image maintenance workflow](docs/development/dependency-workflow.md#container-image-maintenance-workflow).
 
 ## Integration Test Chunks
 

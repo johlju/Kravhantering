@@ -25,11 +25,27 @@ in a finding. Establish current behavior before editing.
    without waiting unless a user decision or new authorization is required.
 4. **Implementation:** Apply only the planned `valid` fixes. Add or update tests
    for changed behavior and follow instructions governing the touched files.
-5. **Verification:** Run focused checks and `npm run check`. Investigate every
-   failure; resolve it or report the exact blocker and evidence.
+5. **Verification:** Run the checks below. Investigate failures and report
+   their evidence.
 6. **Completion:** Use the completion contract below. Finish only when every
    applied fix has a verification result and every `plan-first` item has an
    actionable planning entry.
+
+## Verification
+
+- Run new regression tests by name before the affected suite. Where practical,
+  run them on the baseline first. Use the test runner's first-failure option
+  for local diagnosis when available.
+- Run the affected suite and checks for the changed files. Reuse completed CI
+  checks for the exact candidate revision when they cover the required checks.
+  If full verification is required and matching CI results are unavailable,
+  run the repository's documented full check.
+- On a failure outside the changed behavior, run the failing test against the
+  committed baseline in an isolated checkout. Compare the failing assertion
+  and report a reproduced baseline failure as a blocker to full verification.
+- When a verification lock is busy, use the repository's documented wait
+  option if available. For long local checks, use concise output with a
+  retained full log when the tooling supports it.
 
 ## Status Definitions
 
@@ -57,7 +73,7 @@ scope, but validate its premises before editing.
 - Accept consistency claims only when nearby project patterns or explicit
   instructions establish the convention.
 - Reject style-only changes without a concrete benefit. Defer formatting and
-  import ordering to the configured formatter, including Biome.
+  import ordering to the configured formatter.
 - Require concrete impact for claims that cross subsystem boundaries; a broad
   assertion is not evidence.
 - For AI instruction files, require a demonstrable improvement to invocation,
@@ -105,6 +121,6 @@ applies.
 - When `plan-first` findings exist, include a detailed
   `Plan-first feature improvements` table with columns `Finding`,
   `Why deferred`, `What to plan or track`, and `Suggested path`. Make
-  `What to plan or track` reusable as a planning note or GitHub issue
+  `What to plan or track` reusable as a planning note or issue
   description. Set `Suggested path` to `Plan separately` or
-  `Track in new GitHub issue`.
+  `Track in new issue`.

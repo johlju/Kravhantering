@@ -36,7 +36,7 @@ jobs:
       packages: write
 
     env:
-      KEYCLOAK_IMAGE_REF: quay.io/keycloak/keycloak:26.8.2-2
+      KEYCLOAK_IMAGE_REF: quay.io/keycloak/keycloak:26.8.2-3
       KONG_IMAGE_REF: docker.io/kong/kong-gateway:3.16.0.2-20261110-ubuntu
       HSA_MTLS_PROVISIONER_IMAGE: localhost/kravhantering/hsa-mtls-provisioner
       HSA_MTLS_PROVISIONER_CANDIDATE_ARTIFACT: tmp/container-release-artifacts/candidates/hsa-mtls-provisioner.oci.tar
@@ -332,13 +332,7 @@ jobs:
       - name: Gate complete candidate SBOMs against vulnerability policy
         uses: ./.github/actions/container-vulnerability-gate
         with:
-          app-runtime: oci-archive:${{ env.APP_RUNTIME_CANDIDATE_ARTIFACT }}
           artifact-prefix: tmp/container-release-artifacts
-          db-job: oci-archive:${{ env.DB_JOB_CANDIDATE_ARTIFACT }}
-          demo-seed: oci-archive:${{ env.DEMO_SEED_CANDIDATE_ARTIFACT }}
-          hsa-directory-mock: oci-archive:${{ env.HSA_DIRECTORY_MOCK_CANDIDATE_ARTIFACT }}
-          hsa-mtls-provisioner: oci-archive:${{ env.HSA_MTLS_PROVISIONER_CANDIDATE_ARTIFACT }}
-          hsa-person-lookup-adapter: oci-archive:${{ env.HSA_PERSON_LOOKUP_ADAPTER_CANDIDATE_ARTIFACT }}
           metadata: tmp/container-release-artifacts/metadata/release-metadata.json
 
       - name: Create per-container local env files
@@ -546,12 +540,19 @@ jobs:
             tmp/container-release-artifacts/metadata/release-plan.json \
             tmp/container-release-artifacts/metadata/release-metadata.json \
             tmp/container-release-artifacts/metadata/vulnerability-policy-decision.json \
+            tmp/container-release-artifacts/metadata/vulnerability-scan-summary.json \
             tmp/container-release-artifacts/reports/app-runtime.json \
             tmp/container-release-artifacts/reports/db-job.json \
             tmp/container-release-artifacts/reports/demo-seed.json \
             tmp/container-release-artifacts/reports/hsa-directory-mock.json \
             tmp/container-release-artifacts/reports/hsa-mtls-provisioner.json \
             tmp/container-release-artifacts/reports/hsa-person-lookup-adapter.json \
+            tmp/container-release-artifacts/reports/app-runtime.trivy.json \
+            tmp/container-release-artifacts/reports/db-job.trivy.json \
+            tmp/container-release-artifacts/reports/demo-seed.trivy.json \
+            tmp/container-release-artifacts/reports/hsa-directory-mock.trivy.json \
+            tmp/container-release-artifacts/reports/hsa-mtls-provisioner.trivy.json \
+            tmp/container-release-artifacts/reports/hsa-person-lookup-adapter.trivy.json \
             tmp/container-release-artifacts/sbom/app-runtime.spdx.json \
             tmp/container-release-artifacts/sbom/db-job.spdx.json \
             tmp/container-release-artifacts/sbom/demo-seed.spdx.json \

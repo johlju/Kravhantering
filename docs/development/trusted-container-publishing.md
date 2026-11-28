@@ -81,7 +81,8 @@ The production smoke gate supplies the integrated deployment evidence.
 
 Syft generates an SBOM directly from each candidate archive. Grype scans every
 SBOM with an updated vulnerability database, and the committed exception policy
-evaluates the complete reports. The release smoke job stages the real production
+evaluates the complete reports. Trivy scans the same candidate archives and
+supplies a separate report. The release smoke job stages the real production
 deployment archive, installs it for a dedicated rootless user on Ubuntu 24.04,
 and loads those same candidate archives into that user's Podman store without
 rebuilding. GHCR authentication, release tag publication and final attestations
@@ -165,13 +166,61 @@ names strip SemVer build metadata from the first `+` onward. For example,
 
 ## Vulnerability Promotion Policy
 
-Fixable High and Critical findings block promotion unless an exact, active
-reviewed exception applies.
+Fixable High and Critical Grype findings block promotion unless an exact,
+active reviewed exception applies. Trivy findings are supplemental. Both
+scans must complete before promotion.
+
+The PR and release workflows run the same command as local verification.
+For a built image, pass the OCI archive and its manifest digest. For an
+upstream image, pass the registry reference with `--image`. Both scanners
+read the same resolved platform image. Use `--platform` to select a platform
+other than the default `linux/amd64`.
+
+```sh
+digest=$(jq -er '."containerimage.digest"' /path/to/db-job-buildx.json)
+npm run container:vulnerability:check -- \
+  --candidate db-job --archive /path/to/db-job.oci.tar \
+  --manifest-digest "$digest" --output /path/to/evidence
+```
+
+For example, scan the Kong image selected by its lock:
+
+```sh
+image=$(jq -er '.image + ":" + .tag + "@" + .manifestDigest' \
+  containers/kong/image.lock.json)
+npm run container:vulnerability:check -- \
+  --candidate kong --image "$image" --output /path/to/evidence
+```
+
+Pin the registry digest when checking a maintenance candidate. When you pass
+a tag, the report records the resolved digest and platform so you can repeat
+the scan. For private registries, pass a Regclient configuration file with
+`--registry-config`, or scan a previously exported OCI archive.
+
+For a batch, use `--inputs` with a JSON array of uniquely named images. Each
+entry has `name` and either `image` with optional `platform` or `archive` with
+`manifestDigest`. Run from the repository root so relative archive paths
+resolve as expected. The release workflows use `--scope release` for a named
+release archive and `--metadata` for the complete release set. Use
+`--scope release` when checking a release exception locally. Standalone and
+batch scans use the same severity rules. They accept overrides bound to the
+exact upstream repository and manifest digest or the exact local archive
+digest and scan name. Release-role exceptions stay in the release scope.
+
+The command uses Docker and pinned scanner images. It reuses scanner caches
+under `${XDG_CACHE_HOME:-$HOME/.cache}/krav-container-vulnerability` and needs
+registry access to refresh scanner databases. Use a fresh evidence directory
+for each candidate change. The report at
+`metadata/vulnerability-scan-summary.json` groups Grype and Trivy findings,
+marks which Grype findings block promotion, and flags every High or Critical
+finding from either scanner with `remediationReview` for assessment. The
+complete scanner reports and the Grype policy decision remain available
+separately.
 
 `.github/container-vulnerability-exceptions.json` is the reviewed,
-machine-readable exception source. The default document contains no
-exceptions. Every exception must identify one vulnerability, release image,
-package name and installed package version exactly. It also requires:
+machine-readable override source. The default document contains no records.
+Each record identifies one advisory, image scope, package name and installed
+version exactly. It also requires:
 
 - a unique exception ID, owner and rationale;
 - creation, next-review and hard-expiry dates;
@@ -179,11 +228,21 @@ package name and installed package version exactly. It also requires:
 - expected-fix status and details, with a tracking reference when a fix or
   upstream tracking item is known.
 
-Wildcards, broad `all` or `any` scopes, malformed dates, stale reviews, expired
-records and duplicate scopes fail the release. An active record must match one
-current fixable High or Critical finding exactly. An exception that no longer
-matches is stale and also fails the release, so obsolete suppressions cannot
-accumulate unnoticed.
+For a new override, set `scope.kind` to `upstream`, `archive`, or `release`
+and `scope.manifestDigest` to the exact scanned manifest digest. Set `image`
+to the canonical registry repository for upstream images, the scan name for
+archives, or the project role for release images. Set `package.type` to the
+package ecosystem and `package.location` when multiple copies match. Include
+only independently verified advisory identifiers in `aliases`. Record
+`residualRisk` and `removalCondition`. Legacy records without `scope` match
+only fixable High or Critical findings in the release role they name.
+
+Applicable invalid, expired, stale, and overlapping records fail the policy
+without exempting a finding. Scoped overrides can match High or Critical
+Grype or Trivy findings, including findings without a reported fix. Trivy
+findings remain supplemental. The decision lists matching scoped overrides
+in `overrides`, and the grouped summary shows the `overrideId` on each
+matching scanner entry. Complete scanner evidence stays unchanged.
 
 The policy decision suppresses a matching finding only from the blocking
 decision. It does not filter the Grype report. Each decision records hashes of
@@ -195,12 +254,15 @@ final image or SBOM attestation, or publish a GitHub Release.
 
 ### Remediation And Last-Resort Exceptions
 
-Maintainers can run `$remediate-container-vulnerabilities` with a failing PR or
-release job URL, or an existing package remediation issue. The user-invoked
-skill creates or reuses one human-managed issue per package, with the
-`ready-for-human` and `remediation:container-vulnerability` labels. CI supplies
-build and scan evidence; it does not create these remediation issues.
-Published-release monitoring retains its separate automation-owned scan records.
+Maintainers can run `$remediate-container-vulnerabilities` with scan results,
+a PR or release job URL, or an existing labeled ticket. The skill recommends
+an action for each High or Critical finding, including supplemental findings
+and findings without a published fix. Select the findings you want to
+remediate. The skill drafts tracking updates for local package changes. Scoped
+overrides require approval for both the record and its tracking ticket. See the
+[container maintenance workflow](dependency-workflow.md#container-image-maintenance-workflow)
+for the tracking label and closure rules. Published-release monitoring
+maintains separate scan records.
 
 The remediation sequence is:
 
@@ -208,8 +270,9 @@ The remediation sequence is:
 2. Build the actual fixes from authenticated, pinned vendor or upstream source.
 3. Inspect production use and remove the package and its full dependency
    closure only when the supported workloads do not need them.
-4. If all three paths fail, record the evidence and ask the user whether to add
-   an exact exception under the existing promotion policy.
+4. If all three paths fail, propose a scoped override for accepted risk. If
+   authoritative evidence shows the exact installed component is unaffected
+   or already mitigated, propose an evidence-backed override directly.
 
 Source patches need build provenance, truthful package identities, license
 notices, compatibility tests, and passing final-image scan evidence. Removal
@@ -218,11 +281,42 @@ not use it. Preserve package inventory for external SBOM tools. Treat unknown
 production use as a reason to keep the package. Installing a package-list entry
 or changing a version without the fix does not establish remediation.
 
-The exception request includes the failed attempts, remaining exposure, exact
-scope, accountable owner, and proposed review and expiry dates. The user makes
-the case-specific decision before an exception is added. The evaluator's
-required lifecycle fields, expiry checks, and stale-scope rejection still
-apply; this workflow adds no fixed review or expiry interval.
+The approval includes the advisory and verified aliases, exact package and
+image scope, evidence, rationale, residual risk, accountable owner, review
+date, expiry, and removal condition. Ask once to apply the record and create
+or reuse its ticket. Keep approval data and raw evidence outside Git.
+
+After approval, save a JSON document with `approved: true` and the exact
+exceptions entry in `override`. Run the following from the repository root:
+
+```sh
+npm run container:vulnerability:override -- \
+  --approval /path/to/approved.json --evidence /path/to/scan-output \
+  --repository viscalyx/Kravhantering --evidence-url '<retained-scan-url>'
+```
+
+The command creates or reuses one ticket for the advisory and scope, applies
+the record locally, and evaluates the full approved set against the complete
+scan output. It updates every linked override ticket for that exact image with
+its individual match and the shared gate result. An unrelated blocker still
+fails the gate. If verification fails, the ticket stays open with the next
+check. Open a PR for the local record in a separate step.
+
+Use an HTTPS link to the exact evidence retained in a CI run or an approved
+artifact store. The command records the link and a digest of the saved policy
+decision. If the link is pending, omit `--evidence-url` when applying the
+record. Once the evidence is retained, or to retry ticket updates for an
+already approved set, reconcile the scan in one command:
+
+```sh
+npm run container:vulnerability:override -- reconcile \
+  --evidence /path/to/scan-output --repository viscalyx/Kravhantering \
+  --evidence-url '<retained-scan-url>'
+```
+
+Reconciliation reruns the evaluator once for the supplied scan and updates
+its linked scoped override tickets. It reports the shared gate result, each
+ticket's match and state, and any failed ticket updates.
 
 The package issue records current evidence, temporary code and exceptions,
 upstream sources to watch, exact fix criteria, and repeatable next checks. Give
@@ -569,9 +663,9 @@ Each trusted run also writes runtime evidence:
   database schema migration `name` and the optional
   `kravhantering-demo-seed` image. The production deployment bundle writes a
   filtered copy that excludes that optional demo image.
-- `grype-db-status.json`, the complete per-image reports and
-  `vulnerability-policy-decision.json` record the vulnerability gate inputs
-  and outcome.
+- `grype-db-status.json`, the complete per-image Grype and Trivy reports,
+  `vulnerability-scan-summary.json`, and `vulnerability-policy-decision.json`
+  record the vulnerability gate inputs and outcome.
 - `promotion-result.json` records each verified non-promoted staging identity
   and final GHCR tag with its manifest digest after successful validation.
 - `production-smoke-evidence/` contains redacted systemd, journal, Podman
@@ -592,8 +686,8 @@ The workflow uploads these artifact groups:
 - `container-release-runtime-*` for production Quadlet smoke evidence, stack
   lock, build metadata and hashes.
 - `container-release-metadata-*` for GitVersion, release metadata, release
-  notes, Grype database status, complete vulnerability reports, the policy
-  decision and SBOM files, including optional demonstration image SBOMs.
+  notes, Grype database status, grouped and complete scanner reports, the
+  policy decision and SBOM files, including optional demonstration image SBOMs.
 - `container-release-playwright-*` for the release-smoke report,
   screenshots, traces and test results.
 - `container-release-deployment-*` for the production deployment bundle and

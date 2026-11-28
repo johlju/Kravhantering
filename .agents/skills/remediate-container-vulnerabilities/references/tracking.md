@@ -1,26 +1,40 @@
 # Package remediation tracking
 
-Maintain one human-managed issue per affected package, including its images
-and CVEs. Use the package name and ecosystem from the scanner, plus its image
-family, to find the owning open issue. Existing automation findings are scan
-records, not these remediation issues. Create issues only during a user-invoked
-skill run. Apply `ready-for-human` and `remediation:container-vulnerability`
-when creating or adopting a package issue; create a missing label with its
-documented purpose before using it. Keep package remediation issues separate
-from coordination parents; do not attach them as sub-issues. Exclude
-automation-labelled issues from coordination links and reference lists.
+Use one human-managed ticket per remediated package, including its images and
+advisories. Draft an update or a new ticket after the package change. For a
+scoped override, create or reuse one ticket per advisory and approved scope
+after the user approves both actions. Reuse it on retries and record pending
+or failed verification there.
+Use the template's required tracking label and repository conventions. Track
+every vulnerability-driven change to the selected base's packages, including
+build-time package updates, source patches, and removals.
+Link a related package ticket when one exists. A pin update to a fixed upstream
+image without a local workaround belongs to image maintenance.
 
-Implementation and coordination issues may finish when their changes land.
-Keep their package remediation in its owning tracking issue, including the
+## Find prior remediation
+
+Search open and closed tickets by the [template's required label](template.md)
+and by package or image family in the title. Match the **Finding**
+fields before using a ticket as precedent. Read older ticket bodies and any
+details needed to verify the match. Cite the prior ticket, summarize what
+worked, and confirm the remedy still fits the current image and package.
+
+## Ticket layout
+
+Use [the ticket template](template.md) for titles, headings, and field order.
+When updating an existing ticket, preserve historical evidence and unrelated
+sections. Apply the template to the sections in scope.
+
+Implementation and coordination tickets may finish when their changes land.
+Keep their package remediation in its owning tracking ticket, including the
 upstream checks and future cleanup. When work is split this way, link the
-tracking issue and keep the remediation labels on it rather than on the
-implementation issue. Preserve the package evidence when moving that scope.
+tracking ticket and keep the remediation labels on it rather than on the
+implementation ticket. Preserve the package evidence when moving that scope.
 
 ## Opening summary
 
-Start each package issue with `## Action taken`, before technical evidence.
-Write two to four short paragraphs in plain ASD-STE100 Simplified Technical
-English. Explain:
+In **Action taken**, write two to four short paragraphs using the repository's
+ticket language. Explain in plain terms:
 
 - What the build actually does: install a fixed package, build a source patch,
   remove unused software, or apply a user-approved exception. If nothing has
@@ -41,20 +55,13 @@ Put commands, image hashes, CVE lists, and detailed evidence below the summary.
 
 ## Next step
 
-Put `## Next step` immediately after `## Action taken`. In plain ASD-STE100
-Simplified Technical English, explain what to do at the next maintenance
-review and what result permits cleanup. Keep this section focused on future
-maintenance actions.
-
-Tell the reader to run `$remediate-container-vulnerabilities` with this issue
-and explain what to inspect in the current unmodified upstream image. For an
-image update, explain how to select its exact new identity, synchronize its
-consumers and locks, remove only the unnecessary workaround, and rebuild and
-verify the affected images. For package refreshes, rebuild without cached
-package-install steps. Link the owning image-maintenance workflow for
-exact steps. Explain that deployment uses a new immutable project release;
-existing release images and installed containers do not update automatically.
-State when to retain the workaround and issue, and when cleanup permits closure.
+Tell the reader to run `$remediate-container-vulnerabilities` with this ticket
+and review the recommendation for the exact unmodified upstream image. For
+selected cleanup, explain how to update the image selection and its consumers,
+remove the obsolete workaround, and verify the rebuilt images with the
+repository's gate. Link the owning maintenance workflow for exact steps and
+explain how the repository delivers the change to deployed containers.
+State when to retain the workaround and ticket, and when cleanup permits closure.
 For completed cleanup, state that no further action is needed for this case.
 Keep this section short and useful without reading technical details.
 
@@ -64,9 +71,9 @@ next step needs no duplicate instruction section. Put the remaining technical
 evidence below these two opening sections.
 
 Update both opening sections whenever the action, verification state, or next
-action changes, including when adopting an issue or completing its cleanup.
+action changes, including when adopting a ticket or completing its cleanup.
 
-## Required issue content
+## Required ticket content
 
 Keep these sections current so another invocation can continue without chat:
 
@@ -87,25 +94,24 @@ Keep these sections current so another invocation can continue without chat:
 - **Next checks:** exact upstream package/image/source URLs, expected versions
   or fixes, what has to change, how to probe it, and what would make each failed
   path viable. State unknown facts explicitly. These instructions are inputs
-  for the skill when the user later supplies this issue.
+  for the skill when the user later supplies this ticket.
 - **Removal and closure:** identify each temporary rule, patch, update, and
   exception to remove when the original image contains the fix. Specify the
   evidence that proves this and the required rebuild/runtime/scanner checks.
 
 ## Lifecycle
 
-Record a passing workaround as remediated with cleanup pending, with the issue
-still open. Keep both workflow labels on the issue. `ready-for-human`
-identifies the maintainer's tracking item rather than authorizing an exception;
-`remediation:container-vulnerability` identifies this package-remediation
-workflow for searches and duplicate detection.
+Report a passing workaround as remediated with cleanup pending. Keep the
+ticket open with its tracking label so the next image update finds it.
 
-Only the PR that removes the workaround after the original image includes the
-fix may auto-close the issue. Confirm all its affected image/CVE scopes before
-closing. If an exception becomes stale sooner, remove that stale record as
-the evaluator requires and record any remaining workaround cleanup separately
-in this same issue. A partial cleanup does not complete the package issue.
-
-Use a temporary UTF-8 file for multiline GitHub Markdown and pass it through
-`gh ... --body-file`. Read the saved body with
-`gh ... view --json body --jq .body` to verify its content and real line breaks.
+- Recommend a tracking link for a PR that adds or retains a workaround or
+  covers only part of the case.
+- Recommend closure on merge when the unmodified candidate fixes or omits the
+  affected copy, the change removes all obsolete remediation, and the exact PR
+  commit passes verification across every affected image and advisory. Use the
+  repository's closure convention. If checks are pending, list the ticket as
+  a closure candidate and state what remains.
+- If cleanup already merged, verify the merged change and recommend direct
+  closure with its evidence. If an exception becomes stale sooner, propose
+  removal of the stale record and document any remaining cleanup in the
+  proposed ticket update.

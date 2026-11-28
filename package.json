@@ -77,6 +77,8 @@
     "container:oci:verify": "node scripts/containers/export-oci-archives.mjs verify",
     "container:production-smoke:debug": "node scripts/containers/production-smoke-debug.mjs",
     "container:release": "node scripts/release/container-release.mjs",
+    "container:vulnerability:check": "node scripts/release/container-vulnerability-gate.mjs",
+    "container:vulnerability:override": "node scripts/release/apply-container-vulnerability-override.mjs",
     "ai:deployment-gate": "node scripts/release/ai-deployment-gate.mjs verify",
     "ai:staging-live-probe": "node scripts/release/ai-staging-live-probe.mjs",
     "container:status": "node scripts/containers/collect-status.mjs",
