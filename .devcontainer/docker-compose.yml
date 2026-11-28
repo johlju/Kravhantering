@@ -162,7 +162,7 @@ services:
       - hsa-mtls-mock:/run/kravhantering/hsa-mtls-runtime/mock
 
   kong:
-    image: docker.io/kong/kong-gateway:3.16.0.2-20261110-ubuntu
+    image: docker.io/kong/kong-gateway:3.16.0.3-20261119-ubuntu
     depends_on:
       hsa-person-lookup-adapter:
         condition: service_healthy

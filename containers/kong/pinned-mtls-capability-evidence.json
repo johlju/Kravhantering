@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "verifiedAt": "2026-11-12",
+  "verifiedAt": "2026-11-28",
   "probe": "containers/kong/verify-pinned-mtls-capabilities.mjs",
   "image": "docker.io/kong/kong-gateway",
-  "version": "3.16.0.2",
-  "manifestDigest": "sha256:5530d569000060e593584dc8c409e3396576c9f4967dac875176a856c6655134",
-  "imageId": "sha256:6a4ef344187899e0f0a21199259ed9f71a0cb399f89eeb365fdba3876dae7d38",
+  "version": "3.16.0.3",
+  "manifestDigest": "sha256:f3d04a8c591847a0e24190e3a037b45ff1f83378b19f581a2dc53586bc0848ce",
+  "imageId": "sha256:b87ebdf41be0bc6fe2bb06afa983b23e8acdba4bd891d6de437afc9169967f38",
   "results": {
     "listenerDirectiveInjection": true,
     "downstreamClientChainRequired": true,
