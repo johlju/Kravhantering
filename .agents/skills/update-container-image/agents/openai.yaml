@@ -1,4 +1,0 @@
-interface:
-  display_name: "Update Container Image"
-  short_description: "Update and verify pinned container images"
-  default_prompt: "Use $update-container-image to update this image, check open remediation cases, and verify the affected images."
