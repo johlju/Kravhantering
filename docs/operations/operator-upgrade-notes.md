@@ -13,6 +13,15 @@ changes.
 
 ## Unreleased
 
+### Bundled Keycloak image update
+
+If you use the bundled identity provider, make the target release's Keycloak
+26.8.2-3 image available to the deployment host before rollout. The image
+security assessment assumes the standard providers and Java trust store.
+Review site-specific providers, trust-store changes, and added recovery tools
+before using this image. After replacement, verify sign-in, token refresh,
+sign-out, and administrative access.
+
 ### Action log time filters
 
 If an integration queries the Action log on a server outside UTC, check how
