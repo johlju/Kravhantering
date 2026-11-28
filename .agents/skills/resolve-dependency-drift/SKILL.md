@@ -20,8 +20,9 @@ disable-model-invocation: true
   against the relevant upstream image. Assess scan findings when a fix is
   still needed. Read [exception maintenance](references/exceptions.md) for
   a scoped exception review or change.
-- **Scan evidence or CI job:** [Assess the scan](references/remediation.md#assess-scanned-findings)
-  for the exact image and source commit, whether the gate passes or blocks.
+- **Scan evidence or CI job:** Bind the supplied evidence to its exact image
+  and source commit. [Assess the selected image](references/remediation.md#assess-scanned-findings)
+  whether the gate passes or blocks.
 
 Discover the affected surfaces and change only the requested maintenance unit
 or remediation scope. For container work, use the canonical gate supplied by
@@ -31,9 +32,10 @@ before using it.
 
 ## Verify and decide
 
-- For containers, test available fixes in isolation before presenting a
-  decision. Get approval for the exact remediation before changing release
-  packaging. For an override, get one
+- For containers, [resolve the image to check](references/image-update.md#resolve-the-upstream-candidate)
+  before running a scan or testing fixes. Test available fixes in isolation
+  before presenting a remediation decision. Get approval for the exact
+  remediation before changing release packaging. For an override, get one
   approval for the record and its tracking ticket using the
   [override criteria](references/exceptions.md#change-the-record). Leave
   branch publication, PRs, and other ticket mutations to a separate workflow.

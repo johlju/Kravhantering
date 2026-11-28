@@ -84,8 +84,8 @@ Keep these sections current so another invocation can continue without chat:
   constraints, exact original-image selection and its owning lock or registry,
   and commands that inspect an unmodified candidate. Distinguish published
   advisory versions from packages that can actually be obtained.
-- **Attempts:** installation, source patching, then removal; commands, inputs,
-  results, and the concrete reason each unsuccessful path failed. For removal,
+- **Attempts:** Record the newer-image check and other remediation attempts,
+  with commands, inputs, results, and the reason each path failed. For removal,
   list the full dependency closure, production-use evidence, collateral tools,
   retained runtime capabilities, and final inventory/workload checks.
 - **Current remediation:** chosen path, code/recipe/lock locations, temporary
