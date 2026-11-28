@@ -60,11 +60,11 @@ Resolve [the canonical gate](#canonical-gate) before making changes. Follow
 3. Build the post-scan review checklist from every entry the gate marks for
    remediation review. If the gate has no markers, use every High or Critical
    finding from the complete scanner reports. Review the checklist whether the
-   gate passed or blocked the candidate. For a nonempty checklist, pass the
-   exact image identity, checklist, grouped findings, gate decision, and
-   evidence to `$remediate-container-vulnerabilities`. If it requested verification,
-   return the full checklist and evidence to it for assessment, including any
-   new findings.
+   gate passed or blocked the candidate. If there is a checklist or a user
+   request to assess findings, pass the exact image identity, checklist,
+   grouped findings, gate decision, evidence, and any requested reporting
+   scope to `$remediate-container-vulnerabilities`. If it requested
+   verification, return the full checklist and evidence, including new findings.
 4. Complete image verification only when the assessment accounts for every
    checklist entry with a recommendation or concrete next check. Check
    coverage by exact image, affected package copy, and advisory. Merge only
@@ -72,9 +72,9 @@ Resolve [the canonical gate](#canonical-gate) before making changes. Follow
    complete this assessment. If evidence or assessment is missing, report it
    as pending. Rebuild and verify changes the user selects. Repeat the
    open-ticket review if the selected base digest changes.
-5. Include the assessment in the final report for the exact candidate or
-   commit. For each assessed case, carry forward the scanner disposition,
-   effect on promotion, tracking ticket state, and next check together.
+5. Include the completed finding entries in the final report for the exact
+   candidate or commit. Keep the remediation skill's field labels, order,
+   recommendation, reason, status, and next check.
    Give final counts by severity for each configured scanner. For
    completed scans, show Critical and High counts even when zero and include
    every other severity present. Report zero total findings only when all configured
