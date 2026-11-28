@@ -7,8 +7,8 @@ disable-model-invocation: true
 # Resolve Dependency Drift
 
 Recommend changes for assessments. Apply requested changes locally and report
-completed and pending checks. Leave branch publication, PRs, and ticket
-updates to a separate user-directed workflow.
+completed checks and checks still needed. Leave branch publication, PRs, and
+ticket updates to a separate user-directed workflow.
 
 ## Workflow
 
@@ -17,8 +17,10 @@ updates to a separate user-directed workflow.
    maintenance configuration and read its update guidance.
 2. For containers, hand the maintenance unit, issue, detector candidate, and
    any requested finding scope to `$update-container-image`. Require its
-   gate decision and completed finding entries for the requested scope, or
-   Critical and High by default. Report any unfinished assessment as pending.
+   recommendation, gate and runtime results for the candidate and any test
+   build, and any outstanding adoption decision. Require a complete finding
+   report for the requested scope, or Critical and High by default. Say when
+   evidence is missing or inconclusive.
    Continue at **Confirm resolution** after it returns. For toolchains,
    continue below.
 
@@ -57,13 +59,25 @@ updates to a separate user-directed workflow.
 
 ## Confirm resolution
 
-Run the detector's read-only check and confirm the unit reports no remaining
-drift. Use the repository's documented entry point or exported lookup functions
-when the detector CLI also writes issues. For a container, report the detector
-result alongside the gate decision, scan totals by scanner, the complete
-finding entries in their original format and order, and any pending
-verification. Keep detector reconciliation separate from remediation ticket
-closure.
+Run the detector's read-only check and report any remaining drift. Use the
+repository's documented entry point or exported lookup functions
+when the detector CLI also writes issues. Keep detector reconciliation
+separate from remediation ticket closure.
+
+For a container, lead the final chat reply with the recommended remediation
+and why, the gate and runtime results for the candidate and any test build,
+and the decision needed. State whether an exception is needed and give the
+next check. Report the detector result, scanner totals, and checks still
+needed. Link the complete finding report and retained evidence. Include the
+detailed entries in chat when requested, using the remediation handoff's
+fields and order.
+
+Before sending, match the linked report against the reviewed checklist by
+image, advisory, and affected package copy. When the user requests the full
+report in chat, check the reply for the same entries.
+
+If a recommended change still needs approval, name the change and ask the
+user directly whether to apply it. Wait for that decision before adopting it.
 
 ## Guardrails
 
