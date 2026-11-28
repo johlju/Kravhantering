@@ -87,7 +87,7 @@
       "detector": "ubi-node-runtime",
       "skill": "resolve-dependency-drift",
       "image": "registry.access.redhat.com/ubi10/nodejs-24-minimal",
-      "selectedReference": "registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:8320fe31733c95aef8da1b86e38b21aa67b590af81391f37049a2b04fd190f15",
+      "selectedReference": "registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:af0b1aebf45a9c67ecd43f235c404bfbd7990201ef03f0a60ee900e596389673",
       "paths": [
         "containers/app/Dockerfile",
         "containers/hsa-directory-mock/Dockerfile",

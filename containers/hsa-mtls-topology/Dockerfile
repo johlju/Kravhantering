@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG UBI_NODE_IMAGE=registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:8320fe31733c95aef8da1b86e38b21aa67b590af81391f37049a2b04fd190f15
+ARG UBI_NODE_IMAGE=registry.access.redhat.com/ubi10/nodejs-24-minimal:latest@sha256:af0b1aebf45a9c67ecd43f235c404bfbd7990201ef03f0a60ee900e596389673
 
 FROM ${UBI_NODE_IMAGE} AS builder
 

@@ -9,19 +9,29 @@ labels and order in direct reports and handoffs.
 ```markdown
 - **CVE or advisory** — <CVE or scanner advisory ID, severity, image, and affected package version>
   - **What it is** — <One plain-language sentence about what can go wrong and when.>
-  - **Recommended action** — <First applicable action from Remediate in order and the specific change.>
+  - **Recommended action** — <Current build behavior or Proposed change, whether further work is needed, and tracking issue.>
   - **Why** — <Evidence for this recommendation, why it fits this copy, and any uncertainty.>
-  - **Status and next check** — <Scanners that report it, effect on promotion and why, whether an exception is needed, ticket state and link, and what to check next.>
+  - **Status and next check** — <Scanners that report it, effect on promotion and why, whether an exception is needed, and what to check next.>
 ```
 
 Use a CVE only when it is confirmed. Include the location if it distinguishes
-copies. Cite the evidence in **Why**. Reserve **Recommended action** for a
-remediation choice. Use `None` when you recommend no change. If the evidence
-does not support a recommendation, write `Evidence is missing or inconclusive`.
+copies. Cite the evidence in **Why**.
+
+In **Recommended action**, describe any existing workaround in the present
+tense. State what the build does now and whether further work is needed.
+Label any proposed change `Proposed` and name the first applicable action
+from the remediation order and the specific change. If the finding has no
+workaround or proposed change, write `None` or
+`Evidence is missing or inconclusive` as appropriate.
+
+Link the owning issue in the same field. State whether it is open or closed
+and which images, packages, and advisories it covers. If the completed
+[tracker search](tracking.md#find-prior-remediation) finds no owner, write
+`No matching tracking issue found.`
+
 Put follow-up work under **Status and next check**, such as checking the next
 vendor release. Say explicitly whether an exception is needed, unnecessary,
-or undecided. Use open and closed for tickets and reported or absent for
-scanner findings. Say when there is no tracking ticket.
+or undecided. Use reported or absent for scanner findings.
 
 ## Scan summary
 
