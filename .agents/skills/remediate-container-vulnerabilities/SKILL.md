@@ -33,27 +33,22 @@ other ticket publication, branch publication, and PRs to a separate workflow.
    they differ. Use the repository's vulnerability-gate workflow and policy
    configuration to locate its evidence and determine which findings block it.
 2. Reconcile any checklist from the caller with the gate's review markers
-   and complete scanner reports. Account for every High or Critical finding,
-   including those that do not block promotion, supplemental or excepted
-   findings, and findings with no published fix. Group
-   confirmed matches by exact image, affected package copy, and advisory.
-   Merge scanner entries only when the package copy matches and advisory IDs
-   match or their aliases are verified.
+   and complete scanner reports. Assess the [report scope](#finding-report)
+   and complete any additional checks required by the gate. Include
+   supplemental and excepted findings and findings with no published fix.
+   Group matches by exact image, affected
+   package copy, and advisory. Merge scanner entries only when the package
+   copy matches and advisory IDs match or their aliases are verified.
 3. Search [remediation history](references/tracking.md#find-prior-remediation)
    before recommending a fix. Cite relevant tickets and explain whether their
    solution still applies. Recheck applicable exceptions for new fix evidence.
    Report active exceptions that are still needed and any that qualify for
    cleanup or require a new decision.
-4. For every case, give the affected copy and advisory, then state together
-   which scanners still report it, whether it blocks promotion and why, the
-   tracking ticket state or that no ticket was created, and the next check.
-   Use open and closed for tickets. Use reported or absent for scanner findings.
-   Give the first applicable action in **Remediate in order**. Cite
-   supporting evidence and state what remains uncertain. If no action is ready,
-   give a concrete next check and say what evidence it would establish. Give
-   the [scan summary](#scan-summary) and any closure candidates separately.
-   Finish when every checklist entry maps to a reported case. Mark unavailable
-   evidence or outstanding assessment as pending.
+4. Use the [finding report](#finding-report) before asking for a remediation
+   decision and in the final report. Give the [scan summary](#scan-summary)
+   and closure candidates separately. Finish when every finding in report
+   scope has a complete entry and the gate checklist is accounted for. Mark
+   unavailable evidence or outstanding assessment as pending.
 5. Ask which remediation changes to apply unless the user already selected
    them. For a scoped override, use the approval and ticket flow below. After
    applying a package or image change locally,
@@ -156,10 +151,9 @@ exposure and next check.
 - After a package or image change, rebuild all affected images from the
   selected base. Verify image identities, package inventory, and supported
   workloads. Run the declared gate against the exact rebuilt images and
-  assess all remaining or new High and Critical findings. Retain the evidence.
-  For source patches, also test the affected
-  behavior. For removal, check native linkage and workloads after the complete
-  package removal.
+  repeat the scanned-findings assessment. Retain the evidence. For source
+  patches, also test the affected behavior. For removal, check native linkage
+  and workloads after the complete package removal.
 - Assess operator guidance and update affected build and runtime guidance
   using the repository's release process.
 - Draft ticket updates using the tracking contract. Account for every affected
@@ -168,6 +162,28 @@ exposure and next check.
 - Apply [the tracking contract's closure rules](references/tracking.md#lifecycle).
   Recommend a PR and report which tickets can close on merge, which checks
   are pending, and which tickets should stay open.
+
+## Finding report
+
+Write each entry in plain language. Use the user's requested scope, or
+Critical and High by default. Use one entry per advisory and affected package
+copy. Sort by highest reported severity first, then by CVE or advisory ID
+and affected package. Break ties by image and package location. Use these
+labels and order in direct reports and handoffs.
+
+```markdown
+- **CVE or advisory** — <CVE or scanner advisory ID, severity, image, and affected package version>
+  - **What it is** — <One plain-language sentence about what can go wrong and when.>
+  - **Recommended action** — <First applicable action from Remediate in order and the specific change.>
+  - **Why** — <Evidence for this recommendation, why it fits this copy, and any uncertainty.>
+  - **Status and next check** — <Scanners that report it, effect on promotion and why, ticket state and link if tracked, and what to check next.>
+```
+
+Use a CVE only when it is confirmed. Include the location if it distinguishes
+copies. Cite the evidence in **Why**. If the evidence does not support an
+action yet, write `Pending` under **Recommended action** and say what evidence
+the next check must establish. Use open and closed for tickets and reported
+or absent for scanner findings. Say when there is no tracking ticket.
 
 ## Scan summary
 
