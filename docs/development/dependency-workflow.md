@@ -165,17 +165,19 @@ GitHub Actions dependencies from workflow source when reviewing exclusions.
 
 Start a container update by giving the Dependency Drift issue to
 [$resolve-dependency-drift](../../.agents/skills/resolve-dependency-drift/SKILL.md).
-The skill resolves the upstream candidate, checks open remediation issues
-against the unmodified image, and verifies the updated image and consumers
-with `npm run container:vulnerability:check`. It also reports the read-only
+The skill checks for a newer compatible upstream image before scanning. If
+one is available beyond the version you named or the ticket specifies, it
+asks which image to check. It checks open remediation issues against the
+unmodified candidate and verifies the selected image and consumers with
+`npm run container:vulnerability:check`. It also reports the read-only
 detector result.
 
 To review an existing finding or exception, give the same skill the labeled
-remediation ticket, scan results, or PR or release job. For an affected
-component, the skill checks for a supported fix, a source patch, removal of
-unused software, and then a scoped override. Verified evidence that the
-installed copy is unaffected or already mitigated can support an override
-directly. Approve the exact override and its tracking ticket together. See
+remediation ticket, scan results, or PR or release job. The skill follows
+the [remediation sequence](trusted-container-publishing.md#remediation-and-last-resort-exceptions)
+for affected components. Verified evidence that the installed copy is
+unaffected or already mitigated can support an override directly. Approve
+the exact override and its tracking ticket together. See
 the [override workflow](trusted-container-publishing.md#remediation-and-last-resort-exceptions).
 
 The scan summary gives counts by severity for each scanner, including

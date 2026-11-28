@@ -267,13 +267,17 @@ maintains separate scan records.
 
 The remediation sequence is:
 
-1. Install a verified compatible fixed package or base.
-2. Build the actual fixes from authenticated, pinned vendor or upstream source.
-3. Inspect production use and remove the package and its full dependency
+1. Check for a newer compatible upstream image. If one is available beyond
+   the version named by the user or ticket, ask which image to check. Verify
+   the selected image.
+2. Install a verified compatible fixed package for any remaining finding.
+3. Build the actual fixes from authenticated, pinned vendor or upstream source.
+4. Inspect production use and remove the package and its full dependency
    closure only when the supported workloads do not need them.
-4. If all three paths fail, propose a scoped override for accepted risk. If
-   authoritative evidence shows the exact installed component is unaffected
-   or already mitigated, propose an evidence-backed override directly.
+5. If the earlier actions leave the component affected, propose a scoped
+   override for accepted risk. If authoritative evidence shows the exact
+   installed component is unaffected or already mitigated, propose an
+   evidence-backed override directly.
 
 Source patches need build provenance, truthful package identities, license
 notices, compatibility tests, and passing final-image scan evidence. Removal
