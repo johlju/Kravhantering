@@ -1,23 +1,9 @@
----
-name: manage-container-vulnerability-exceptions
-description: >-
-  Apply an approved container vulnerability exception or review, update, or
-  remove an existing record. Verify the exact finding and image with the
-  repository's canonical vulnerability policy.
----
-
-# Manage Container Vulnerability Exceptions
-
-Recommend record changes for assessments. Apply selected edits locally. The
-override approval authorizes its tracking ticket and verification update.
-Leave branch publication, PRs, and other ticket updates to a separate workflow.
+# Container Vulnerability Exceptions
 
 ## Bind the evidence
 
-1. Use the canonical gate provided by the caller or declared in repository
-   instructions. If neither identifies it, find the likely gate and wait for
-   user confirmation before using it. Read the gate's exception records,
-   validator, evidence requirements, and scope rules. Discover the repository's
+1. Read the canonical gate's exception records, validator, evidence
+   requirements, and scope rules. Discover the repository's
    tracker and approved override workflow, including support for built and
    upstream images. Verify the evaluator can express the approved scope before
    applying a record.
@@ -32,17 +18,17 @@ Leave branch publication, PRs, and other ticket updates to a separate workflow.
    evidence that fixes, source patches, and removal were assessed. Accept an
    evidence-backed override directly when authoritative evidence shows the
    exact installed copy is unaffected or already mitigated.
-   Use any existing package ticket as evidence. Send missing evidence or a
-   newly available fix to `$remediate-container-vulnerabilities`.
+   Use any existing package ticket as evidence. [Assess the finding](remediation.md#assess-scanned-findings)
+   if evidence is missing or a fix becomes available.
 
 ## Change the record
 
 Apply only record edits selected by the user.
 
-- **Add:** Accept explicit approval of the override and its tracking ticket
-  from the caller. If absent, ask once for both. Show the advisory, verified
+- **Add:** For the approval request, show the advisory, verified
   aliases, component and installed version, exact image scope, rationale,
-  residual risk, owner, review date, expiry, and removal condition. After
+  supporting evidence, residual risk, owner, review date, expiry, and removal
+  condition. Ask once to apply the record and create or reuse its ticket. After
   approval, search for a matching ticket labeled
   `remediation:container-vulnerability`. Reuse it on retries or create one
   with that label for the advisory and approved scope. Record the decision
@@ -53,7 +39,8 @@ Apply only record edits selected by the user.
 - **Review or update:** Use fresh evidence. Apply the add criteria to an
   extension or replacement scope. Remove stale or expired records as the
   repository policy requires. Preserve any separate package workaround
-  until the remediation skill verifies its cleanup.
+  until [remediation verification](remediation.md#verify-and-record) confirms
+  its cleanup.
 - **Remove after a fix:** Report the obsolete record as a cleanup candidate.
   Apply the edit when the user selects cleanup and candidate evidence shows
   the finding is gone or no longer matches the exact record. An evaluator failure
@@ -75,8 +62,7 @@ promotion gate in force.
 3. Reconcile every ticket linked from an approved override for the scanned
    image and digest. Record its individual match, the same overall gate
    result, and a durable link to retained scan evidence. If the link is
-   pending, report that explicitly and reconcile again when it is available.
-   Return ticket URLs and states, scanner dispositions, gate consequences, and
-   next checks together. Report any ticket update still pending. Run relevant
-   local checks and report pending canonical CI evidence. Recommend a PR for
+   missing, say so and reconcile again when it is available. Record ticket
+   URLs and states, scanner dispositions, gate consequences, and next checks
+   together. Report any ticket or CI check still needed. Recommend a PR for
    record changes.

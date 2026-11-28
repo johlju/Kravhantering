@@ -55,7 +55,7 @@ Put commands, image hashes, CVE lists, and detailed evidence below the summary.
 
 ## Next step
 
-Tell the reader to run `$remediate-container-vulnerabilities` with this ticket
+Tell the reader to run `$resolve-dependency-drift` with this ticket
 and review the recommendation for the exact unmodified upstream image. For
 selected cleanup, explain how to update the image selection and its consumers,
 remove the obsolete workaround, and verify the rebuilt images with the

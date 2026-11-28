@@ -163,43 +163,29 @@ GitHub Actions dependencies from workflow source when reviewing exclusions.
 
 ## Container Image Maintenance Workflow
 
-For contributors maintaining container images, start with the skill that
-matches the work:
+Start a container update by giving the Dependency Drift issue to
+[$resolve-dependency-drift](../../.agents/skills/resolve-dependency-drift/SKILL.md).
+The skill resolves the upstream candidate, checks open remediation issues
+against the unmodified image, and verifies the updated image and consumers
+with `npm run container:vulnerability:check`. It also reports the read-only
+detector result.
 
-- **Dependency Drift issue.** Give the issue to
-  [$resolve-dependency-drift](../../.agents/skills/resolve-dependency-drift/SKILL.md).
-  It hands image updates to `$update-container-image` and confirms that the
-  detector reports no remaining drift after the update.
-- **Requested image update.** Give the image or maintenance unit to
-  [$update-container-image](../../.agents/skills/update-container-image/SKILL.md).
-  It resolves the exact upstream candidate and uses
-  `$remediate-container-vulnerabilities` to check matching open issues against
-  the unmodified image. It updates the pins and all consumers, recommends
-  cleanup of obsolete workarounds, and rebuilds the affected images.
-  Verification uses `npm run container:vulnerability:check` for the exact
-  candidate. Select the cleanup cases you want applied.
-- **High or Critical finding or existing remediation issue.** Give the scan
-  results, PR or release job, or labeled issue number or URL to
-  [$remediate-container-vulnerabilities](../../.agents/skills/remediate-container-vulnerabilities/SKILL.md).
-  For an open issue, the skill checks whether the upstream image already fixes
-  the finding and hands verified upstream fixes to `$update-container-image`
-  for cleanup. For an affected component, consider a supported fix first,
-  then a source patch, then removal of unused software, then a scoped override.
-  Verified vendor evidence that the installed copy is unaffected or already
-  mitigated can support a direct override recommendation. Use
-  `$update-container-image` to verify changes to the image or its packages.
-- **Exception review or maintenance.** Use
-  [$manage-container-vulnerability-exceptions](../../.agents/skills/manage-container-vulnerability-exceptions/SKILL.md)
-  to review or remove a record, or to add an explicitly approved exception.
-  Approve the exact override and its tracking ticket together. See the
-  [override workflow](trusted-container-publishing.md#remediation-and-last-resort-exceptions).
+To review an existing finding or exception, give the same skill the labeled
+remediation ticket, scan results, or PR or release job. For an affected
+component, the skill checks for a supported fix, a source patch, removal of
+unused software, and then a scoped override. Verified evidence that the
+installed copy is unaffected or already mitigated can support an override
+directly. Approve the exact override and its tracking ticket together. See
+the [override workflow](trusted-container-publishing.md#remediation-and-last-resort-exceptions).
 
 The scan summary gives counts by severity for each scanner, including
 findings below High, and reports the promotion decision separately. The
 remediation report recommends fixes for High and Critical findings and cites
 prior tickets when a remedy may apply again. Select the findings you want
-remediated. The skills prepare the selected changes locally, report completed
-and pending checks, and suggest a PR. Open or update it in a separate step.
+remediated. The skill gives the recommendation, gate and test results, and
+next decision in chat, with a link to the complete findings. It prepares the
+selected changes locally and reports checks still needed. Open or update the
+PR in a separate step.
 
 Track every vulnerability-driven change to the base image's packages in a
 ticket labeled `remediation:container-vulnerability` after applying it. Record

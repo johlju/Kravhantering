@@ -1,4 +1,0 @@
-interface:
-  display_name: "Remediate Container Vulnerabilities"
-  short_description: "Remediate or recheck a container vulnerability"
-  default_prompt: "Use $remediate-container-vulnerabilities with this failing PR or release job, labeled remediation ticket, or replacement base image."

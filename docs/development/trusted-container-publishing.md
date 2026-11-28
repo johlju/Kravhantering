@@ -254,12 +254,13 @@ final image or SBOM attestation, or publish a GitHub Release.
 
 ### Remediation And Last-Resort Exceptions
 
-Maintainers can run `$remediate-container-vulnerabilities` with scan results,
-a PR or release job URL, or an existing labeled ticket. The skill recommends
-an action for each High or Critical finding, including supplemental findings
-and findings without a published fix. Select the findings you want to
-remediate. The skill drafts tracking updates for local package changes. Scoped
-overrides require approval for both the record and its tracking ticket. See the
+Maintainers can run `$resolve-dependency-drift` with a drift ticket, scan
+results, a PR or release job URL, or an existing labeled remediation ticket.
+The skill recommends an action for each High or Critical finding, including
+supplemental findings and findings without a published fix. Select the
+findings you want to remediate. The skill drafts tracking updates for local
+package changes. Scoped overrides require approval for both the record and
+its tracking ticket. See the
 [container maintenance workflow](dependency-workflow.md#container-image-maintenance-workflow)
 for the tracking label and closure rules. Published-release monitoring
 maintains separate scan records.
