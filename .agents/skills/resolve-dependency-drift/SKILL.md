@@ -56,15 +56,16 @@ including when the workflow stops for approval.
    Say `Evidence is missing or inconclusive` when it prevents a conclusion.
    Mark any production digest unverified unless deployment evidence
    confirms it.
-2. Use the [finding report](references/finding-report.md) for scope, field
-   order, and scanner totals. Link the complete report and retained evidence
-   when available. Include detailed entries in chat when requested. Match
-   the report to in-scope findings on the reviewed checklist by image,
-   advisory, and affected package copy. If the full report was requested in
-   chat, check the reply for those same entries and all five fields in order.
+2. Include the complete finding report in the final reply unless the user
+   explicitly requests a summary. Use the [finding report](references/finding-report.md)
+   for scope, field and entry order, and scanner totals. Link the retained
+   report and scanner evidence after the entries when available.
 3. When approval is needed, name the exact change and ask the user directly
    whether to apply it. Wait for the decision before adopting it.
-4. Before sending, inspect the actual reply. It must contain the recommendation
-   and reason, gate and runtime results, exception need, next check, and the
-   report link or an explanation of what evidence is missing. Check for the
-   approval question when applicable. Repair omissions before sending the reply.
+4. Before sending, check the actual reply against the reviewed checklist.
+   Unless the user explicitly requested a summary, match every in-scope
+   finding by image, advisory, and affected package copy to a reply entry
+   with all five fields in order. Confirm the reply includes the recommendation
+   and reason, gate and runtime results, exception need, next check, and
+   approval question when applicable. Add missing entries or details before
+   sending.

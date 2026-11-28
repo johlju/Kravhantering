@@ -182,10 +182,11 @@ The scan summary gives counts by severity for each scanner, including
 findings below High, and reports the promotion decision separately. The
 remediation report recommends fixes for High and Critical findings and cites
 prior tickets when a remedy may apply again. Select the findings you want
-remediated. The skill gives the recommendation, gate and test results, and
-next decision in chat, with a link to the complete findings. It prepares the
-selected changes locally and reports checks still needed. Open or update the
-PR in a separate step.
+remediated. The skill gives the recommendation, gate and test results, next
+decision, and complete finding report in chat. An explicit request for a
+summary gives a shorter reply with a link to the full findings. The skill
+prepares selected changes locally and reports checks still needed. Open or
+update the PR in a separate step.
 
 Track every vulnerability-driven change to the base image's packages in a
 ticket labeled `remediation:container-vulnerability` after applying it. Record
